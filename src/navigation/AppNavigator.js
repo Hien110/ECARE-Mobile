@@ -1,0 +1,487 @@
+import { NavigationContainer, useNavigation } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+import React, { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
+import NotificationService from '../services/NotificationService';
+import socketService from '../services/socketService';
+import CallService from '../services/CallService';
+
+import ElderHomeScreen from '../screens/Site/ElderHomeScreen';
+import RegistersScreen from '../screens/Auth/RegistersScreen';
+import ForgotPasswordScreen from '../screens/Auth/ForgotPasswordScreen';
+import LoginScreen from '../screens/Auth/LoginScreen';
+import ResetPasswordScreen from '../screens/Auth/ResetPasswordScreen';
+import VerifySMSScreen from '../screens/Auth/VerifySMSScreen';
+import ChangePasswordScreen from '../screens/Profile/ChangePasswordScreen';
+import ProfileScreen from '../screens/Profile/ProfileScreen.jsx';
+import SuccessScreen from '../screens/Site/SuccessScreen';
+import PersonalInfoScreen from '../screens/Profile/PersonalInfoScreen.jsx';
+import FamilyMemberHomeScreen from '../screens/Site/FamilyHomeScreen.jsx';
+import SupporterHomeScreen from '../screens/Site/SupporterHomeScreen';
+import DefaultScreen from '../screens/Error/DefaultScreen';
+import ChangePhonenumberScreen from '../screens/Auth/ChangePhonenumberScreen.jsx';
+import OtPChangePhoneScreen from '../screens/Auth/OTPChangePhoneScreen.jsx';
+import ChangeEmailScreen from '../screens/Auth/ChangeEmailScreen.jsx';
+import OTPChangeEmailScreen from '../screens/Auth/OTPChangeEmailScreen.jsx';
+import FindPeopleScreen from '../screens/Connect-family/FindPeopleScreen';
+import FamilyConnectionScreen from '../screens/Connect-family/FamilyConnectionScreen';
+import FamilyConnectionListScreen from '../screens/Connect-family/FamilyConnectionListScreen';
+import FamilyList_FamilyScreen from '../screens/Connect-family/FamilyList_FamilyScreen';
+import MessagesListScreen from '../screens/Messages/MessagesListScreen';
+import ChatScreen from '../screens/Messages/ChatScreen.jsx';
+import VideoCallScreen from '../screens/VideoCall/VideoCallScreen.jsx';
+import IncomingCallScreen from '../screens/VideoCall/IncomingCallScreen.jsx';
+import CreateIntroductionScreen from '../screens/Supporter/CreateIntroductionProfileScreen.jsx';
+import ViewIntroductionScreen from '../screens/Supporter/ViewIntroductionProfileScreen.jsx';
+import SupporterIntroGate from '../screens/Supporter/SupporterIntroGate.jsx';
+import EditIntroductionScreen from '../screens/Supporter/EditIntroductionProfileScreen.jsx';
+import HealthScreen from '../screens/HealthRecord/HealthScreen.jsx';
+import FamilyHealthMonitoringScreen from '../screens/HealthRecord/FamilyHealthMonitoringScreen.jsx';
+import SupportFinderScreen from '../screens/Search-Supporter/SupportFinderScreen.jsx';
+import SupporterProfileScreen from '../screens/Search-Supporter/SupporterProfileScreen.jsx';
+import AddressPickerScreen from '../screens/Profile/AddressPickerScreen.jsx';
+import IntroductionCreateDoctorProfileScreen from '../screens/Doctor/IntroductionCreateDoctorProfileScreen.jsx';
+import CreateDoctorProfileScreen from '../screens/Doctor/CreateDoctorProfileScreen.jsx';
+import ViewDoctorProfileScreen from '../screens/Doctor/ViewDoctorProfileScreen.jsx';
+import EditDoctorProfileScreen from '../screens/Doctor/EditDoctorProfileScreen.jsx';
+import CreateWorkScheduleScreen from '../screens/Doctor/CreateWorkScheduleScreen.jsx';
+import EvaluationStatisticsScreen from '../screens/Doctor/EvaluationStatisticsScreen.jsx';
+import ProfileGateScreen from '../screens/Doctor/ProfileGateScreen.jsx';
+import DoctorHomeScreen from '../screens/Site/DoctorHomeScreen.jsx';
+import ProfileDoctorScreen from '../screens/Doctor/ProfileScreen.jsx';
+import ScheduleScreen from '../screens/Doctor/ScheduleScreen.jsx';
+import ReviewsScreen from '../screens/Doctor/ReviewsScreen.jsx';
+
+
+import SupporterBookingListFamilyScreen from '../screens/SupporterService/SupporterBookingListFamilyScreen.jsx';
+import BookingDetailWithFooter from './BookingDetailWithFooter.js'
+import BookingListWithFooter from './BookingListWithFooter.js'
+import SupporterBookingListSupporterScreen from '../screens/SupporterService/SupporterBookingListSupporterScreen.jsx';
+import SupporterBookingScreen from '../screens/SupporterService/SuppporterBookingScreen.jsx';
+import ServiceSelectionScreen from '../screens/SupporterService/ServiceSelectionScreen.jsx';
+import PaymentBookingScreen from '../screens/SupporterService/PaymentBookingScreen.jsx';
+
+import FamilyListFunctionScreen from '../screens/Connect-family/FamilyListFunctionScreen.jsx';
+import SOSDetailScreen from '../screens/SOS/SOSDetailScreen.jsx';
+import ChatWithAIScreen from '../screens/Chat-AI/ChatWithAI.jsx';
+// HOC footer
+import withFooter from '../components/withFooter';
+
+const Stack = createStackNavigator();
+
+// Component wrapper để sử dụng hooks INSIDE NavigationContainer
+const NavigationContent = () => {
+  const navigation = useNavigation();
+  const appState = useRef(AppState.currentState);
+  
+  useEffect(() => {
+    // Đăng ký listener cho incoming video call
+    const handleIncomingCall = (data) => {
+      // CHỈ xử lý khi app đang ở FOREGROUND (active)
+      if (appState.current !== 'active') {
+        return;
+      }
+      
+      const { callId, conversationId, caller, callType } = data;
+
+      // Lưu thông tin cuộc gọi vào CallService
+      CallService.receiveCall({
+        callId,
+        conversationId,
+        caller,
+        callType: callType || 'video'
+      });
+
+      // Navigate đến IncomingCallScreen
+      navigation.navigate('IncomingCall', {
+        callId,
+        caller,
+        conversationId,
+        callType: callType || 'video',
+      });
+    };
+    
+    // Đăng ký listener cho incoming SOS
+    const handleIncomingSOS = (data) => {
+      // CHỈ xử lý khi app đang ở FOREGROUND (active)
+      if (appState.current !== 'active') {
+        return;
+      }
+      
+      const { _id, requester, location, message } = data;
+      
+      // Navigate đến SOSDetail screen
+      navigation.navigate('SOSDetail', {
+        sosId: _id,
+        requesterName: requester?.fullName || 'Không rõ',
+        requesterAvatar: requester?.avatar || '',
+        address: location?.address || 'Không rõ vị trí',
+        latitude: location?.coordinates?.latitude || null,
+        longitude: location?.coordinates?.longitude || null,
+        message: message || '',
+      });
+    };
+    
+    // Đăng ký listener
+    socketService.on('video_call_request', handleIncomingCall);
+    socketService.on('sos:new', handleIncomingSOS);
+    
+    // Theo dõi AppState để biết app foreground/background
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      appState.current = nextAppState;
+    });
+    
+    // Cleanup khi unmount
+    return () => {
+      socketService.off('video_call_request', handleIncomingCall);
+      socketService.off('sos:new', handleIncomingSOS);
+      subscription.remove();
+    };
+  }, [navigation]);
+  
+  return (
+    <Stack.Navigator initialRouteName="Login">
+      <Stack.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Registers"
+        component={RegistersScreen}
+        options={{ headerShown: false }}
+      />
+        <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="VerifySMS"
+          component={VerifySMSScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ResetPassword"
+          component={ResetPasswordScreen}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="SuccessScreen"
+          component={SuccessScreen}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="FamilyMemberHome"
+          component={withFooter(FamilyMemberHomeScreen, 'FamilyMemberHome')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SupporterHome"
+          component={withFooter(SupporterHomeScreen, 'SupporterHome')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DefaultScreen"
+          component={DefaultScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ChangePhonenumber"
+          component={ChangePhonenumberScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="OTPChangePhone"
+          component={OtPChangePhoneScreen}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="ChangeEmail"
+          component={ChangeEmailScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="OTPChangeEmail"
+          component={OTPChangeEmailScreen}
+          options={{ headerShown: false }}
+        />
+
+        {/* 👉 Chỉ ChangePassword có footer */}
+        <Stack.Screen
+          name="ChangePassword"
+          component={withFooter(ChangePasswordScreen, 'me')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ElderHome"
+          component={withFooter(ElderHomeScreen, 'ElderHome')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Profile"
+          component={withFooter(ProfileScreen, 'me')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="PersonalInfo"
+          component={withFooter(PersonalInfoScreen, 'me')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FindPeople"
+          component={withFooter(FindPeopleScreen, 'me')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FamilyConnection"
+          component={withFooter(FamilyConnectionScreen, 'me')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FamilyConnectionList"
+          component={withFooter(FamilyConnectionListScreen, 'me')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FamilyList_Family"
+          component={withFooter(FamilyList_FamilyScreen, 'me')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="MessagesList"
+          component={withFooter(MessagesListScreen, 'messages')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Chat"
+          component={ChatScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="VideoCall"
+          component={VideoCallScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="IncomingCall"
+          component={IncomingCallScreen}
+          options={{ 
+            headerShown: false,
+            presentation: 'modal', // Hiển thị như modal để overlay lên các màn hình khác
+          }}
+        />
+        <Stack.Screen
+          name="CreateIntroduction"
+          component={withFooter(CreateIntroductionScreen, 'tasks')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ViewIntroduction"
+          component={withFooter(ViewIntroductionScreen, 'tasks')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SupporterIntro"
+          component={withFooter(SupporterIntroGate, 'tasks')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="EditIntroduction"
+          component={withFooter(EditIntroductionScreen, 'tasks')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="HealthRecord"
+          component={withFooter(HealthScreen, 'tasks')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="FamilyHealthMonitoring"
+          component={withFooter(FamilyHealthMonitoringScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SupportFinder"
+          component={withFooter(SupportFinderScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="SupporterProfile"
+          component={withFooter(SupporterProfileScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="AddressPicker"
+          component={withFooter(AddressPickerScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="IntroductionCreateDoctorProfile"
+          component={withFooter(
+            IntroductionCreateDoctorProfileScreen,
+            'calendar',
+          )}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="CreateDoctorProfile"
+          component={withFooter(CreateDoctorProfileScreen, 'calendar')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ViewDoctorProfile"
+          component={withFooter(ViewDoctorProfileScreen, 'calendar')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="EditDoctorProfile"
+          component={withFooter(EditDoctorProfileScreen, 'calendar')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="CreateWorkSchedule"
+          component={withFooter(CreateWorkScheduleScreen, 'calendar')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="EvaluationStatistics"
+          component={withFooter(EvaluationStatisticsScreen, 'calendar')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ProfileGate"
+          component={ProfileGateScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DoctorHome"
+          component={withFooter(DoctorHomeScreen, 'DoctorHome')}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="DoctorProfile"
+          component={ProfileScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DoctorSchedule"
+          component={ScheduleScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DoctorReviews"
+          component={ReviewsScreen}
+          options={{ headerShown: false }}
+        />
+
+        {/* Đặt lịch hẹn supporter */}
+        <Stack.Screen
+          name="SupporterBookingScreen"
+          component={withFooter(SupporterBookingScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        {/* Danh sách lịch hẹn đã đặt */}
+        <Stack.Screen
+          name="SupporterBookingListScreen"
+          component={BookingListWithFooter}
+          options={{ headerShown: false }}
+        />
+
+        {/* Chi tiết lịch hẹn */}
+        <Stack.Screen
+          name="BookingDetailScreen"
+          component={BookingDetailWithFooter}
+          options={{ headerShown: false }}
+        />
+
+        {/* Danh sách thành viên trong gia đình để đặt lịch hẹn */}
+        <Stack.Screen
+          name="FamilyListFunctionScreen"
+          component={withFooter(FamilyListFunctionScreen, 'FamilyMemberHome')}
+          options={{ headerShown: false }}
+        />
+
+        {/* Xem danh sách đặt lịch hẹn của vai trò người thân gia đình */}
+        <Stack.Screen
+          name="SupporterBookingListFamilyScreen"
+          component={withFooter(SupporterBookingListFamilyScreen, 'planFamily')}
+          options={{ headerShown: false }}
+        />
+
+        {/* Danh sách lịch hẹn đã đặt của người hỗ trợ */}
+        <Stack.Screen
+          name="SupporterBookingListSupporterScreen"
+          component={withFooter(SupporterBookingListSupporterScreen, 'planFamily')}
+          options={{ headerShown: false }}
+        />
+
+          {/* Chọn dịch vụ hỗ trợ khi đặt lịch */}
+        <Stack.Screen
+          name="ServiceSelectionScreen"
+          component={withFooter(ServiceSelectionScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+
+        {/* Màn hình thanh toán */}
+        <Stack.Screen
+          name="PaymentBookingScreen"
+          component={withFooter(PaymentBookingScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+
+        {/* SOS Emergency Screen */}
+        <Stack.Screen
+          name="SOSDetail"
+          component={SOSDetailScreen}
+          options={{
+            headerShown: true,
+            title: 'Chi tiết SOS',
+            headerStyle: {
+              backgroundColor: '#FF0000',
+            },
+            headerTintColor: '#FFF',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+          }}
+        />
+        <Stack.Screen
+          name="ChatWithAI"
+          component={ChatWithAIScreen}
+          options={{ headerShown: false }}
+        />
+      </Stack.Navigator>
+  );
+};
+
+// Tạo navigationRef global để sử dụng ở ngoài component
+export const navigationRef = React.createRef();
+
+const AppNavigator = () => {
+  useEffect(() => {
+    // Khởi tạo notification service khi app mount
+    const initNotifications = async () => {
+      if (navigationRef.current) {
+        await NotificationService.initialize(navigationRef.current);
+      }
+    };
+
+    // Delay một chút để đảm bảo navigation đã sẵn sàng
+    const timer = setTimeout(initNotifications, 1000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <NavigationContainer ref={navigationRef}>
+      <NavigationContent />
+    </NavigationContainer>
+  );
+};
+
+export default AppNavigator;

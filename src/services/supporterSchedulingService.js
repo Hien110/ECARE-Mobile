@@ -1,0 +1,104 @@
+import { api } from './api';
+
+const supporterSchedulingService = {
+  // Tạo lịch hỗ trợ mới
+  createScheduling: async schedulingData => {
+    try {
+      const response = await api.post('/supporter-schedulings', schedulingData);
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Lấy danh sách đặt lịch theo id
+  getSchedulingsByUserId: async (userId) => {
+    console.log(userId);
+    
+    try {
+      const response = await api.post('/supporter-schedulings/list', {
+        userId,
+      });
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Lấy danh sách đặt lịch theo supporter id
+  getSchedulingsBySupporterId: async userId => {
+    try {
+      const response = await api.post('/supporter-schedulings/supporter-list', {
+        userId,
+      });
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Lấy chi tiết đặt lịch theo id
+  getSchedulingById: async schedulingId => {
+    try {
+      const response = await api.get(`/supporter-schedulings/${schedulingId}`);
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Cập nhật trạng thái đặt lịch
+  updateSchedulingStatus: async (schedulingId, status) => {
+    try {
+      const response = await api.put(
+        `/supporter-schedulings/${schedulingId}/status`,
+        { status },
+      );
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Kiểm tra lịch đã hoàn thành hết hay chưa
+  checkAllCompletedOrCanceled: async (supporterId, elderlyId) => {
+    try {
+      const response = await api.post(
+        '/supporter-schedulings/check-completion',
+        {
+          supporterId,
+          elderlyId,
+        },
+      );
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      throw error;
+    }
+  },
+};
+
+export default supporterSchedulingService;

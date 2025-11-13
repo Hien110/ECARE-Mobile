@@ -1,0 +1,38 @@
+// android/build.gradle
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+buildscript {
+  ext {
+    buildToolsVersion = "36.0.0"
+    minSdkVersion = 24
+    compileSdkVersion = 36
+    targetSdkVersion = 36
+    ndkVersion = "27.1.12297006"
+
+    // Kotlin phù hợp Expo SDK 54 / RN hiện đại
+    kotlinVersion = "2.0.21"
+
+    playServicesLocationVersion = "21.3.0"
+    googlePlayServicesVersion   = "22.09.20"
+  }
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath("com.google.gms:google-services:4.4.0")
+    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
+  }
+}
+
+plugins {
+  id("com.facebook.react.rootproject")
+}
+
+// Ép JVM 17 cho tất cả modules (tránh lệch jvmTarget)
+subprojects { project ->
+  tasks.withType(KotlinCompile).configureEach {
+    kotlinOptions { jvmTarget = "17" }
+  }
+}
+

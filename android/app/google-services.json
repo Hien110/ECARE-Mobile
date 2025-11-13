@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "615883977507",
+    "project_id": "ecare-7896e",
+    "storage_bucket": "ecare-7896e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:615883977507:android:7b0917fb01d307c44f1296",
+        "android_client_info": {
+          "package_name": "com.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "615883977507-mefl57o856dfdobrpjf68gl56kq787s8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB3gSFYBI5RHFNcSJvfuu7roPz2wadnxnA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "615883977507-mefl57o856dfdobrpjf68gl56kq787s8.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
