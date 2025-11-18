@@ -125,12 +125,33 @@ const VideoCallScreen = () => {
         }
       };
 
+      const handleCallBusy = async (data) => {
+        if (data.callId === callId) {
+          await cleanupAgora();
+          
+          Toast.show({
+            type: 'error',
+            text1: 'Người dùng đang bận',
+            text2: data.message || 'Người dùng đang có cuộc gọi khác',
+            position: 'top',
+            visibilityTime: 3000,
+            topOffset: 50,
+          });
+          
+          setTimeout(() => {
+            safeGoBack();
+          }, 2000);
+        }
+      };
+
       socketService.on('video_call_accepted', handleCallAccepted);
       socketService.on('video_call_rejected', handleCallRejected);
+      socketService.on('video_call_busy', handleCallBusy);
 
       return () => {
         socketService.off('video_call_accepted', handleCallAccepted);
         socketService.off('video_call_rejected', handleCallRejected);
+        socketService.off('video_call_busy', handleCallBusy);
       };
     }
   }, [callId, isIncoming]);
