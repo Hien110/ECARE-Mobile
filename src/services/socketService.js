@@ -183,6 +183,11 @@ class SocketService {
       console.log('👋 Video call ended:', data);
       this.emit('video_call_ended', data);
     });
+
+    this.socket.on('video_call_busy', (data) => {
+      console.log('📞 Video call busy:', data);
+      this.emit('video_call_busy', data);
+    });
   }
 
   reconnect() {

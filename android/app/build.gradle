@@ -64,6 +64,8 @@ android {
         pickFirst 'lib/armeabi-v7a/libaosl.so'
         pickFirst 'lib/x86/libaosl.so'
         pickFirst 'lib/x86_64/libaosl.so'
+      // Pick a single libc++_shared to prevent duplicate packaging across modules
+      pickFirst '**/libc++_shared.so'
     }
 
   // Java 17 cho app
