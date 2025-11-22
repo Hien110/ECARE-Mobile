@@ -25,7 +25,7 @@ const VN_TZ = 'Asia/Ho_Chi_Minh';
 
 const ROUTES = {
   supporter: 'BookingDetails', // sửa theo route dự án của bạn
-  doctorList: 'DoctorBookingList',
+  doctorList: 'DoctorBookingHistoryScreen',
 };
 
 /**

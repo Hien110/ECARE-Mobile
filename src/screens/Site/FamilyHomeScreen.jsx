@@ -159,7 +159,7 @@ export default function EnhancedHealthAppRN() {
         label: 'Đặt lịch hỗ trợ',
         color: C.background,
         desc: 'Đặt lịch hẹn với người hỗ trợ',
-        navTo: 'FamilyListFunctionScreen',
+        navTo: 'IntroductionBookingDoctor',
         message: 'Chức năng đặt lịch hỗ trợ',
       },
       // {

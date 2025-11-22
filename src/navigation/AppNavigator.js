@@ -64,6 +64,12 @@ import PaymentBookingScreen from '../screens/SupporterService/PaymentBookingScre
 import FamilyListFunctionScreen from '../screens/Connect-family/FamilyListFunctionScreen.jsx';
 import SOSDetailScreen from '../screens/SOS/SOSDetailScreen.jsx';
 import ChatWithAIScreen from '../screens/Chat-AI/ChatWithAI.jsx';
+import IntroductionBookingDoctorScreen from '../screens/DoctorService/IntroductionBookingDoctor.jsx';
+import HealthPackageListScreen from '../screens/DoctorService/HealthPackageListScreen.jsx';
+import HealthPackageScheduleScreen from '../screens/DoctorService/HealthPackageScheduleScreen.jsx';
+import DoctorListScreen from '../screens/DoctorService/DoctorListScreen.jsx';
+import PaymentServiceScreen from '../screens/DoctorService/PaymentServiceScreen.jsx';
+import DoctorBookingHistoryScreen from '../screens/DoctorService/DoctorBookingHistoryScreen.jsx';
 // HOC footer
 import withFooter from '../components/withFooter';
 
@@ -453,6 +459,36 @@ const NavigationContent = () => {
         <Stack.Screen
           name="ChatWithAI"
           component={ChatWithAIScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="IntroductionBookingDoctor"
+          component={withFooter(IntroductionBookingDoctorScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="HealthPackageListScreen"
+          component={withFooter(HealthPackageListScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="HealthPackageScheduleScreen"
+          component={withFooter(HealthPackageScheduleScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DoctorListScreen"
+          component={withFooter(DoctorListScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="PaymentServiceScreen"
+          component={withFooter(PaymentServiceScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DoctorBookingHistoryScreen"
+          component={withFooter(DoctorBookingHistoryScreen, 'planFamily')}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>
