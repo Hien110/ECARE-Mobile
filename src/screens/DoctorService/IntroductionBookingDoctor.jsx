@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Image,
   ScrollView,
@@ -14,17 +14,54 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 const heroImages = [
-  {
-    uri: 'https://images.pexels.com/photos/6129683/pexels-photo-6129683.jpeg',
-  },
-  {
-    uri: 'https://images.pexels.com/photos/7659578/pexels-photo-7659578.jpeg',
-  },
+  { uri: 'https://images.pexels.com/photos/6129683/pexels-photo-6129683.jpeg' },
+  { uri: 'https://dngclinic.com/wp-content/uploads/2023/08/kham-tong-quat-1.jpg' },
+  { uri: 'https://www.shutterstock.com/image-photo/doctor-patient-having-friendly-consultation-600nw-2618224383.jpg' },
+  { uri: 'https://isofhcare-backup.s3-ap-southeast-1.amazonaws.com/images/162041kham-xuong-khop_785696ed_2602_4d9d_a250_e68a504b646a.jpg' },
 ];
 
 const IntroductionBookingDoctor = () => {
   const navigation = useNavigation();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const autoSlideTimer = useRef(null);
+
+  // ==========================
+  // 🔄 AUTO SLIDE EVERY 4 SECONDS
+  // ==========================
+  useEffect(() => {
+    startAutoSlide();
+
+    return () => stopAutoSlide();
+  }, []);
+
+  const startAutoSlide = () => {
+    stopAutoSlide(); // clear trước tránh lặp timer
+    autoSlideTimer.current = setInterval(() => {
+      setCurrentImageIndex(prev =>
+        prev === heroImages.length - 1 ? 0 : prev + 1,
+      );
+    }, 4000);
+  };
+
+  const stopAutoSlide = () => {
+    if (autoSlideTimer.current) clearInterval(autoSlideTimer.current);
+  };
+
+  const nextImage = () => {
+    stopAutoSlide();
+    setCurrentImageIndex(prev =>
+      prev === heroImages.length - 1 ? 0 : prev + 1,
+    );
+    startAutoSlide();
+  };
+
+  const prevImage = () => {
+    stopAutoSlide();
+    setCurrentImageIndex(prev =>
+      prev === 0 ? heroImages.length - 1 : prev - 1,
+    );
+    startAutoSlide();
+  };
 
   const benefits = [
     {
@@ -61,17 +98,9 @@ const IntroductionBookingDoctor = () => {
     },
   ];
 
-  const handleDotPress = index => {
-    setCurrentImageIndex(index);
-  };
-
-  const handleBack = () => {
-    navigation.goBack();
-  };
+  const handleBack = () => navigation.goBack();
 
   const handleContinue = () => {
-    // Khi bắt đầu đặt lịch -> chuyển sang màn danh sách người thân
-    // Truyền message để FamilyListFunctionScreen hiển thị tiêu đề phù hợp
     navigation.navigate('FamilyListFunctionScreen', {
       message: 'Chức năng đặt lịch bác sĩ',
       flowType: 'doctorBooking',
@@ -87,6 +116,8 @@ const IntroductionBookingDoctor = () => {
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Icon name="arrow-back" size={24} color="#ffffff" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Giới thiệu đặt lịch bác sĩ</Text>
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView
@@ -94,10 +125,15 @@ const IntroductionBookingDoctor = () => {
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
       >
-        {/* Hero / Doctor Illustration */}
+        {/* HERO AREA */}
         <View style={styles.doctorCard}>
           <View style={styles.imageContainer}>
-            <Image source={heroImages[currentImageIndex]} style={styles.doctorImage} />
+            <Image
+              source={heroImages[currentImageIndex]}
+              style={styles.doctorImage}
+            />
+
+            {/* 🩺 Icon */}
             <View style={styles.stethoscopeIcon}>
               <MaterialCommunityIcons
                 name="stethoscope"
@@ -105,9 +141,18 @@ const IntroductionBookingDoctor = () => {
                 color="#3b82f6"
               />
             </View>
+
+            {/* ▶ NEXT / PREV BUTTONS */}
+            <TouchableOpacity style={styles.leftArrow} onPress={prevImage}>
+              <Icon name="chevron-back" size={28} color="#ffffff" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.rightArrow} onPress={nextImage}>
+              <Icon name="chevron-forward" size={28} color="#ffffff" />
+            </TouchableOpacity>
           </View>
 
-          {/* Image Indicators */}
+          {/* ●●● Indicators */}
           <View style={styles.dotsContainer}>
             {heroImages.map((_, index) => (
               <TouchableOpacity
@@ -116,12 +161,12 @@ const IntroductionBookingDoctor = () => {
                   styles.dot,
                   currentImageIndex === index && styles.activeDot,
                 ]}
-                onPress={() => handleDotPress(index)}
+                onPress={() => setCurrentImageIndex(index)}
               />
             ))}
           </View>
 
-          {/* Intro text */}
+          {/* Introduction Text */}
           <View style={styles.doctorInfo}>
             <Text style={styles.doctorTitle}>
               Đặt lịch với Bác sĩ cho Người Cao Tuổi
@@ -135,7 +180,7 @@ const IntroductionBookingDoctor = () => {
           </View>
         </View>
 
-        {/* Benefits Section */}
+        {/* BENEFITS */}
         <View style={styles.benefitsSection}>
           <View style={styles.benefitsHeader}>
             <Icon name="star" size={20} color="#FFD700" />
@@ -162,26 +207,20 @@ const IntroductionBookingDoctor = () => {
           </View>
         </View>
 
-        {/* Important Notice */}
+        {/* NOTICE */}
         <View style={styles.noticeSection}>
           <View style={styles.noticeContent}>
             <Icon name="alert-circle" size={20} color="#ffffff" />
             <Text style={styles.noticeText}>
-              Vui lòng chuẩn bị thông tin sức khỏe, thuốc đang dùng và kết quả
-              xét nghiệm gần đây (nếu có) để buổi tư vấn với bác sĩ hiệu quả hơn.
+              Vui lòng chuẩn bị thông tin sức khỏe, thuốc đang dùng và kết quả xét nghiệm gần đây (nếu có) để buổi tư vấn với bác sĩ hiệu quả hơn.
             </Text>
           </View>
         </View>
 
-        {/* Continue Button */}
+        {/* BUTTON */}
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
           <Text style={styles.continueButtonText}>Bắt đầu đặt lịch</Text>
-          <Icon
-            name="arrow-forward"
-            size={16}
-            color="#ffffff"
-            style={styles.buttonIcon}
-          />
+          <Icon name="arrow-forward" size={16} color="#ffffff" style={styles.buttonIcon} />
         </TouchableOpacity>
 
         <View style={{ height: 24 }} />
@@ -190,17 +229,24 @@ const IntroductionBookingDoctor = () => {
   );
 };
 
+/* ==========================
+       💅  STYLES 
+========================== */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
+  container: { flex: 1, backgroundColor: '#F8F9FA' },
   header: {
     backgroundColor: '#4F7EFF',
+    height: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    height: 60,
-    justifyContent: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: '700',
   },
   backButton: {
     width: 32,
@@ -208,10 +254,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
+  content: { flex: 1, paddingHorizontal: 16 },
   doctorCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
@@ -219,15 +262,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 16,
   },
-  imageContainer: {
-    position: 'relative',
-    marginBottom: 12,
-  },
+  imageContainer: { position: 'relative', marginBottom: 12 },
   doctorImage: {
     width: '100%',
     height: 280,
     borderRadius: 12,
-    backgroundColor: '#E8EEF8',
   },
   stethoscopeIcon: {
     position: 'absolute',
@@ -239,12 +278,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
     elevation: 3,
   },
+
+  /* ◀ Arrow buttons ▶ */
+  leftArrow: {
+    position: 'absolute',
+    top: '50%',
+    left: 10,
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: '#00000060',
+  },
+  rightArrow: {
+    position: 'absolute',
+    top: '50%',
+    right: 10,
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: '#00000060',
+  },
+
   dotsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -255,11 +309,10 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#D0D0D0',
   },
-  activeDot: {
-    backgroundColor: '#4F7EFF',
-  },
+  activeDot: { backgroundColor: '#4F7EFF' },
+
   doctorInfo: {
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
@@ -268,36 +321,24 @@ const styles = StyleSheet.create({
   doctorTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#000000',
+    color: '#000',
     marginBottom: 8,
   },
-  doctorDescription: {
-    fontSize: 14,
-    color: '#666666',
-    lineHeight: 20,
-  },
-  benefitsSection: {
-    marginBottom: 16,
-  },
-  benefitsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
+  doctorDescription: { fontSize: 14, color: '#666', lineHeight: 20 },
+
+  benefitsSection: { marginBottom: 16 },
+  benefitsHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   benefitsTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000000',
     marginLeft: 8,
+    color: '#000',
   },
-  benefitsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
+
+  benefitsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   benefitCard: {
     width: '48%',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -310,56 +351,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 12,
   },
-  benefitTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#000000',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
+  benefitTitle: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   benefitDescription: {
     fontSize: 12,
-    color: '#666666',
+    color: '#666',
     textAlign: 'center',
     lineHeight: 16,
   },
+
   noticeSection: {
     backgroundColor: '#FF9800',
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
   },
-  noticeContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flex: 1,
-    gap: 12,
-  },
-  noticeText: {
-    fontSize: 14,
-    color: '#ffffff',
-    lineHeight: 20,
-    flex: 1,
-    marginTop: 2,
-  },
+  noticeContent: { flexDirection: 'row', gap: 12 },
+  noticeText: { color: '#fff', fontSize: 14, flex: 1, lineHeight: 20 },
+
   continueButton: {
     backgroundColor: '#4F7EFF',
     borderRadius: 8,
     paddingVertical: 16,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    alignItems: 'center',
   },
-  continueButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginRight: 8,
-  },
-  buttonIcon: {
-    marginLeft: 4,
-  },
+  continueButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  buttonIcon: { marginLeft: 6 },
 });
 
 export default IntroductionBookingDoctor;

@@ -1,3 +1,4 @@
+// src/screens/doctorBooking/HealthPackageScheduleScreen.jsx
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useMemo, useState } from 'react';
 import {
@@ -13,7 +14,8 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { doctorBookingService } from '../../services/doctorBookingService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const DURATIONS = [
+// Fallback mặc định nếu package không có thông tin duration
+const DEFAULT_DURATIONS = [
   { label: '1 tháng', days: 30 },
   { label: '3 tháng', days: 90 },
   { label: '6 tháng', days: 180 },
@@ -41,20 +43,73 @@ const addDays = (date, days) => {
   return d;
 };
 
+// Helper tạo label từ số ngày
+const makeDurationLabel = days => {
+  const d = Number(days);
+  if (!d || Number.isNaN(d)) return '';
+  if (d % 30 === 0) {
+    return `${d / 30} tháng`;
+  }
+  return `${d} ngày`;
+};
+
 const HealthPackageScheduleScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
 
-  // ✅ Nhận lại cả elderly + family từ màn trước
   const { elderly, family, healthPackage } = route.params || {};
 
   React.useEffect(() => {
     console.log(TAG, 'route.params =', route.params);
-  }, [route.params]);
+    console.log(TAG, 'healthPackage =', healthPackage);
+  }, [route.params, healthPackage]);
 
   const [startDate] = useState(new Date());
-  const [selectedDuration, setSelectedDuration] = useState(DURATIONS[0]);
   const [submitting, setSubmitting] = useState(false);
+
+  // ===== LẤY DURATION TỪ DATABASE =====
+  const durationOptions = useMemo(() => {
+    // 1) Nếu backend trả mảng durations
+    if (
+      healthPackage &&
+      Array.isArray(healthPackage.durations) &&
+      healthPackage.durations.length
+    ) {
+      const opts = healthPackage.durations
+        .map(raw => {
+          const days = Number(raw);
+          if (!days || Number.isNaN(days)) return null;
+          return {
+            days,
+            label: makeDurationLabel(days),
+          };
+        })
+        .filter(Boolean);
+
+      if (opts.length) return opts;
+    }
+
+    // 2) Nếu backend chỉ có 1 duration
+    if (healthPackage?.durationDays) {
+      const days = Number(healthPackage.durationDays);
+      if (days) {
+        return [{ days, label: makeDurationLabel(days) }];
+      }
+    }
+
+    // 3) Không có → fallback
+    return DEFAULT_DURATIONS;
+  }, [healthPackage]);
+
+  const [selectedDuration, setSelectedDuration] = useState(() => {
+    return durationOptions[0] || DEFAULT_DURATIONS[0];
+  });
+
+  React.useEffect(() => {
+    if (durationOptions.length) {
+      setSelectedDuration(durationOptions[0]);
+    }
+  }, [durationOptions]);
 
   const endDate = useMemo(
     () => addDays(startDate, selectedDuration.days),
@@ -63,33 +118,21 @@ const HealthPackageScheduleScreen = () => {
 
   const estimatedPrice = useMemo(() => {
     const base = Number(healthPackage?.price || 0);
-    if (!base || Number.isNaN(base)) return null;
-    const months = selectedDuration.days / 30;
-    return base * months;
+    if (!base) return null;
+    return base * (selectedDuration.days / 30);
   }, [healthPackage, selectedDuration.days]);
 
-  const handleBack = () => {
-    navigation.goBack();
-  };
+  const handleBack = () => navigation.goBack();
 
-  const handleOpenDatePicker = () => {
-    // TODO: Tuỳ bạn tích hợp DatePicker sau
-  };
+  const handleOpenDatePicker = () => {};
 
-  // ======= SỬ DỤNG SERVICE ĐỂ LẤY DANH SÁCH BÁC SĨ =========
+  // ========== CALL API LẤY BÁC SĨ ==========
   const handleContinue = async () => {
     const healthPackageId = healthPackage?._id || healthPackage?.id;
-    if (!healthPackageId) {
-      Alert.alert(
-        'Thông báo',
-        'Thiếu thông tin gói sức khỏe. Vui lòng quay lại và chọn lại gói.',
-      );
-      return;
-    }
 
-    if (!elderly || !elderly._id) {
-      console.warn(TAG, 'Missing elderly in params', { elderly });
-      // vẫn cho đi tiếp nhưng log ra để debug
+    if (!healthPackageId) {
+      Alert.alert('Thông báo', 'Thiếu thông tin gói sức khỏe.');
+      return;
     }
 
     const startDateStr = formatDate(startDate);
@@ -104,55 +147,31 @@ const HealthPackageScheduleScreen = () => {
       });
 
       if (!res?.success) {
-        Alert.alert(
-          'Không thể tải bác sĩ',
-          res?.message || 'Vui lòng thử lại sau.',
-        );
+        Alert.alert('Không thể tải bác sĩ', res?.message || 'Vui lòng thử lại');
         return;
       }
 
       const doctors =
-        (Array.isArray(res.data) && res.data) ||
-        (Array.isArray(res.data?.doctors) && res.data.doctors) ||
-        [];
+        Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res?.data?.doctors)
+          ? res.data.doctors
+          : [];
 
-      // if (!doctors.length) {
-      //   Alert.alert(
-      //     'Thông báo',
-      //     'Hiện chưa có bác sĩ phù hợp cho gói và thời gian này.',
-      //   );
-      // }
-
-      console.log(TAG, 'navigate DoctorListScreen with:', {
+      navigation.navigate('DoctorListScreen', {
         elderly,
         family,
-        healthPackage,
-        durationDays: selectedDuration.days,
-        startDate: startDateStr,
-        doctorsLength: doctors.length,
-      });
-
-      // Điều hướng sang màn chọn bác sĩ, truyền đầy đủ thông tin
-      navigation.navigate('DoctorListScreen', {
-        elderly,                           // ✅ giữ object người được khám
-        family,                            // ✅ truyền luôn người đăng ký
         healthPackage,
         durationDays: selectedDuration.days,
         startDate: startDateStr,
         availableDoctors: doctors,
       });
     } catch (e) {
-      // eslint-disable-next-line no-console
-      console.log('[HealthPackageScheduleScreen][handleContinue] ERROR', e);
-      Alert.alert(
-        'Lỗi kết nối',
-        'Không thể tải danh sách bác sĩ. Vui lòng thử lại.',
-      );
+      Alert.alert('Lỗi kết nối', 'Không thể tải danh sách bác sĩ.');
     } finally {
       setSubmitting(false);
     }
   };
-  // =========================================================
 
   const packageName =
     healthPackage?.title || healthPackage?.name || 'Gói sức khỏe';
@@ -170,7 +189,7 @@ const HealthPackageScheduleScreen = () => {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Step indicator: bước 2 đang active */}
+      {/* Steps */}
       <View style={styles.stepContainer}>
         <View style={styles.stepItem}>
           <Text style={styles.stepLabel}>1. Chọn gói sức khỏe</Text>
@@ -192,16 +211,17 @@ const HealthPackageScheduleScreen = () => {
           <Text style={styles.selectedValue}>{packageName}</Text>
         </View>
 
-        {/* Chọn gói dịch vụ (thời lượng) */}
+        {/* Duration */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Chọn gói dịch vụ</Text>
           <View style={styles.durationTabs}>
-            {DURATIONS.map(d => (
+            {durationOptions.map(d => (
               <TouchableOpacity
                 key={d.days}
                 style={[
                   styles.durationTab,
-                  selectedDuration.days === d.days && styles.durationTabActive,
+                  selectedDuration.days === d.days &&
+                    styles.durationTabActive,
                 ]}
                 onPress={() => setSelectedDuration(d)}
                 disabled={submitting}
@@ -220,7 +240,7 @@ const HealthPackageScheduleScreen = () => {
           </View>
         </View>
 
-        {/* Chọn ngày bắt đầu */}
+        {/* Date */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Chọn ngày bắt đầu</Text>
 
@@ -249,7 +269,7 @@ const HealthPackageScheduleScreen = () => {
           </View>
         </View>
 
-        {/* Giá tạm tính */}
+        {/* Price */}
         <View style={styles.section}>
           <Text style={styles.priceLabel}>Giá tạm tính:</Text>
           <Text style={styles.priceValue}>
@@ -259,32 +279,34 @@ const HealthPackageScheduleScreen = () => {
           </Text>
         </View>
 
-        {/* Quy tắc đặt gói */}
+        {/* Rules */}
         <View style={styles.rulesCard}>
           <Text style={styles.rulesTitle}>Quy tắc đặt gói</Text>
+
           <View style={styles.bulletRow}>
             <Text style={styles.bulletDot}>{'\u2022'}</Text>
             <Text style={styles.bulletText}>
               Không chọn ngày bắt đầu trong quá khứ.
             </Text>
           </View>
+
           <View style={styles.bulletRow}>
             <Text style={styles.bulletDot}>{'\u2022'}</Text>
             <Text style={styles.bulletText}>
-              Gói có hiệu lực từ 00:00 ngày bắt đầu tới 23:59 ngày kết thúc
-              (giờ Việt Nam).
+              Gói có hiệu lực từ 00:00 ngày bắt đầu đến 23:59 ngày kết thúc.
             </Text>
           </View>
+
           <View style={styles.bulletRow}>
             <Text style={styles.bulletDot}>{'\u2022'}</Text>
             <Text style={styles.bulletText}>
-              Trong thời gian gói hiệu lực, bác sĩ được đặt riêng cho người cao
-              tuổi này.
+              Trong thời gian hiệu lực, bác sĩ được đặt riêng cho người cao
+              tuổi.
             </Text>
           </View>
         </View>
 
-        {/* Button tiếp tục */}
+        {/* Continue */}
         <TouchableOpacity
           style={styles.primaryButton}
           onPress={handleContinue}
@@ -301,11 +323,10 @@ const HealthPackageScheduleScreen = () => {
 
 export default HealthPackageScheduleScreen;
 
+
+// Styles giữ nguyên y chang
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-  },
+  container: { flex: 1, backgroundColor: '#F3F4F6' },
   header: {
     backgroundColor: '#4F7EFF',
     height: 56,
