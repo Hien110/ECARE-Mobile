@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
@@ -59,7 +60,7 @@ class FloatingCheckinService : Service() {
     private val watchIntervalMs = 60_000L
     private var watching = false
 
-    // Auto-hide full-screen panel sau 20 phút
+    // Auto-hide full-screen panel (giữ cấu trúc, không dùng auto-hide nữa)
     private val fullScreenTimeoutMs = 20 * 60 * 1000L
     private val autoHideHandler = Handler(Looper.getMainLooper())
     private var autoHideRunnable: Runnable? = null
@@ -67,6 +68,11 @@ class FloatingCheckinService : Service() {
     // Âm thanh & rung
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
+
+    // Hẹn giờ dừng chuông + rung sau 1 phút
+    private val alertFeedbackHandler = Handler(Looper.getMainLooper())
+    private var stopFeedbackRunnable: Runnable? = null
+    private val feedbackDurationMs = 60_000L
 
     override fun onCreate() {
         super.onCreate()
@@ -145,81 +151,126 @@ class FloatingCheckinService : Service() {
             gravity = Gravity.CENTER
         }
 
-        // NỀN TỐI kiểu màn báo thức
+        // Nền gradient: nửa trên xanh lá, nửa dưới đỏ (đậm hơn một chút)
+        val gradient = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                Color.parseColor("#A7F3D0"), // xanh lá nhạt nhưng đậm hơn D1FAE5
+                Color.parseColor("#FECACA")  // đỏ nhạt nhưng đậm hơn FEE2E2
+            )
+        )
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#050816")) // tím than đậm
+            background = gradient
             gravity = Gravity.CENTER
             setPadding(dp(24), dp(24), dp(24), dp(24))
         }
 
-        // Khối nội dung ở giữa
+        // Khối nội dung chiếm toàn màn, để chia top/bottom bằng weight
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
         }
 
-        // Tiêu đề to, dễ đọc
+        // Tiêu đề ở trên cùng, căn giữa
         val title = TextView(this).apply {
             text = "Nhắc kiểm tra an toàn"
-            setTextColor(Color.WHITE)
-            textSize = 24f
+            setTextColor(Color.parseColor("#111827"))
+            textSize = 34f
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(16))
         }
         content.addView(title)
 
-        // Mô tả ngắn cho bác
-        val msg = TextView(this).apply {
-            text = "Bác vuốt để báo hôm nay tình trạng của mình cho người thân biết."
-            setTextColor(Color.parseColor("#E5E7EB")) // xám nhạt
-            textSize = 18f
-            setPadding(0, dp(12), 0, dp(12))
+        // Vùng chia 3 phần: Bác khỏe (top) – nút vuốt (giữa) – Bác không khỏe (bottom)
+        val centerContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
         }
-        content.addView(msg)
 
-        // Hướng dẫn chi tiết
-        val guide = TextView(this).apply {
-            text = "• Vuốt LÊN: Hôm nay bác ổn\n• Vuốt XUỐNG: Bác không ổn về sức khỏe"
-            setTextColor(Color.parseColor("#9CA3AF"))
-            textSize = 16f
+        // Text "Bác khỏe" – nửa trên (vùng xanh)
+        val healthyText = TextView(this).apply {
+            text = "Bác khỏe"
+            setTextColor(Color.parseColor("#047857")) // xanh đậm hơn
+            textSize = 38f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            ).apply {
+                bottomMargin = dp(8)
+            }
         }
-        content.addView(guide)
+        centerContainer.addView(healthyText)
 
-        // Nút VUỐT – nhỏ gọn, chữ rất to
+        // Vùng giữa chứa nút VUỐT (chiều cao riêng, không weight)
+        val gestureWrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(8)
+                bottomMargin = dp(8)
+            }
+        }
+
+        // Nút VUỐT – kéo dài theo chiều ngang, chữ rất to
         val gestureArea = TextView(this).apply {
             text = "VUỐT"
             setTextColor(Color.WHITE)
-            textSize = 30f                    // chữ lớn cho người cao tuổi
+            textSize = 40f
             gravity = Gravity.CENTER
-            setPadding(dp(40), dp(16), dp(40), dp(16))
+            // Padding ngang lớn hơn + MATCH_PARENT để swipe area rộng
+            setPadding(dp(32), dp(24), dp(32), dp(24))
 
             val bg = resources.getDrawable(R.drawable.button_background, null)
-            bg.setTint(Color.parseColor("#F59E0B")) // cam ấm giống nút Snooze
+            bg.setTint(Color.parseColor("#F59E0B")) // cam ấm
             background = bg
         }
         val gestureParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.MATCH_PARENT,   // full chiều ngang
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply {
-            topMargin = dp(32)
-            bottomMargin = dp(8)
             gravity = Gravity.CENTER_HORIZONTAL
         }
         gestureArea.layoutParams = gestureParams
-        content.addView(gestureArea)
+        gestureWrapper.addView(gestureArea)
+        centerContainer.addView(gestureWrapper)
 
-        // Gợi ý nhỏ phía dưới
-        val hint = TextView(this).apply {
-            text = "Màn hình sẽ tự tắt nếu bác không vuốt trong 20 phút."
-            setTextColor(Color.parseColor("#9CA3AF"))
-            textSize = 14f
-            setPadding(0, dp(16), 0, 0)
+        // Text "Bác không khỏe" – nửa dưới (vùng đỏ)
+        val unwellText = TextView(this).apply {
+            text = "Bác không khỏe"
+            setTextColor(Color.parseColor("#B91C1C")) // đỏ đậm hơn
+            textSize = 38f
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            ).apply {
+                topMargin = dp(8)
+            }
         }
-        content.addView(hint)
+        centerContainer.addView(unwellText)
 
+        content.addView(centerContainer)
         root.addView(content)
 
-        // Gesture kéo theo tay (vuốt lên / xuống)
-        gestureArea.setOnTouchListener(object : View.OnTouchListener {
+        // ===== GESTURE TOÀN MÀN HÌNH: vuốt ở đâu cũng điều khiển nút VUỐT =====
+        root.setOnTouchListener(object : View.OnTouchListener {
             var startY = 0f
             var originalTranslationY = 0f
 
@@ -227,7 +278,7 @@ class FloatingCheckinService : Service() {
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         startY = event.rawY
-                        originalTranslationY = v.translationY
+                        originalTranslationY = gestureArea.translationY
                         return true
                     }
 
@@ -235,7 +286,8 @@ class FloatingCheckinService : Service() {
                         val dy = event.rawY - startY
                         val maxOffset = dp(80).toFloat()
                         val newTrans = (originalTranslationY + dy).coerceIn(-maxOffset, maxOffset)
-                        v.translationY = newTrans
+                        // chỉ di chuyển nút, không di chuyển nền
+                        gestureArea.translationY = newTrans
                         return true
                     }
 
@@ -245,29 +297,32 @@ class FloatingCheckinService : Service() {
 
                         when {
                             dy < -threshold -> {
-                                v.animate()
-                                    .translationY(originalTranslationY - dp(100))
+                                // Vuốt lên: bác khỏe
+                                gestureArea.animate()
+                                    .translationY(originalTranslationY - dp(60))
                                     .setDuration(150)
                                     .withEndAction {
                                         onSwipeChoice("safe")
-                                        v.translationY = originalTranslationY
+                                        gestureArea.translationY = originalTranslationY
                                     }
                                     .start()
                             }
 
                             dy > threshold -> {
-                                v.animate()
-                                    .translationY(originalTranslationY + dp(100))
+                                // Vuốt xuống: bác không khỏe
+                                gestureArea.animate()
+                                    .translationY(originalTranslationY + dp(60))
                                     .setDuration(150)
                                     .withEndAction {
                                         onSwipeChoice("phys_unwell")
-                                        v.translationY = originalTranslationY
+                                        gestureArea.translationY = originalTranslationY
                                     }
                                     .start()
                             }
 
                             else -> {
-                                v.animate()
+                                // Không đủ độ vuốt → đưa nút về vị trí cũ
+                                gestureArea.animate()
                                     .translationY(originalTranslationY)
                                     .setDuration(150)
                                     .start()
@@ -282,10 +337,11 @@ class FloatingCheckinService : Service() {
 
         overlayView = root
         wmLocal.addView(root, lp)
-        Log.d(TAG, "🎉 Alert panel shown (alarm-style)")
+        Log.d(TAG, "🎉 Alert panel shown (green/red background with centered texts)")
 
+        // Bắt đầu rung + chuông (1 phút), màn hình giữ nguyên
         startAlertFeedback()
-        scheduleAutoHide()
+        // KHÔNG auto-hide panel nữa, chỉ khi bác vuốt mới ẩn
     }
 
     /** Ẩn màn hình cảnh báo */
@@ -324,7 +380,7 @@ class FloatingCheckinService : Service() {
                         },
                         Toast.LENGTH_SHORT
                     ).show()
-                    // Vuốt xong → coi như đã check-in, backend sẽ không nhắc nữa
+                    // Vuốt xong → đánh dấu đã check-in cho KHUNG GIỜ HIỆN TẠI
                     setLocalCheckinNow()
                     hideAlertPanel()
                 } else {
@@ -344,11 +400,15 @@ class FloatingCheckinService : Service() {
 
     private fun startAlertFeedback() {
         try {
+            // Hủy hẹn cũ nếu có
+            stopFeedbackRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+            stopFeedbackRunnable = null
+
             vibrator?.let { vib ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     val effect = VibrationEffect.createWaveform(
                         longArrayOf(0, 500, 500),
-                        0
+                        0 // lặp
                     )
                     vib.vibrate(effect)
                 } else {
@@ -363,12 +423,22 @@ class FloatingCheckinService : Service() {
                 ringtone = RingtoneManager.getRingtone(applicationContext, uri)
             }
             ringtone?.play()
+
+            // Hẹn dừng chuông + rung sau 1 phút
+            stopFeedbackRunnable = Runnable {
+                stopAlertFeedback()
+            }
+            alertFeedbackHandler.postDelayed(stopFeedbackRunnable!!, feedbackDurationMs)
         } catch (e: Exception) {
             Log.w(TAG, "startAlertFeedback error: ${e.message}")
         }
     }
 
     private fun stopAlertFeedback() {
+        // Hủy hẹn dừng nếu còn
+        stopFeedbackRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+        stopFeedbackRunnable = null
+
         try {
             vibrator?.cancel()
         } catch (_: Exception) {
@@ -380,12 +450,13 @@ class FloatingCheckinService : Service() {
     }
 
     private fun scheduleAutoHide() {
+        // Giữ nguyên hàm để không phá cấu trúc, nhưng không dùng nữa
         cancelAutoHide()
         autoHideRunnable = Runnable {
-            Log.d(TAG, "⏱ Auto-hide alert panel after timeout")
+            Log.d(TAG, "⏱ Auto-hide alert panel after timeout (unused)")
             hideAlertPanel()
         }
-        autoHideHandler.postDelayed(autoHideRunnable!!, fullScreenTimeoutMs)
+        // Không postDelayed ở đây
     }
 
     private fun cancelAutoHide() {
@@ -576,11 +647,14 @@ class FloatingCheckinService : Service() {
     }
 
     /**
-     * Logic hiển thị:
-     *  - Nếu đã check-in → ẩn đến 07:00 sáng hôm sau
-     *  - Nếu chưa check-in → chỉ hiển thị khi:
-     *      + Đã qua ít nhất một mốc cửa sổ trong ngày (07:00 / 15:00 / 19:00)
-     *      + Và chưa có check-in sau mốc đó
+     * Logic hiển thị mới (theo từng khung giờ):
+     *  - Luôn xét các mốc 07:00 / 15:00 / 19:00 của NGÀY HIỆN TẠI.
+     *  - Lấy mốc gần nhất mà now >= mốc đó (activeStart).
+     *  - Nếu:
+     *      + lastCheckinAt == null  → HIỂN THỊ.
+     *      + lastCheckinAt < activeStart → HIỂN THỊ (chưa vuốt cho khung giờ này).
+     *      + lastCheckinAt >= activeStart → KHÔNG HIỂN THỊ (đã vuốt cho khung giờ này).
+     *  => Như vậy: vuốt xong 7h vẫn hiện lại 15h, 19h, và sáng hôm sau 7h lại hiện.
      */
     private fun shouldShowNow(): Boolean {
         if (token.isNullOrEmpty() || baseUrl.isNullOrEmpty()) {
@@ -591,26 +665,7 @@ class FloatingCheckinService : Service() {
         val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Asia/Ho_Chi_Minh") }
         val now = ZonedDateTime.now(zone)
 
-        val lastMs = lastCheckinAt ?: getLocalLastCheckinMs()
-        if (lastMs != null) {
-            val last = Instant.ofEpochMilli(lastMs).atZone(zone)
-
-            val expiry =
-                last.toLocalDate().plusDays(1).atTime(7, 0).atZone(zone)
-
-            if (now.isBefore(expiry)) {
-                Log.d(
-                    TAG, """
-                    REASON: Đã check-in và còn hiệu lực tới 07:00 hôm sau
-                    lastCheckinAt=$last
-                    expiry=$expiry
-                    now=$now
-                """.trimIndent()
-                )
-                return false
-            }
-        }
-
+        // Tìm mốc khung giờ gần nhất trong ngày hiện tại mà now >= mốc đó
         var activeStart: ZonedDateTime? = null
         for (hm in DEADMAN_WINDOWS) {
             val parts = hm.split(":")
@@ -630,11 +685,29 @@ class FloatingCheckinService : Service() {
             return false
         }
 
-        Log.d(
-            TAG,
-            "REASON: HIỂN THỊ — now=$now sau mốc=$activeStart và không có check-in còn hiệu lực."
-        )
-        return true
+        val lastMs = lastCheckinAt ?: getLocalLastCheckinMs()
+        if (lastMs == null) {
+            Log.d(TAG, "REASON: chưa từng check-in → hiển thị")
+            return true
+        }
+
+        val last = Instant.ofEpochMilli(lastMs).atZone(zone)
+
+        return if (last.isBefore(activeStart)) {
+            Log.d(
+                TAG, """
+                REASON: lastCheckinAt=$last < activeStart=$activeStart → hiển thị cho khung giờ mới
+            """.trimIndent()
+            )
+            true
+        } else {
+            Log.d(
+                TAG, """
+                REASON: lastCheckinAt=$last >= activeStart=$activeStart → đã check-in cho khung giờ này, không hiển thị
+            """.trimIndent()
+            )
+            false
+        }
     }
 
     // ============================================================
@@ -667,7 +740,7 @@ class FloatingCheckinService : Service() {
             .takeIf { it > 0 } else null
     }
 
-    /** Ghi thời điểm check-in (khi vuốt) → ẩn tới 7h sáng hôm sau */
+    /** Ghi thời điểm check-in (khi vuốt) → dùng để tính đã vuốt cho khung giờ hiện tại */
     private fun setLocalCheckinNow() {
         val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Asia/Ho_Chi_Minh") }
         val nowMs = Instant.now().toEpochMilli()
