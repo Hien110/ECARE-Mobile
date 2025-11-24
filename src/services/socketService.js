@@ -158,6 +158,32 @@ class SocketService {
       this.emit('sos:new', data);
     });
 
+    // 🆕 SOS Call events
+    this.socket.on('sos_call_request', (data) => {
+      console.log('🆘📞 Incoming SOS call:', data);
+      this.emit('sos_call_request', data);
+    });
+
+    this.socket.on('sos_call_timeout', (data) => {
+      console.log('⏰ SOS call timeout:', data);
+      this.emit('sos_call_timeout', data);
+    });
+
+    this.socket.on('sos_call_cancelled', (data) => {
+      console.log('🚫 SOS call cancelled:', data);
+      this.emit('sos_call_cancelled', data);
+    });
+
+    this.socket.on('sos_call_answered', (data) => {
+      console.log('✅ SOS call answered by someone:', data);
+      this.emit('sos_call_answered', data);
+    });
+
+    this.socket.on('sos_call_no_answer', (data) => {
+      console.log('❌ SOS call - no one answered:', data);
+      this.emit('sos_call_no_answer', data);
+    });
+
     // Video call events
     this.socket.on('video_call_request', (data) => {
       console.log('📞 Incoming video call:', data);

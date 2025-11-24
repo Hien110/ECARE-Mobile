@@ -26,7 +26,7 @@ const VideoCallScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  const { conversationId, otherParticipant, callId, isIncoming = false } = route.params || {};
+  const { conversationId, otherParticipant, callId, isIncoming = false, isSOSCall = false, sosId } = route.params || {};
 
   const [localVideoEnabled, setLocalVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
@@ -97,6 +97,15 @@ const VideoCallScreen = () => {
 
   // Lắng nghe socket events cho call
   useEffect(() => {
+    // 🆕 Handler cho SOS call answered (để clear waiting timer cho elderly)
+    const handleSOSCallAnswered = (data) => {
+      if (data.callId === callId && isSOSCall) {
+        console.log('✅ SOS call answered, clearing waiting timer');
+        setWaitingForResponse(false);
+        setIsConnecting(true);
+      }
+    };
+
     if (!isIncoming) {
       // Nếu là caller, lắng nghe response từ callee
       const handleCallAccepted = (data) => {
@@ -148,13 +157,21 @@ const VideoCallScreen = () => {
       socketService.on('video_call_rejected', handleCallRejected);
       socketService.on('video_call_busy', handleCallBusy);
 
+      // 🆕 Register listener cho SOS call (chỉ khi là SOS caller - elderly)
+      if (isSOSCall) {
+        socketService.on('sos_call_answered', handleSOSCallAnswered);
+      }
+
       return () => {
         socketService.off('video_call_accepted', handleCallAccepted);
         socketService.off('video_call_rejected', handleCallRejected);
         socketService.off('video_call_busy', handleCallBusy);
+        if (isSOSCall) {
+          socketService.off('sos_call_answered', handleSOSCallAnswered);
+        }
       };
     }
-  }, [callId, isIncoming]);
+  }, [callId, isIncoming, isSOSCall]);
 
   // Lắng nghe events kết thúc cuộc gọi (cho cả caller và callee)
   useEffect(() => {
@@ -303,8 +320,10 @@ const VideoCallScreen = () => {
           setIsJoined(true);
         },
         onUserJoined: (connection, remoteUid, elapsed) => {
+          console.log('👤 Remote user joined:', remoteUid);
           setRemoteUid(remoteUid);
           setIsConnecting(false);
+          setWaitingForResponse(false); // 🆕 Clear waiting timer khi remote user join
           engineRef.current?.setRemoteVideoStreamType(remoteUid, 0);
         },
         onUserOffline: (connection, remoteUid, reason) => {
@@ -463,7 +482,8 @@ const VideoCallScreen = () => {
         socketService.endVideoCall({
           callId,
           conversationId,
-          otherUserId
+          otherUserId,
+          sosId: isSOSCall ? sosId : undefined // 🆕 Thêm sosId nếu là SOS call
         });
         CallService.endCall();
       }

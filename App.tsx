@@ -50,6 +50,50 @@ export default function App() {
     const unsubscribe = notifee.onForegroundEvent(async ({ type, detail }) => {
       const { notification, pressAction } = detail;
       
+      // 🆕 Xử lý SOS call notification
+      if (type === EventType.ACTION_PRESS && notification?.data?.type === 'sos_call') {
+        const { sosId, callId, requesterId, requesterName, requesterAvatar, requesterPhone, recipientIndex, totalRecipients } = notification.data;
+        
+        if (pressAction?.id === 'ignore') {
+          return;
+        }
+        
+        if (pressAction?.id === 'accept_sos_call') {
+          // Gửi accept signal
+          socketService.socket.emit('sos_call_accepted', {
+            sosId: String(sosId),
+            callId: String(callId),
+          });
+          
+          // Navigate đến VideoCallScreen với SOS context
+          if (navigationRef.current) {
+            navigationRef.current.navigate('VideoCall', {
+              callId: String(callId),
+              conversationId: null,
+              otherParticipant: {
+                _id: String(requesterId),
+                fullName: String(requesterName),
+                avatar: String(requesterAvatar),
+                phoneNumber: String(requesterPhone),
+              },
+              isIncoming: true,
+              isSOSCall: true,
+              sosId: String(sosId),
+            });
+          }
+        } else if (pressAction?.id === 'reject_sos_call') {
+          // Gửi reject signal
+          socketService.socket.emit('sos_call_rejected', {
+            sosId: String(sosId),
+            callId: String(callId),
+          });
+        }
+        
+        // Dismiss notification
+        await notifee.cancelNotification(String(callId));
+        return;
+      }
+      
       // Xử lý khi user nhấn vào notification actions
       if (type === EventType.ACTION_PRESS && notification?.data?.type === 'video_call') {
         const { callId, conversationId, callerId, callerName, callerAvatar } = notification.data;

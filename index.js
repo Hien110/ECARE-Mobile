@@ -11,6 +11,32 @@ import { name as appName } from './app.json';
 // Register background handler for Firebase
 // This must be registered outside of the React component lifecycle
 messaging().setBackgroundMessageHandler(async remoteMessage => {
+  // 🆕 Xử lý SOS call notification khi app ở background
+  if (remoteMessage.data?.type === 'sos_call') {
+    console.log('🆘📞 Background: SOS call notification received');
+    
+    const CallNotificationService = require('./src/services/CallNotificationService').default;
+    
+    try {
+      await CallNotificationService.showSOSCallNotification({
+        sosId: remoteMessage.data.sosId,
+        callId: remoteMessage.data.callId,
+        requester: {
+          _id: remoteMessage.data.requesterId,
+          fullName: remoteMessage.data.requesterName,
+          avatar: remoteMessage.data.requesterAvatar,
+          phoneNumber: remoteMessage.data.requesterPhone,
+        },
+        recipientIndex: parseInt(remoteMessage.data.recipientIndex) || 1,
+        totalRecipients: parseInt(remoteMessage.data.totalRecipients) || 1,
+      });
+      console.log('✅ Background: SOS call notification displayed');
+    } catch (error) {
+      console.error('❌ Error showing background SOS call notification:', error);
+    }
+    return;
+  }
+  
   // Xử lý video call notification khi app ở background
   if (remoteMessage.data?.type === 'video_call') {
     
@@ -132,6 +158,48 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           callerId,
         }));
       }
+      
+      // RETURN để KHÔNG mở app
+      return;
+    }
+  }
+  
+  // 🆕 Xử lý khi user nhấn vào notification actions - SOS CALL
+  if (type === EventType.ACTION_PRESS && notification?.data?.type === 'sos_call') {
+    const { sosId, callId, requesterId, requesterName, requesterAvatar, requesterPhone, recipientIndex, totalRecipients } = notification.data;
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    
+    if (pressAction.id === 'ignore') {
+      return;
+    }
+    
+    if (pressAction.id === 'accept_sos_call') {
+      // Lưu action để xử lý sau khi app mở (cần socket connection)
+      await AsyncStorage.setItem('pending_sos_call_action', JSON.stringify({
+        action: 'accept',
+        sosId,
+        callId,
+        requesterId,
+        requesterName,
+        requesterAvatar,
+        requesterPhone,
+        recipientIndex,
+        totalRecipients,
+      }));
+      
+      // Dismiss notification
+      await notifee.cancelNotification(callId);
+      
+    } else if (pressAction.id === 'reject_sos_call') {
+      // Dismiss notification NGAY LẬP TỨC
+      await notifee.cancelNotification(callId);
+      
+      // GỬI REJECT qua socket (sẽ xử lý khi app mở)
+      await AsyncStorage.setItem('pending_sos_call_action', JSON.stringify({
+        action: 'reject',
+        sosId,
+        callId,
+      }));
       
       // RETURN để KHÔNG mở app
       return;

@@ -31,6 +31,7 @@ import MessagesListScreen from '../screens/Messages/MessagesListScreen';
 import ChatScreen from '../screens/Messages/ChatScreen.jsx';
 import VideoCallScreen from '../screens/VideoCall/VideoCallScreen.jsx';
 import IncomingCallScreen from '../screens/VideoCall/IncomingCallScreen.jsx';
+import SOSCallScreen from '../screens/SOS/SOSCallScreen.jsx'; // 🆕 SOS Call Screen
 import CreateIntroductionScreen from '../screens/Supporter/CreateIntroductionProfileScreen.jsx';
 import ViewIntroductionScreen from '../screens/Supporter/ViewIntroductionProfileScreen.jsx';
 import SupporterIntroGate from '../screens/Supporter/SupporterIntroGate.jsx';
@@ -84,6 +85,15 @@ const NavigationContent = () => {
       
       const { callId, conversationId, caller, callType } = data;
 
+      // Check if this call has been processed
+      if (CallService.hasProcessedCall(callId)) {
+        console.log('⚠️ Call already processed, ignoring:', callId);
+        return;
+      }
+
+      // Mark as processed
+      CallService.markCallAsProcessed(callId);
+
       // Lưu thông tin cuộc gọi vào CallService
       CallService.receiveCall({
         callId,
@@ -121,10 +131,71 @@ const NavigationContent = () => {
         message: message || '',
       });
     };
+
+    // 🆕 Đăng ký listener cho incoming SOS Call
+    const handleIncomingSOSCall = (data) => {
+      // CHỈ xử lý khi app đang ở FOREGROUND (active)
+      if (appState.current !== 'active') {
+        return;
+      }
+      
+      const { sosId, callId, requester, recipientIndex, totalRecipients } = data;
+
+      // Check if this call has been processed
+      if (CallService.hasProcessedCall(callId)) {
+        console.log('⚠️ SOS call already processed, ignoring:', callId);
+        return;
+      }
+
+      // Mark as processed
+      CallService.markCallAsProcessed(callId);
+
+      // Navigate đến SOSCallScreen
+      navigation.navigate('SOSCall', {
+        sosId,
+        callId,
+        requester: {
+          _id: requester._id,
+          fullName: requester.fullName,
+          avatar: requester.avatar,
+          phoneNumber: requester.phoneNumber,
+        },
+        recipientIndex: recipientIndex || 1,
+        totalRecipients: totalRecipients || 1,
+      });
+    };
+
+    // 🆕 Đăng ký listener khi SOS call được chấp nhận (cho requester/elderly)
+    const handleSOSCallAnswered = (data) => {
+      // CHỈ xử lý khi app đang ở FOREGROUND (active)
+      if (appState.current !== 'active') {
+        return;
+      }
+      
+      const { sosId, callId, recipient } = data;
+
+      console.log('✅ SOS call answered, navigating to VideoCall:', {
+        sosId,
+        callId,
+        recipientName: recipient?.fullName,
+      });
+
+      // Navigate elderly đến VideoCallScreen
+      navigation.navigate('VideoCall', {
+        callId,
+        conversationId: null, // SOS call không cần conversation
+        otherParticipant: recipient,
+        isIncoming: false, // Elderly là người gọi
+        isSOSCall: true,
+        sosId,
+      });
+    };
     
     // Đăng ký listener
     socketService.on('video_call_request', handleIncomingCall);
     socketService.on('sos:new', handleIncomingSOS);
+    socketService.on('sos_call_request', handleIncomingSOSCall); // 🆕
+    socketService.on('sos_call_answered', handleSOSCallAnswered); // 🆕 Elderly nhận khi có người accept
     
     // Theo dõi AppState để biết app foreground/background
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -135,6 +206,8 @@ const NavigationContent = () => {
     return () => {
       socketService.off('video_call_request', handleIncomingCall);
       socketService.off('sos:new', handleIncomingSOS);
+      socketService.off('sos_call_request', handleIncomingSOSCall); // 🆕
+      socketService.off('sos_call_answered', handleSOSCallAnswered); // 🆕
       subscription.remove();
     };
   }, [navigation]);
@@ -272,6 +345,14 @@ const NavigationContent = () => {
           options={{ 
             headerShown: false,
             presentation: 'modal', // Hiển thị như modal để overlay lên các màn hình khác
+          }}
+        />
+        <Stack.Screen
+          name="SOSCall"
+          component={SOSCallScreen}
+          options={{ 
+            headerShown: false,
+            presentation: 'modal', // Hiển thị như modal với priority cao hơn
           }}
         />
         <Stack.Screen
