@@ -18,6 +18,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
     companion object {
         private const val REQ_OVERLAY = 2025
+        private const val TAG = "FloatingCheckinModule"
     }
 
     private var pendingToken: String? = null
@@ -56,6 +57,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
                 it.service.className == FloatingCheckinService::class.qualifiedName
             }
         } catch (e: Exception) {
+            Log.w(TAG, "isServiceRunning error: ${e.message}")
             false
         }
     }
@@ -73,7 +75,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun requestOverlayPermission(promise: Promise) {
-        Log.d("FloatingCheckinModule", "🔒 requestOverlayPermission() called")
+        Log.d(TAG, "🔒 requestOverlayPermission() called")
 
         // Nếu service đang chạy hoặc đã có quyền → không cần popup
         if (isServiceRunning(reactContext) || hasOverlayPermission(reactContext.currentActivity)) {
@@ -89,14 +91,17 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
         }
 
         if (overlayFlowActive) {
-            Log.d("FloatingCheckinModule", "⚠️ Overlay flow already active -> skip")
+            Log.d(TAG, "⚠️ Overlay flow already active -> skip")
             promise.resolve(true)
             return
         }
 
         val dialog = AlertDialog.Builder(act)
             .setTitle("Cho phép hiển thị trên ứng dụng khác")
-            .setMessage("E-Care cần quyền này để hiển thị nút Deadman Switch nổi. Bấm “Cho phép” để mở cài đặt.")
+            .setMessage(
+                "E-Care cần quyền này để hiển thị màn hình kiểm tra an toàn nổi. " +
+                        "Bấm “Cho phép” để mở phần cài đặt hệ thống."
+            )
             .setCancelable(false)
             .setNegativeButton("Hủy") { d, _ ->
                 d.dismiss()
@@ -113,6 +118,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
                         Uri.parse("package:${act.packageName}")
                     )
                     act.startActivityForResult(intent, REQ_OVERLAY)
+                    // Ở flow này chỉ là xin quyền trước, nên resolve luôn cho JS
                     promise.resolve(true)
                 } catch (e: Exception) {
                     overlayFlowActive = false
@@ -131,7 +137,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun start(token: String, baseUrl: String, promise: Promise) {
-        Log.d("FloatingCheckinModule", "🚀 start() token=$token baseUrl=$baseUrl")
+        Log.d(TAG, "🚀 start() token=$token baseUrl=$baseUrl")
         try {
             val act = reactContext.currentActivity
 
@@ -157,7 +163,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
             // 4) Nếu flow xin quyền đang diễn ra → không mở lại popup
             if (overlayFlowActive) {
-                Log.d("FloatingCheckinModule", "⚠️ Overlay flow active → skip reopening dialog")
+                Log.d(TAG, "⚠️ Overlay flow active → skip reopening dialog")
                 pendingToken = token
                 pendingBaseUrl = baseUrl
                 pendingPromise = promise
@@ -167,7 +173,10 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
             // 5) Mở popup xin quyền
             val dialog = AlertDialog.Builder(act)
                 .setTitle("Cho phép hiển thị trên ứng dụng khác")
-                .setMessage("E-Care cần quyền này để hiển thị nút Deadman Switch nổi. Cấp quyền để tiếp tục.")
+                .setMessage(
+                    "E-Care cần quyền này để hiển thị màn hình kiểm tra an toàn nổi. " +
+                            "Cấp quyền để tiếp tục."
+                )
                 .setCancelable(false)
                 .setNegativeButton("Hủy") { d, _ ->
                     d.dismiss()
@@ -213,6 +222,10 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
     fun stop(promise: Promise) {
         try {
             dismissActiveDialog()
+            overlayFlowActive = false
+            pendingPromise = null
+            pendingToken = null
+            pendingBaseUrl = null
             reactContext.stopService(Intent(reactContext, FloatingCheckinService::class.java))
             promise.resolve(true)
         } catch (e: Exception) {
