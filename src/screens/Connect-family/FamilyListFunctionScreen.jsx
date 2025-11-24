@@ -29,6 +29,7 @@ const FamilyListFunctionScreen = ({ route }) => {
 
   // message có thể không có trong params
   const message = route?.params?.message ?? 'Chọn người thân';
+  const flowType = route?.params?.flowType ?? 'supporter';
 
   const fetchConnectedMembers = async () => {
     try {
@@ -67,10 +68,43 @@ const FamilyListFunctionScreen = ({ route }) => {
   // ✅ Chỉ truyền elderlyId
   const handleNavigate = elderlyId => {
     if (!elderlyId) return; // phòng lỗi dữ liệu
-    navigation.navigate('ServiceSelectionScreen', {
-      elderlyId, // <-- chỉ gửi id
-      source: 'FamilyListFunction',
-    });
+
+    // tìm member tương ứng trong state
+    const selectedMember = connectedMembers.find(
+      m => m.elderlyId === elderlyId,
+    );
+
+    // build object elderly tối thiểu đủ dùng cho các màn sau
+    const elderly =
+      selectedMember && selectedMember.elderlyRaw
+        ? selectedMember.elderlyRaw
+        : selectedMember
+        ? {
+            _id: selectedMember.elderlyId,
+            fullName: selectedMember.name,
+            avatar: selectedMember.avatar,
+            phoneNumber: selectedMember.phone,
+            currentLocation: selectedMember.currentLocation || null,
+          }
+        : { _id: elderlyId };
+
+    console.log('handleNavigate -> selected elderly =', elderly);
+
+    if (flowType === 'doctorBooking') {
+      // Luồng ĐẶT LỊCH TƯ VẤN BÁC SĨ:
+      // Chọn người thân xong -> sang màn danh sách gói khám bác sĩ
+      navigation.navigate('HealthPackageListScreen', {
+        elderly,      // ✅ object đầy đủ cho flow booking bác sĩ
+        elderlyId,    // vẫn giữ elderlyId nếu màn sau cần
+        source: 'FamilyListFunction_Doctor',
+      });
+    } else {
+      // Luồng ĐẶT DỊCH VỤ HỖ TRỢ (giữ behavior cũ)
+      navigation.navigate('ServiceSelectionScreen', {
+        elderlyId,
+        source: 'FamilyListFunction_Supporter',
+      });
+    }
   };
 
   const MemberCard = ({ member }) => {
