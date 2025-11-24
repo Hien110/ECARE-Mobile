@@ -73,9 +73,10 @@ const SupportFinderScreen = ({ navigation, route }) => {
         const res = await supporterService.getAvailableSupporters(bookingDraft);
 
         if (res?.success) {
+          console.log(res.data);
+          
           const ids = res.data?.availableSupporterIds || [];
           setAvailableSupporters(ids);
-          console.log('Available supporters:', ids.length);
         } else {
           // API fail → coi như không có supporter khả dụng cho booking này
           setAvailableSupporters([]);
@@ -232,12 +233,10 @@ const SupportFinderScreen = ({ navigation, route }) => {
           Array.isArray(availableSupporters) &&
           availableSupporters.length > 0
         ) {
-          console.log('Using available supporters from booking draft.', availableSupporters);
           const promises = availableSupporters.map(uid =>
             userService.getSupporterProfileByUserId(uid)
           );
           const results = await Promise.all(promises);
-          console.log("results:", results);
           
           profiles = results.filter(r => r?.success && r.data).map(r => r.data);
         } else if (
@@ -245,7 +244,6 @@ const SupportFinderScreen = ({ navigation, route }) => {
           availableSupporters.length === 0
         ) {
           // Có bookingDraft nhưng không có supporter khả dụng
-          console.log('No available supporters for this booking.');
           profiles = [];
         }
       } else {
@@ -256,14 +254,13 @@ const SupportFinderScreen = ({ navigation, route }) => {
         }
       }
 
-      console.log('Profiles loaded:', profiles?.length ?? 0);
-
       if (!Array.isArray(profiles) || profiles.length === 0) {
         setSupporters([]);
         setHasCheckedLocation(true);
         return;
       }
-
+      console.log("danh sách người hỗ trợ", profiles);
+      
       // ---- Tính khoảng cách ----
       const destinations = profiles
         .filter(p => {
@@ -280,6 +277,10 @@ const SupportFinderScreen = ({ navigation, route }) => {
           return { lat, lon, profile: p };
         });
 
+        console.log("Khoảng cách", destinations);
+        
+      const test = await routingService.calculateRoute(15.977962, 108.261863, 15.978579, 108.251182);
+      console.log("TEst", test);
       let distanceResults = [];
       if (userLocation && destinations.length > 0) {
         distanceResults = await routingService.calculateMultipleDistances(
@@ -288,6 +289,11 @@ const SupportFinderScreen = ({ navigation, route }) => {
           destinations,
         );
       }
+
+      
+      console.log("khoảng cách từng người", distanceResults);
+      console.log("Tọa độ mỗi người",userLocation);
+      
 
       const supportersWithDistance = profiles.map(profile => {
         let distance = null,
