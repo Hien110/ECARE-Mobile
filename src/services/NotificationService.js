@@ -5,6 +5,7 @@ import { Alert, PermissionsAndroid, Platform } from 'react-native';
 import api from './api/axiosConfig';
 import CallNotificationService from './CallNotificationService';
 import CallService from './CallService';
+import DeadmanNotificationService from './DeadmanNotificationService';
 
 class NotificationService {
   navigationRef = null;
@@ -34,6 +35,7 @@ class NotificationService {
     // Khởi tạo SOS Notification Service
     const SOSNotificationService = require('./SOSNotificationService').default;
     await SOSNotificationService.initialize();
+    await DeadmanNotificationService.initialize();
 
     // 🔔 Tạo Android channel để có heads-up banner khi foreground (cắm USB)
     if (Platform.OS === 'android') {
@@ -333,6 +335,23 @@ class NotificationService {
           ],
           { cancelable: true }
         );
+      } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+        // Cảnh báo: Người cao tuổi KHÔNG ỔN về SỨC KHỎE
+        const elderName = data?.elderName || data?.senderName || '';
+        const elderAvatar = data?.elderAvatar || data?.senderAvatar || '';
+        const timestamp = data?.timestamp;
+
+        await DeadmanNotificationService.showPhysUnwellNotification({
+          elderId: data?.elderId,
+          elderName,
+          elderAvatar,
+          message: notification?.body || data?.message,
+          timestamp,
+          notificationId: data?.notificationId,
+        });
+
+        // Không hiện Alert.js nữa, vì đã có full-screen notification
+        return;
       } else {
         // Notification thông thường
         await this.showForegroundBanner(notification, data);
