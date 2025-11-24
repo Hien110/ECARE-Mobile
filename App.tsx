@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast, { BaseToast, ErrorToast, InfoToast } from 'react-native-toast-message';
 import AppNavigator, { navigationRef } from './src/navigation/AppNavigator';
 import socketService from './src/services/socketService';
+import CallNotificationService from './src/services/CallNotificationService';
 
 // Xử lý FCM khi app bị kill
 messaging().setBackgroundMessageHandler(async remoteMessage => {
@@ -16,6 +17,21 @@ export default function App() {
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
+    // 🔧 Khởi tạo notification channels khi app start
+    const initializeNotifications = async () => {
+      try {
+        await CallNotificationService.initialize();
+        console.log('✅ Notification channels initialized on app start');
+      } catch (error) {
+        console.error('❌ Error initializing notification channels:', error);
+      }
+    };
+    
+    initializeNotifications();
+
+    // ℹ️ Foreground FCM messages được xử lý bởi NotificationService.onMessageListener()
+    // Không cần thêm handler ở đây
+    
     // Check initial notification (khi app mở từ notification ở trạng thái killed)
     notifee.getInitialNotification().then(initialNotification => {
       if (initialNotification) {
@@ -93,6 +109,31 @@ export default function App() {
         await notifee.cancelNotification(String(callId));
         return;
       }
+
+      // 🆕 Xử lý SOS call notification tap (khi user tap vào body)
+      if (type === EventType.PRESS && notification?.data?.type === 'sos_call') {
+        const { sosId, callId, requesterId, requesterName, requesterAvatar, requesterPhone, recipientIndex, totalRecipients } = notification.data;
+        
+        // Navigate đến SOSCallScreen
+        if (navigationRef.current) {
+          navigationRef.current.navigate('SOSCall', {
+            sosId: String(sosId),
+            callId: String(callId),
+            requester: {
+              _id: String(requesterId),
+              fullName: String(requesterName),
+              avatar: String(requesterAvatar),
+              phoneNumber: String(requesterPhone),
+            },
+            recipientIndex: parseInt(String(recipientIndex)) || 1,
+            totalRecipients: parseInt(String(totalRecipients)) || 1,
+          });
+        }
+        
+        // Dismiss notification
+        await notifee.cancelNotification(String(callId));
+        return;
+      }
       
       // Xử lý khi user nhấn vào notification actions
       if (type === EventType.ACTION_PRESS && notification?.data?.type === 'video_call') {
@@ -128,11 +169,50 @@ export default function App() {
         // Dismiss notification
         await notifee.cancelNotification(String(callId));
       }
+
+      // 🆕 Xử lý SOS call notification actions (accept/reject)
+      if (type === EventType.ACTION_PRESS && notification?.data?.type === 'sos_call') {
+        const { sosId, callId, requesterId, requesterName, requesterAvatar, requesterPhone } = notification.data;
+        
+        // Bỏ qua nếu tap vào body notification
+        if (pressAction?.id === 'ignore') {
+          return;
+        }
+        
+        if (pressAction?.id === 'accept_sos_call') {
+          // Navigate đến SOSCallScreen để xử lý accept
+          if (navigationRef.current) {
+            navigationRef.current.navigate('SOSCall', {
+              sosId: String(sosId),
+              callId: String(callId),
+              requester: {
+                _id: String(requesterId),
+                fullName: String(requesterName),
+                avatar: String(requesterAvatar),
+                phoneNumber: String(requesterPhone),
+              },
+            });
+          }
+        } else if (pressAction?.id === 'reject_sos_call') {
+          // Gửi reject signal qua socket
+          const socketService = require('./src/services/socketService').default;
+          if (socketService.isConnected) {
+            socketService.socket.emit('sos_call_rejected', {
+              sosId: String(sosId),
+              callId: String(callId),
+            });
+          }
+        }
+        
+        // Dismiss notification
+        await notifee.cancelNotification(String(callId));
+      }
     });
     
-    // Kiểm tra pending call actions khi app mở
+    // Kiểm tra pending actions khi app mở
     checkPendingCallActions();
     checkPendingSOSActions();
+    checkPendingSOSCallActions(); // 🆕 Check SOS call actions
     
     // Theo dõi AppState để check pending actions khi app quay lại foreground
     const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
@@ -140,13 +220,14 @@ export default function App() {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         checkPendingCallActions();
         checkPendingSOSActions();
+        checkPendingSOSCallActions(); // 🆕 Check SOS call actions
       }
       
       appState.current = nextAppState;
     });
     
     return () => {
-      unsubscribe();
+      unsubscribe(); // Cleanup Notifee listener
       appStateSubscription.remove();
     };
   }, []);
@@ -269,6 +350,65 @@ export default function App() {
       }
     } catch (error) {
       console.error('❌ Error checking pending SOS actions:', error);
+    }
+  };
+
+  // 🆕 Xử lý pending SOS call actions (accept/reject từ notification)
+  const checkPendingSOSCallActions = async () => {
+    try {
+      const pendingAction = await AsyncStorage.getItem('pending_sos_call_action');
+      
+      if (pendingAction) {
+        const actionData = JSON.parse(pendingAction);
+        
+        // Xóa pending action NGAY để tránh xử lý lại
+        await AsyncStorage.removeItem('pending_sos_call_action');
+        
+        if (actionData.action === 'accept') {
+          // Đợi socket kết nối
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Gửi accept signal qua socket
+          socketService.socket.emit('sos_call_accepted', {
+            sosId: actionData.sosId,
+            callId: actionData.callId,
+          });
+          
+          // Đợi navigation ref sẵn sàng
+          let retries = 0;
+          const maxRetries = 30;
+          
+          while (!navigationRef.current && retries < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            retries++;
+          }
+          
+          // Navigate đến VideoCallScreen
+          if (navigationRef.current) {
+            navigationRef.current.navigate('VideoCall', {
+              callId: actionData.callId,
+              conversationId: null,
+              otherParticipant: {
+                _id: actionData.requesterId,
+                fullName: actionData.requesterName,
+                avatar: actionData.requesterAvatar,
+                phoneNumber: actionData.requesterPhone,
+              },
+              isIncoming: true,
+              isSOSCall: true,
+              sosId: actionData.sosId,
+            });
+          }
+        } else if (actionData.action === 'reject') {
+          // Gửi reject signal qua socket
+          socketService.socket.emit('sos_call_rejected', {
+            sosId: actionData.sosId,
+            callId: actionData.callId,
+          });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error checking pending SOS call actions:', error);
     }
   };
   
