@@ -11,6 +11,8 @@ import {
   Text,
   ToastAndroid,
   TouchableOpacity, View,
+  NativeEventEmitter,
+  NativeModules,
 } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 
@@ -280,6 +282,28 @@ export default function HomeScreen() {
       socketService.off('sos_call_no_answer', handleSOSCallNoAnswer);
     };
   }, [user, nav]);
+
+  // 🆕 Listener cho event từ Floating Checkin khi vuốt xuống
+  useEffect(() => {
+    if (!user?._id) return;
+
+    const eventEmitter = new NativeEventEmitter(NativeModules.FloatingCheckin);
+    
+    const subscription = eventEmitter.addListener('onDeadmanSwipe', (event) => {
+      const { choice } = event;
+      console.log('🚨 Deadman swipe event received:', choice);
+      
+      // Nếu vuốt xuống (phys_unwell) → gọi handleEmergency
+      if (choice === 'phys_unwell') {
+        console.log('📞 Triggering handleEmergency from swipe down...');
+        handleEmergency();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [user, handleEmergency]);
 
   const timeStr = useMemo(
     () =>
