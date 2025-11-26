@@ -647,14 +647,21 @@ class FloatingCheckinService : Service() {
     }
 
     /**
-     * Logic hiển thị mới (theo từng khung giờ):
-     *  - Luôn xét các mốc 07:00 / 15:00 / 19:00 của NGÀY HIỆN TẠI.
-     *  - Lấy mốc gần nhất mà now >= mốc đó (activeStart).
-     *  - Nếu:
-     *      + lastCheckinAt == null  → HIỂN THỊ.
-     *      + lastCheckinAt < activeStart → HIỂN THỊ (chưa vuốt cho khung giờ này).
-     *      + lastCheckinAt >= activeStart → KHÔNG HIỂN THỊ (đã vuốt cho khung giờ này).
-     *  => Như vậy: vuốt xong 7h vẫn hiện lại 15h, 19h, và sáng hôm sau 7h lại hiện.
+     * Logic hiển thị mới:
+     *
+     * 1) Nếu CHƯA TỪNG check-in (lastCheckinAt == null và local prefs cũng không có):
+     *      → LUÔN HIỂN THỊ (miễn có token + baseUrl), bất kể giờ là mấy.
+     *
+     * 2) Nếu ĐÃ có ít nhất 1 lần check-in:
+     *      - Luôn xét các mốc 07:00 / 15:00 / 19:00 của NGÀY HIỆN TẠI.
+     *      - Lấy mốc gần nhất mà now >= mốc đó (activeStart).
+     *      - Nếu:
+     *          + lastCheckinAt < activeStart → HIỂN THỊ (chưa vuốt cho khung giờ này).
+     *          + lastCheckinAt >= activeStart → KHÔNG HIỂN THỊ (đã vuốt cho khung giờ này).
+     *
+     *  => Như vậy:
+     *      - Nếu chưa từng vuốt lần nào → panel luôn bật.
+     *      - Vuốt xong 7h vẫn hiện lại 15h, 19h, và sáng hôm sau 7h lại hiện.
      */
     private fun shouldShowNow(): Boolean {
         if (token.isNullOrEmpty() || baseUrl.isNullOrEmpty()) {
@@ -662,6 +669,14 @@ class FloatingCheckinService : Service() {
             return false
         }
 
+        // 1) Ưu tiên kiểm tra trạng thái "chưa từng check-in"
+        val lastMs = lastCheckinAt ?: getLocalLastCheckinMs()
+        if (lastMs == null) {
+            Log.d(TAG, "REASON: chưa từng check-in → luôn hiển thị panel")
+            return true
+        }
+
+        // 2) Đã có ít nhất một lần check-in → dùng logic khung giờ
         val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Asia/Ho_Chi_Minh") }
         val now = ZonedDateTime.now(zone)
 
@@ -680,15 +695,9 @@ class FloatingCheckinService : Service() {
         if (activeStart == null) {
             Log.d(
                 TAG,
-                "REASON: chưa tới bất kỳ khung giờ nào (${DEADMAN_WINDOWS.joinToString()}) now=$now"
+                "REASON: đã có check-in trước đó nhưng chưa tới bất kỳ khung giờ nào (${DEADMAN_WINDOWS.joinToString()}) now=$now"
             )
             return false
-        }
-
-        val lastMs = lastCheckinAt ?: getLocalLastCheckinMs()
-        if (lastMs == null) {
-            Log.d(TAG, "REASON: chưa từng check-in → hiển thị")
-            return true
         }
 
         val last = Instant.ofEpochMilli(lastMs).atZone(zone)
