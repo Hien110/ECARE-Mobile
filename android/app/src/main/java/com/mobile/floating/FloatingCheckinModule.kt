@@ -12,6 +12,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.*
+import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext), ActivityEventListener {
@@ -19,6 +20,15 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
     companion object {
         private const val REQ_OVERLAY = 2025
         private const val TAG = "FloatingCheckinModule"
+        private var moduleInstance: FloatingCheckinModule? = null
+
+        /**
+         * Gọi từ Service để emit event sang React Native
+         * @param choice: "phys_unwell" khi vuốt xuống
+         */
+        fun sendEmergencyEvent(choice: String) {
+            moduleInstance?.emitEmergencyEvent(choice)
+        }
     }
 
     private var pendingToken: String? = null
@@ -31,6 +41,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
     init {
         reactContext.addActivityEventListener(this)
+        moduleInstance = this
     }
 
     override fun getName() = "FloatingCheckin"
@@ -282,5 +293,29 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
             putExtra(FloatingCheckinService.EXTRA_BASEURL, baseUrl)
         }
         ContextCompat.startForegroundService(reactContext, intent)
+    }
+
+    // ==============================================================
+    // ================= SEND EVENT TO REACT NATIVE =================
+    // ==============================================================
+
+    /**
+     * Emit event "onDeadmanSwipe" sang JavaScript
+     */
+    private fun emitEmergencyEvent(choice: String) {
+        try {
+            val params = Arguments.createMap().apply {
+                putString("choice", choice)
+                putDouble("timestamp", System.currentTimeMillis().toDouble())
+            }
+            
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("onDeadmanSwipe", params)
+            
+            Log.d(TAG, "✅ Event emitted: onDeadmanSwipe with choice=$choice")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to emit event: ${e.message}")
+        }
     }
 }

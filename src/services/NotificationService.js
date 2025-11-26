@@ -145,7 +145,12 @@ class NotificationService {
 
       return token;
     } catch (error) {
-      console.error('❌ Error getting FCM token:', error);
+      // SERVICE_NOT_AVAILABLE là lỗi tạm thời - không cần báo lỗi đỏ
+      if (error.code === 'messaging/unknown' || error.message?.includes('SERVICE_NOT_AVAILABLE')) {
+        console.warn('⚠️ FCM service temporarily unavailable, will retry later');
+      } else {
+        console.error('❌ Error getting FCM token:', error);
+      }
       return null;
     }
   }

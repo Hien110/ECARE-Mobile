@@ -365,6 +365,47 @@ class FloatingCheckinService : Service() {
     /** Người dùng vuốt chọn */
     private fun onSwipeChoice(choice: String) {
         Log.d(TAG, "👆 Swipe choice: $choice — sending")
+        
+        // 🆕 Nếu vuốt xuống (phys_unwell) → xử lý đặc biệt
+        if (choice == "phys_unwell") {
+            Thread {
+                // 1. Gửi checkin để đánh dấu đã vuốt
+                val okCheckin = sendCheckin(choice)
+                
+                Handler(Looper.getMainLooper()).post {
+                    if (okCheckin) {
+                        Toast.makeText(
+                            this,
+                            "🚨 Đang gửi cảnh báo khẩn cấp...",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        
+                        // 2. Lưu timestamp để không hiện lại trong cùng khung giờ
+                        setLocalCheckinNow()
+                        
+                        // 3. Ẩn panel (dừng chuông + rung)
+                        hideAlertPanel()
+                        
+                        // 4. Emit event sang React Native để gọi handleEmergency
+                        try {
+                            FloatingCheckinModule.sendEmergencyEvent(choice)
+                            Log.d(TAG, "✅ Emitted emergency event to React Native")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "❌ Failed to emit emergency event: ${e.message}")
+                        }
+                    } else {
+                        Toast.makeText(
+                            this,
+                            "❌ Gửi thất bại. Thử lại sau.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }.start()
+            return // Kết thúc xử lý cho phys_unwell
+        }
+        
+        // Xử lý cho các choice khác (safe, etc.)
         Thread {
             val okCheckin = sendCheckin(choice)
             val okNotify = sendChoiceNotify(choice)
@@ -375,7 +416,6 @@ class FloatingCheckinService : Service() {
                         this,
                         when (choice) {
                             "safe" -> "✅ Đã xác nhận: Hôm nay an toàn"
-                            "phys_unwell" -> "📩 Đã báo: Không ổn về sức khỏe"
                             else -> "💬 Đã báo"
                         },
                         Toast.LENGTH_SHORT
