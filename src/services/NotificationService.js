@@ -272,6 +272,14 @@ class NotificationService {
     const unsubscribe = messaging().onMessage(async remoteMessage => {
       const { notification, data } = remoteMessage;
 
+      // 🆕 Xử lý SOS call notification (foreground - KHÔNG hiển thị)
+      if (data?.type === 'sos_call') {
+        console.log('📥 [Foreground] SOS call notification received via FCM, NOT showing (Socket handles it)');
+        // Socket.IO đã xử lý và hiển thị UI
+        // KHÔNG cần hiển thị notification
+        return;
+      }
+
       // Xử lý video call notification
       if (data?.type === 'video_call') {
         // Kiểm tra duplicate

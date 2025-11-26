@@ -11,12 +11,55 @@ import { name as appName } from './app.json';
 // Register background handler for Firebase
 // This must be registered outside of the React component lifecycle
 messaging().setBackgroundMessageHandler(async remoteMessage => {
-  // Xử lý video call notification khi app ở background
-  if (remoteMessage.data?.type === 'video_call') {
+  console.log('📥 [Background Handler] FCM message received:', {
+    type: remoteMessage.data?.type,
+    data: remoteMessage.data,
+    notification: remoteMessage.notification,
+  });
+
+  // 🆕 Xử lý SOS call notification khi app ở background
+  if (remoteMessage.data?.type === 'sos_call') {
+    console.log('🆘📞 Background: SOS call notification received', remoteMessage.data);
     
     const CallNotificationService = require('./src/services/CallNotificationService').default;
     
     try {
+      // 🔧 QUAN TRỌNG: Initialize channels trước khi show notification
+      console.log('🔧 Initializing CallNotificationService...');
+      await CallNotificationService.initialize();
+      console.log('✅ Channels initialized');
+      
+      console.log('📱 Showing SOS call notification...');
+      await CallNotificationService.showSOSCallNotification({
+        sosId: remoteMessage.data.sosId,
+        callId: remoteMessage.data.callId,
+        requester: {
+          _id: remoteMessage.data.requesterId,
+          fullName: remoteMessage.data.requesterName,
+          avatar: remoteMessage.data.requesterAvatar,
+          phoneNumber: remoteMessage.data.requesterPhone,
+        },
+        recipientIndex: parseInt(remoteMessage.data.recipientIndex) || 1,
+        totalRecipients: parseInt(remoteMessage.data.totalRecipients) || 1,
+      });
+      console.log('✅ Background: SOS call notification displayed');
+    } catch (error) {
+      console.error('❌ Error showing background SOS call notification:', error);
+      console.error('Error details:', error.message, error.stack);
+    }
+    return;
+  }
+  
+  // Xử lý video call notification khi app ở background
+  if (remoteMessage.data?.type === 'video_call') {
+    console.log('📞 Background: Video call notification received', remoteMessage.data);
+    
+    const CallNotificationService = require('./src/services/CallNotificationService').default;
+    
+    try {
+      // 🔧 QUAN TRỌNG: Initialize channels trước khi show notification
+      await CallNotificationService.initialize();
+      
       await CallNotificationService.showIncomingCallNotification({
         callId: remoteMessage.data.callId,
         caller: {
@@ -27,32 +70,26 @@ messaging().setBackgroundMessageHandler(async remoteMessage => {
         conversationId: remoteMessage.data.conversationId,
         callType: remoteMessage.data.callType || 'video',
       });
+      console.log('✅ Background: Video call notification displayed');
     } catch (error) {
       console.error('❌ Error showing background call notification:', error);
+      console.error('Error details:', error.message, error.stack);
     }
+    return;
   }
   
-  // Xử lý SOS notification khi app ở background/killed
+  // 🚫 DISABLED: SOS alert notification (type: 'sos') không còn được sử dụng
+  // Thay vào đó chỉ dùng SOS call notification (type: 'sos_call')
+  /*
   if (remoteMessage.data?.type === 'sos') {
-    
     const SOSNotificationService = require('./src/services/SOSNotificationService').default;
-    
     try {
-      await SOSNotificationService.showSOSNotification({
-        sosId: remoteMessage.data.sosId,
-        requesterId: remoteMessage.data.requesterId,
-        requesterName: remoteMessage.data.requesterName,
-        requesterAvatar: remoteMessage.data.requesterAvatar,
-        latitude: remoteMessage.data.latitude,
-        longitude: remoteMessage.data.longitude,
-        address: remoteMessage.data.address,
-        message: remoteMessage.data.message,
-        timestamp: remoteMessage.data.timestamp,
-      });
+      await SOSNotificationService.showSOSNotification({...});
     } catch (error) {
       console.error('❌ Error showing background SOS notification:', error);
     }
   }
+  */
   
   // Notification sẽ được Android system tự động hiển thị
   // Khi user click vào notification, onNotificationOpenedApp sẽ handle
@@ -130,6 +167,90 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           callId,
           conversationId,
           callerId,
+        }));
+      }
+      
+      // RETURN để KHÔNG mở app
+      return;
+    }
+  }
+  
+  // 🆕 Xử lý khi user nhấn vào notification actions - SOS CALL
+  if (type === EventType.ACTION_PRESS && notification?.data?.type === 'sos_call') {
+    const { sosId, callId, requesterId, requesterName, requesterAvatar, requesterPhone, recipientIndex, totalRecipients } = notification.data;
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    
+    if (pressAction.id === 'ignore') {
+      return;
+    }
+    
+    if (pressAction.id === 'accept_sos_call') {
+      // Lưu action để xử lý sau khi app mở (cần socket connection)
+      await AsyncStorage.setItem('pending_sos_call_action', JSON.stringify({
+        action: 'accept',
+        sosId,
+        callId,
+        requesterId,
+        requesterName,
+        requesterAvatar,
+        requesterPhone,
+        recipientIndex,
+        totalRecipients,
+      }));
+      
+      // Dismiss notification
+      await notifee.cancelNotification(callId);
+      
+    } else if (pressAction.id === 'reject_sos_call') {
+      // Dismiss notification NGAY LẬP TỨC
+      await notifee.cancelNotification(callId);
+      
+      // 🆕 GỬI REJECT qua HTTP API (không cần mở app)
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const token = await AsyncStorage.getItem('ecare_token');
+        
+        if (token) {
+          const axios = require('axios').default;
+          const { CONFIG } = require('./src/config/socketConfig');
+          const API_URL = CONFIG.SOCKET_SERVER_URL;
+          
+          console.log('📤 Sending SOS call reject via HTTP API...');
+          
+          // Gửi reject qua HTTP endpoint
+          await axios.post(
+            `${API_URL}/api/sos/call/reject`,
+            {
+              sosId,
+              callId,
+            },
+            {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              timeout: 5000,
+            }
+          );
+          
+          console.log('✅ SOS call rejected successfully via HTTP');
+        } else {
+          console.log('⚠️ No token, saving pending action');
+          // Nếu không có token, lưu để xử lý sau
+          await AsyncStorage.setItem('pending_sos_call_action', JSON.stringify({
+            action: 'reject',
+            sosId,
+            callId,
+          }));
+        }
+      } catch (error) {
+        console.error('❌ Error rejecting SOS call via HTTP:', error);
+        // Nếu lỗi, lưu để xử lý sau khi app mở
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.setItem('pending_sos_call_action', JSON.stringify({
+          action: 'reject',
+          sosId,
+          callId,
         }));
       }
       

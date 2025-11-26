@@ -11,6 +11,7 @@ const supporterSchedulingService = {
         message: response.data.message,
       };
     } catch (error) {
+      console.error('createScheduling error:', error);
       throw error;
     }
   },
@@ -29,6 +30,7 @@ const supporterSchedulingService = {
         message: response.data.message,
       };
     } catch (error) {
+      console.error('getSchedulingsByUserId error:', error);
       throw error;
     }
   },
@@ -45,6 +47,7 @@ const supporterSchedulingService = {
         message: response.data.message,
       };
     } catch (error) {
+      console.error('getSchedulingsBySupporterId error:', error);
       throw error;
     }
   },
@@ -59,6 +62,7 @@ const supporterSchedulingService = {
         message: response.data.message,
       };
     } catch (error) {
+      console.error('getSchedulingById error:', error);
       throw error;
     }
   },
@@ -76,6 +80,7 @@ const supporterSchedulingService = {
         message: response.data.message,
       };
     } catch (error) {
+      console.error('updateSchedulingStatus error:', error);  
       throw error;
     }
   },
@@ -96,6 +101,7 @@ const supporterSchedulingService = {
         message: response.data.message,
       };
     } catch (error) {
+      console.error('checkAllCompletedOrCanceled error:', error);
       throw error;
     }
   },
