@@ -336,19 +336,19 @@ class NotificationService {
           { cancelable: true }
         );
       } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
-        // Cảnh báo: Người cao tuổi KHÔNG ỔN về SỨC KHỎE
-        const elderName = data?.elderName || data?.senderName || '';
-        const elderAvatar = data?.elderAvatar || data?.senderAvatar || '';
-        const timestamp = data?.timestamp;
+      // Cảnh báo: Người cao tuổi KHÔNG ỔN về SỨC KHỎE
+      const elderName = data?.elderName || data?.senderName || '';
+      const elderAvatar = data?.elderAvatar || data?.senderAvatar || '';
+      const timestamp = data?.timestamp;
 
-        await DeadmanNotificationService.showPhysUnwellNotification({
-          elderId: data?.elderId,
-          elderName,
-          elderAvatar,
-          message: notification?.body || data?.message,
-          timestamp,
-          notificationId: data?.notificationId,
-        });
+      await DeadmanNotificationService.showPhysUnwellNotification({
+        elderId: data?.elderId,
+        elderName,
+        elderAvatar,
+        message: notification?.body || data?.message,
+        timestamp,
+        notificationId: data?.notificationId,
+      });
 
         // Không hiện Alert.js nữa, vì đã có full-screen notification
         return;
@@ -411,6 +411,22 @@ class NotificationService {
         }, 800);
       } else if (data?.type === 'deadman_alert') {
         setTimeout(() => this.navigateToAlertsCenter(data), 800);
+      } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+        const elderName = data?.elderName || data?.senderName || '';
+
+        console.log('[NotificationService] Phys-unwell choice (background open)', {
+          elderId: data?.elderId,
+          elderName,
+        });
+
+        // Không tạo thêm notification, chỉ mở AlertsCenter nếu cần
+        setTimeout(() => {
+          this.navigateToAlertsCenter({
+            ...data,
+            groupKey: data?.groupKey || 'deadman_phys_unwell',
+          });
+        }, 800);
+        return;
       }
     });
   }
@@ -463,6 +479,20 @@ class NotificationService {
             }, 2000);
           } else if (data?.type === 'deadman_alert') {
             setTimeout(() => this.navigateToAlertsCenter(data), 2000);
+          } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+            const elderName = data?.elderName || data?.senderName || '';
+
+            console.log('[NotificationService] Phys-unwell choice (killed open)', {
+              elderId: data?.elderId,
+              elderName,
+            });
+
+            setTimeout(() => {
+              this.navigateToAlertsCenter({
+                ...data,
+                groupKey: data?.groupKey || 'deadman_phys_unwell',
+              });
+            }, 2000);
           }
         }
       });

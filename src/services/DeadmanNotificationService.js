@@ -1,4 +1,4 @@
-// DeadmanNotificationService.js
+// DeadmanNotificationService.js 
 import notifee, { AndroidCategory, AndroidImportance } from '@notifee/react-native';
 import { Platform } from 'react-native';
 
@@ -7,15 +7,16 @@ class DeadmanNotificationService {
     this.activeDeadmanNotificationId = null;
   }
 
+  // Khởi tạo notification channel cho cảnh báo sức khoẻ (phys_unwell)
   async initialize() {
     if (Platform.OS !== 'android') return;
 
     try {
       await notifee.createChannel({
-        id: 'deadman_phys_unwell_v2', // 🔥 ID MỚI
+        id: 'deadman_phys_unwell_sos',          // ✅ ID rõ ràng, chuyên cho sos_alarm
         name: '⚕️ Cảnh báo sức khỏe người cao tuổi',
         importance: AndroidImportance.HIGH,
-        sound: 'sos_alarm', // file: android/app/src/main/res/raw/sos_alarm.mp3
+        sound: 'sos_alarm',                     // file: android/app/src/main/res/raw/sos_alarm.mp3
         vibration: true,
         vibrationPattern: [500, 500, 500, 500, 500, 500],
         lights: true,
@@ -26,6 +27,9 @@ class DeadmanNotificationService {
     }
   }
 
+  /**
+   * Hiển thị notification khi NGƯỜI CAO TUỔI KHÔNG ỔN VỀ SỨC KHỎE (choice = phys_unwell)
+   */
   async showPhysUnwellNotification(deadmanData = {}) {
     try {
       const {
@@ -55,10 +59,11 @@ class DeadmanNotificationService {
           clickAction: 'DEADMAN_DETAIL',
         },
         android: {
-          channelId: 'deadman_phys_unwell_v2', // 🔥 dùng ID mới ở đây
+          channelId: 'deadman_phys_unwell_sos', // ✅ dùng đúng channel mới
           importance: AndroidImportance.HIGH,
           category: AndroidCategory.ALARM,
 
+          // Full-screen intent: bật màn + mở app khi có quyền
           fullScreenAction: {
             id: 'default',
             launchActivity: 'default',
@@ -70,14 +75,18 @@ class DeadmanNotificationService {
           showTimestamp: true,
           timestamp: timestamp ? new Date(timestamp).getTime() : Date.now(),
 
+          // Sound + rung mạnh
           sound: 'sos_alarm',
           loopSound: true,
           vibrationPattern: [500, 500, 500, 500, 500, 500],
 
           color: '#DC2626',
-          smallIcon: 'ic_launcher',
+          smallIcon: 'ic_launcher', // luôn hợp lệ
 
-          ...(elderAvatar && typeof elderAvatar === 'string' && elderAvatar.startsWith('http')
+          // chỉ set largeIcon nếu là URL http/https hợp lệ
+          ...(elderAvatar &&
+            typeof elderAvatar === 'string' &&
+            elderAvatar.startsWith('http')
             ? { largeIcon: elderAvatar, circularLargeIcon: true }
             : {}),
 
@@ -116,7 +125,7 @@ class DeadmanNotificationService {
       const notifications = await notifee.getDisplayedNotifications();
       for (const n of notifications) {
         if (
-          n.notification?.android?.channelId === 'deadman_phys_unwell_v2' ||
+          n.notification?.android?.channelId === 'deadman_phys_unwell_sos' || // ✅ cập nhật ID
           n.notification?.data?.type === 'deadman_choice'
         ) {
           await notifee.cancelNotification(n.id);

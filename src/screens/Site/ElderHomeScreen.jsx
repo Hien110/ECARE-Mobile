@@ -35,6 +35,7 @@ export default function HomeScreen() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [familyLoading, setFamilyLoading] = useState(true);
   const [familyList, setFamilyList] = useState([]);
+  const [relationships, setRelationships] = useState([]);
 
   // helper: notify
   const notify = useCallback((msg, type = 'info') => {
@@ -67,35 +68,37 @@ export default function HomeScreen() {
 
   // tải danh sách đã kết nối (accepted)
   const loadFamilyRelationships = useCallback(async () => {
-    if (!user?._id) return;
-    try {
-      setFamilyLoading(true);
-      const res = await relationshipService.getAllRelationships();
-      if (res?.success) {
-        const list = (res.data || [])
-          .filter(r => r?.status === 'accepted')
-          .map(r => {
-            const other = getOtherMember(r, user._id);
-            if (!other?._id) return null;
-            return {
-              _id: other._id,
-              fullName: other.fullName || 'Thành viên',
-              role: other.role, // doctor/family/supporter/...
-              avatar: other.avatar,
-              relationship: r?.relationship, // “con trai”, “con gái”,...
-            };
-          })
-          .filter(Boolean);
-        setFamilyList(list);
-      } else {
-        console.log('getAllRelationships error:', res?.message);
-      }
-    } catch (e) {
-      console.log('loadFamilyRelationships error:', e);
-    } finally {
-      setFamilyLoading(false);
+  if (!user?._id) return;
+  try {
+    setFamilyLoading(true);
+    const res = await relationshipService.getAllRelationships();
+    if (res?.success) {
+      const all = res.data || [];
+      setRelationships(all);
+      const list = all
+        .filter(r => r?.status === 'accepted')
+        .map(r => {
+          const other = getOtherMember(r, user._id);
+          if (!other?._id) return null;
+          return {
+            _id: other._id,
+            fullName: other.fullName || 'Thành viên',
+            role: other.role, // doctor/family/supporter/...
+            avatar: other.avatar,
+            relationship: r?.relationship, // “con trai”, “con gái”,...
+          };
+        })
+        .filter(Boolean);
+      setFamilyList(list);
+    } else {
+      console.log('getAllRelationships error:', res?.message);
     }
-  }, [user, getOtherMember]);
+  } catch (e) {
+    console.log('loadFamilyRelationships error:', e);
+  } finally {
+    setFamilyLoading(false);
+  }
+}, [user, getOtherMember]);
 
   // chấp nhận / từ chối yêu cầu
   const respondToRequest = useCallback(
@@ -190,15 +193,29 @@ export default function HomeScreen() {
     }
   }, [user, loadPendingRequests, loadFamilyRelationships]);
 
-    useEffect(() => {
-    const role = (user?.role || '').toLowerCase();
-    if (!user?._id) return;
-    if (role === 'elderly') {
-      enableFloating();   
-    } else {
-      disableFloating();  
-    }
-  }, [user]);
+  useEffect(() => {
+  if (!user?._id) return;
+  const role = (user?.role || '').toLowerCase();
+
+  if (role !== 'elderly') {
+    disableFloating();
+    return;
+  }
+
+  const hasAcceptedRelationship = (relationships || []).some(rel => {
+    const isElderInRel =
+      String(rel?.elderly?._id) === String(user._id) ||
+      String(rel?.family?._id) === String(user._id);
+      return isElderInRel && rel?.status === 'accepted';
+  });
+
+  if (!hasAcceptedRelationship) {
+    disableFloating();
+    return;
+  }
+
+  enableFloating();
+}, [user, relationships]);
 
   // time
   const [now, setNow] = useState(new Date());
