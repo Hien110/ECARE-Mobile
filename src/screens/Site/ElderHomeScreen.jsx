@@ -404,25 +404,11 @@ export default function HomeScreen() {
     }
   }, [notify, user, nav, getCurrentLocation, reverseGeocode]);
 
-  // demo actions
-  const bookAppointment = () =>
-    Alert.alert('Đặt lịch tư vấn', '📅 Chọn ngày giờ • 👩‍⚕️ Chọn bác sĩ • 💬 Trực tiếp/Video');
-  const healthDiary = () =>
-    Alert.alert('Nhật ký sức khỏe', '📝 Triệu chứng • 📊 Chỉ số • 💭 Tâm trạng');
 
   const findSupport = () => {
-    const flag = 'BookingFromElderly';
-    const userPayload = {
-      elderlyId: user?._id,
-      fullName: user?.fullName || '',
-      phoneNumber: user?.phoneNumber || '',
-      avatar: user?.avatar || '',
-      address: user?.addressEnc || '',
-      currentLocation: user?.currentLocation || null,
-    };
     nav.navigate('ServiceSelectionScreen', {
-      user: member,
-      source: 'FamilyListFunction', // để màn sau biết đi từ đâu
+      elderlyId: user?._id || null,
+      source: 'FamilyListFunction_Supporter', // để màn sau biết đi từ đâu
     });
   };
   const chatSupport = () => nav.navigate('ChatWithAI');

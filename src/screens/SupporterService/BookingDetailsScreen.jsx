@@ -12,18 +12,20 @@ import {
   StatusBar,
   Modal,
   Pressable,
+  TextInput,
+  Animated,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Feather from 'react-native-vector-icons/Feather';
 
 import supporterSchedulingService from '../../services/supporterSchedulingService';
 import relationshipService from '../../services/relationshipService';
 import userService from '../../services/userService';
 import conversationService from '../../services/conversationService';
+import ratingService from '../../services/ratingService';
 
 const VN_TZ = 'Asia/Ho_Chi_Minh';
-
-const SESSION_SLOTS = ['morning', 'afternoon', 'evening'];
 
 const scheduleTimeMap = {
   morning: 'Buổi sáng: 8h–12h',
@@ -260,6 +262,51 @@ const BookingDetailScreen = ({ route, navigation }) => {
   // role
   const [userRole, setUserRole] = useState('unknown');
 
+  // === ĐÁNH GIÁ: state cho modal đánh giá ===
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  const [ratings, setRatings] = useState([]);
+
+  // ➕ state cho edit / delete rating
+  const [editingRating, setEditingRating] = useState(null); // null: tạo mới, object: đang sửa
+
+  const [deleteRatingModalVisible, setDeleteRatingModalVisible] =
+    useState(false);
+  const [deletingRating, setDeletingRating] = useState(null);
+  const [deletingRatingLoading, setDeletingRatingLoading] = useState(false);
+
+  // === TOAST: thông báo nhỏ tự ẩn ===
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState('success'); // success | error
+  const toastOpacity = React.useRef(new Animated.Value(0)).current;
+
+  const showToast = (message, type = 'success') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+
+    toastOpacity.setValue(0);
+    Animated.timing(toastOpacity, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeout(() => {
+        Animated.timing(toastOpacity, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }).start(() => {
+          setToastVisible(false);
+        });
+      }, 1500); // hiện 1.5s rồi ẩn
+    });
+  };
+
   const loadUserRole = useCallback(async () => {
     try {
       const res = await userService.getUser();
@@ -312,10 +359,30 @@ const BookingDetailScreen = ({ route, navigation }) => {
     }
   }, [bookingId]);
 
+  const loadRatings = useCallback(async () => {
+    if (!bookingId) return;
+    try {
+      const currentUserRes = await userService.getUser();
+      const res = await ratingService.getRatingsByServiceSupportIdAndReviewer(
+        bookingId,
+        currentUserRes.data._id,
+      );
+      if (res?.success && Array.isArray(res.data)) {
+        console.log(res.data);
+        setRatings(res.data);
+      } else {
+        setRatings([]);
+      }
+    } catch {
+      setRatings([]);
+    }
+  }, [bookingId]);
+
   useEffect(() => {
     loadUserRole();
     loadDetails();
-  }, [loadUserRole, loadDetails]);
+    loadRatings();
+  }, [loadUserRole, loadDetails, loadRatings]);
 
   const reloadPage = useCallback(async () => {
     await loadDetails();
@@ -324,11 +391,11 @@ const BookingDetailScreen = ({ route, navigation }) => {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([loadUserRole(), loadDetails()]);
+      await Promise.all([loadUserRole(), loadDetails(), loadRatings()]);
     } finally {
       setRefreshing(false);
     }
-  }, [loadUserRole, loadDetails]);
+  }, [loadUserRole, loadDetails, loadRatings]);
 
   const openCancelModal = () => setConfirmVisible(true);
   const closeCancelModal = () => {
@@ -369,8 +436,6 @@ const BookingDetailScreen = ({ route, navigation }) => {
             } catch (e) {
               console.log('Lỗi ngắt kết nối supporter - elderly', e);
             }
-
-            console.log('conversation xin chào', conversationArg);
 
             // Xóa conversation khi hoàn thành
             if (conversationArg?._id) {
@@ -455,6 +520,12 @@ const BookingDetailScreen = ({ route, navigation }) => {
   const isElderly = userRole?.toLowerCase() === 'elderly';
   const isFamily = userRole?.toLowerCase() === 'family';
 
+  // ✅ Chỉ NGƯỜI ĐẶT LỊCH hoặc NGƯỜI HƯỞNG DỊCH VỤ mới được đánh giá
+  const isBookingReviewer =
+    !!currentUser?._id &&
+    (currentUser._id === booking?.elderly?._id ||
+      currentUser._id === booking?.createdBy?._id);
+
   // Elderly/Family: hủy giống cũ (trừ khi canceled/completed/in_progress)
   const disabledCancelBase = ['canceled', 'completed', 'in_progress'].includes(
     statusKey,
@@ -479,13 +550,173 @@ const BookingDetailScreen = ({ route, navigation }) => {
       ? `${booking.priceAtBooking.toLocaleString('vi-VN')} đ`
       : null;
 
+  // === ĐÁNH GIÁ: điều kiện được phép đánh giá ===
+  // ✅ Chỉ người đặt lịch hoặc người hưởng dịch vụ + booking đã hoàn thành
+  const canReview =
+    booking && booking.status === 'completed' && isBookingReviewer;
+
+  const openReviewModal = () => {
+    setEditingRating(null); // tạo mới
+    setRating(0);
+    setComment('');
+    setReviewModalVisible(true);
+  };
+
+  const closeReviewModal = () => {
+    if (!submittingReview) {
+      setReviewModalVisible(false);
+      setEditingRating(null);
+    }
+  };
+
+  const handleSubmitReview = async () => {
+    if (!booking?._id) {
+      showToast('Không tìm thấy mã đặt lịch để đánh giá.', 'error');
+      return;
+    }
+    if (!currentUser?._id) {
+      showToast('Không tìm thấy thông tin người dùng.', 'error');
+      return;
+    }
+    if (!booking?.supporter?._id) {
+      showToast('Không tìm thấy thông tin người hỗ trợ để đánh giá.', 'error');
+      return;
+    }
+    if (!rating) {
+      showToast('Vui lòng chọn số sao đánh giá.', 'error');
+      return;
+    }
+    if (submittingReview) return;
+
+    try {
+      setSubmittingReview(true);
+
+      let result;
+
+      if (editingRating) {
+        // 🔁 cập nhật rating
+        result = await ratingService.updateRatingById(
+          editingRating._id,
+          rating,
+          comment,
+        );
+      } else {
+        // 🆕 tạo rating mới
+        const fromUserId = currentUser._id;
+        const toUserId = booking.supporter._id;
+
+        result = await ratingService.createRating(
+          fromUserId,
+          toUserId,
+          'support_service',
+          rating,
+          comment,
+          bookingId,
+        );
+      }
+
+      if (!result?.success) {
+        showToast(
+          result?.message ||
+            'Đã có lỗi xảy ra khi gửi đánh giá. Vui lòng thử lại sau.',
+          'error',
+        );
+        return;
+      }
+
+      showToast(
+        editingRating
+          ? 'Bạn đã cập nhật đánh giá.'
+          : 'Bạn đã đánh giá người hỗ trợ.',
+        'success',
+      );
+
+      setReviewModalVisible(false);
+      setEditingRating(null);
+
+      await loadRatings();
+    } catch (error) {
+      console.error('Lỗi khi gửi/cập nhật đánh giá:', error);
+      showToast(
+        'Đã có lỗi xảy ra khi gửi/cập nhật đánh giá. Vui lòng thử lại sau.',
+        'error',
+      );
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const onEditRating = r => {
+    setEditingRating(r);
+    setRating(r.rating);
+    setComment(r.comment || '');
+    setReviewModalVisible(true);
+  };
+
+  const onDeleteRating = r => {
+    setDeletingRating(r);
+    setDeleteRatingModalVisible(true);
+  };
+
+  const closeDeleteRatingModal = () => {
+    if (!deletingRatingLoading) {
+      setDeleteRatingModalVisible(false);
+      setDeletingRating(null);
+    }
+  };
+
+  const confirmDeleteRating = async () => {
+    if (!deletingRating?._id) {
+      showToast('Không tìm thấy đánh giá để xóa.', 'error');
+      return;
+    }
+
+    try {
+      setDeletingRatingLoading(true);
+      const res = await ratingService.deleteRatingById(deletingRating._id);
+
+      if (!res?.success) {
+        showToast(
+          res?.message || 'Xóa đánh giá thất bại. Vui lòng thử lại sau.',
+          'error',
+        );
+        return;
+      }
+
+      showToast('Đã xóa đánh giá.', 'success');
+      await loadRatings();
+      setDeleteRatingModalVisible(false);
+      setDeletingRating(null);
+    } catch (e) {
+      console.error('Lỗi khi xóa đánh giá:', e);
+      showToast(
+        'Đã có lỗi xảy ra khi xóa đánh giá. Vui lòng thử lại sau.',
+        'error',
+      );
+    } finally {
+      setDeletingRatingLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+      {/* TOAST nhỏ nhảy xuống rồi tự ẩn */}
+      {toastVisible && (
+        <Animated.View
+          style={[
+            styles.toastContainer,
+            { opacity: toastOpacity },
+            toastType === 'error' && { backgroundColor: '#DC2626' },
+          ]}
+        >
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </Animated.View>
+      )}
+
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <TouchableOpacity
-          // Điều hướng về trang list đặt lịch
-          onPress={() => navigation.navigate('SupporterBookingListScreen')}
+          onPress={() => navigation.goBack()}
           style={styles.backBtn}
         >
           <Text style={styles.backText}>{'‹'}</Text>
@@ -545,12 +776,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
             <View style={{ height: 16 }} />
 
             <RowItem label="Loại đặt lịch" value={bookingTypeLabel} />
-
-            <RowItem
-              label="Thời gian"
-              value={renderBookingTime(booking)}
-            />
-
+            <RowItem label="Thời gian" value={renderBookingTime(booking)} />
             <RowItem
               label="Địa chỉ hỗ trợ"
               value={`${booking?.address || '—'}`}
@@ -559,19 +785,11 @@ const BookingDetailScreen = ({ route, navigation }) => {
             <RowItem
               label="Thanh toán"
               value={paymentDisplayText}
-              right={
-                <Chip
-                  scheme={payScheme}
-                  text={paymentStatusLabel}
-                />
-              }
+              right={<Chip scheme={payScheme} text={paymentStatusLabel} />}
             />
 
             {priceText && (
-              <RowItem
-                label="Giá tại thời điểm đặt"
-                value={priceText}
-              />
+              <RowItem label="Giá tại thời điểm đặt" value={priceText} />
             )}
 
             {booking?.notes ? (
@@ -604,7 +822,66 @@ const BookingDetailScreen = ({ route, navigation }) => {
                 </Text>
               </View>
             )}
+
+            {/* Nút đánh giá ở màn chi tiết (chỉ người đặt / người hưởng được thấy) */}
+            {canReview && ratings.length === 0 && (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={openReviewModal}
+                style={[styles.primaryBtn, { marginTop: 20 }]}
+                disabled={submittingReview}
+              >
+                {submittingReview ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>
+                    Đánh giá người hỗ trợ
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
+
+          {/* Card hiển thị đánh giá của bạn - chỉ hiển thị với người có quyền đánh giá */}
+          {isBookingReviewer && ratings.length > 0 && (
+            <View style={[styles.card, { marginTop: 16, padding: 16 }]}>
+              <View style={{ marginTop: 20 }}>
+                <Text style={styles.sectionLabel}>Đánh giá của bạn</Text>
+
+                {ratings.map((r, index) => (
+                  <View key={r._id || index} style={styles.ratingBox}>
+                    {/* Hàng trên: điểm + nút hành động */}
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.ratingScore}>{r.rating} ★</Text>
+
+                      <View style={styles.ratingActions}>
+                        <TouchableOpacity
+                          style={styles.editBtn}
+                          onPress={() => onEditRating(r)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.editBtnText}>Chỉnh sửa</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.deleteBtn}
+                          onPress={() => onDeleteRating(r)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.deleteBtnText}>Xóa</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {/* Nội dung bình luận */}
+                    <Text style={styles.ratingComment}>
+                      {r.comment || 'Không có nhận xét'}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           {/* Hành động theo vai trò + trạng thái */}
           {canAccept || canStart || canComplete || canCancel ? (
@@ -739,7 +1016,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
         </ScrollView>
       )}
 
-      {/* Modal xác nhận hủy */}
+      {/* Modal xác nhận hủy booking */}
       <Modal
         transparent
         visible={confirmVisible}
@@ -749,7 +1026,6 @@ const BookingDetailScreen = ({ route, navigation }) => {
         <Pressable style={styles.modalBackdrop} onPress={closeCancelModal} />
         <View style={styles.modalSheetWrap} pointerEvents="box-none">
           <View style={styles.modalSheet}>
-            <View style={styles.modalGrabber} />
             <Text style={styles.modalTitle}>Xác nhận hủy</Text>
             <Text style={styles.modalSub}>
               Bạn có chắc chắn muốn hủy đặt lịch?
@@ -784,6 +1060,120 @@ const BookingDetailScreen = ({ route, navigation }) => {
                   <ActivityIndicator />
                 ) : (
                   <Text style={styles.modalBtnDangerText}>Có</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal xác nhận xóa đánh giá */}
+      <Modal
+        transparent
+        visible={deleteRatingModalVisible}
+        animationType="fade"
+        onRequestClose={closeDeleteRatingModal}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={closeDeleteRatingModal}
+        />
+        <View style={styles.modalSheetWrap} pointerEvents="box-none">
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Xóa đánh giá</Text>
+            <Text style={styles.modalSub}>
+              Bạn có chắc chắn muốn xóa đánh giá không?
+            </Text>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={closeDeleteRatingModal}
+                disabled={deletingRatingLoading}
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+              >
+                <Text style={styles.modalBtnGhostText}>Hủy</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={confirmDeleteRating}
+                disabled={deletingRatingLoading}
+                style={[styles.modalBtn, styles.modalBtnDanger]}
+              >
+                {deletingRatingLoading ? (
+                  <ActivityIndicator />
+                ) : (
+                  <Text style={styles.modalBtnDangerText}>Xóa</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal đánh giá người hỗ trợ */}
+      <Modal
+        transparent
+        visible={reviewModalVisible}
+        animationType="fade"
+        onRequestClose={closeReviewModal}
+      >
+        <Pressable style={styles.reviewBackdrop} onPress={closeReviewModal} />
+        <View style={styles.reviewSheetWrap} pointerEvents="box-none">
+          <View style={styles.reviewSheet}>
+            <Text style={styles.reviewTitle}>Đánh giá người hỗ trợ</Text>
+
+            <Text style={styles.reviewLabel}>Số sao</Text>
+            <View style={styles.reviewStarsRow}>
+              {[1, 2, 3, 4, 5].map(star => (
+                <TouchableOpacity
+                  key={star}
+                  style={styles.starTouchable}
+                  onPress={() => setRating(star)}
+                  activeOpacity={0.8}
+                  disabled={submittingReview}
+                >
+                  <Feather
+                    name="star"
+                    size={28}
+                    color={star <= rating ? '#FBBF24' : '#CBD5E1'}
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.reviewLabel, { marginTop: 16 }]}>
+              Bình luận
+            </Text>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Nhập cảm nhận của bạn..."
+              placeholderTextColor="#94A3B8"
+              multiline
+              value={comment}
+              onChangeText={setComment}
+              editable={!submittingReview}
+            />
+
+            <View style={styles.reviewBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+                onPress={closeReviewModal}
+                disabled={submittingReview}
+              >
+                <Text style={styles.modalBtnGhostText}>Hủy</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.reviewSubmitBtn]}
+                onPress={handleSubmitReview}
+                disabled={submittingReview}
+              >
+                {submittingReview ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.reviewSubmitText}>Gửi đánh giá</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -915,7 +1305,7 @@ const styles = StyleSheet.create({
   },
   retryText: { color: '#991B1B', fontWeight: '600' },
 
-  // Modal
+  // Modal hủy booking / xóa đánh giá
   modalBackdrop: {
     position: 'absolute',
     inset: 0,
@@ -937,7 +1327,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
-  modalGrabber: { display: 'none' },
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
@@ -966,6 +1355,158 @@ const styles = StyleSheet.create({
   modalBtnDanger: { backgroundColor: '#991B1B' },
   modalBtnGhostText: { color: '#0F172A', fontWeight: '700' },
   modalBtnDangerText: { color: '#FFFFFF', fontWeight: '700' },
+
+  // Modal đánh giá
+  reviewBackdrop: {
+    position: 'absolute',
+    inset: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reviewSheetWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  reviewSheet: {
+    width: '85%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  reviewTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  reviewLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  reviewStarsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  starTouchable: {
+    marginHorizontal: 4,
+  },
+  commentInput: {
+    minHeight: 80,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    textAlignVertical: 'top',
+    color: '#0F172A',
+  },
+  reviewBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    gap: 12,
+  },
+  reviewSubmitBtn: {
+    backgroundColor: '#2563EB',
+  },
+  reviewSubmitText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  // Toast
+  toastContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 16,
+    right: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    backgroundColor: '#16A34A', // xanh cho success
+    borderRadius: 999,
+    zIndex: 999,
+    elevation: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toastText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+
+  // Rating UI
+  ratingBox: {
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+
+  ratingScore: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#FFFBEB',
+    color: '#B45309',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  ratingComment: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#111827',
+    lineHeight: 20,
+  },
+
+  ratingActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  editBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    marginRight: 8,
+  },
+  editBtnText: {
+    color: '#334155',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  deleteBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#FEE2E2',
+  },
+  deleteBtnText: {
+    color: '#B91C1C',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });
 
 export default BookingDetailScreen;
