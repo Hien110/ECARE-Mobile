@@ -10,6 +10,7 @@ import {
   PermissionsAndroid,
   Platform,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
@@ -21,6 +22,7 @@ import agoraService from '../../services/agoraService';
 import socketService from '../../services/socketService';
 import CallService from '../../services/CallService';
 import CallNotificationService from '../../services/CallNotificationService';
+import api from '../../services/api/axiosConfig';
 
 const VideoCallScreen = () => {
   const navigation = useNavigation();
@@ -38,6 +40,7 @@ const VideoCallScreen = () => {
   const [networkQuality, setNetworkQuality] = useState({ tx: 0, rx: 0 }); // Monitor network
   const [showNetworkWarning, setShowNetworkWarning] = useState(false); // Hiển thị cảnh báo mạng
   const [waitingForResponse, setWaitingForResponse] = useState(!isIncoming); // Chỉ waiting nếu là caller
+  const [sosLocationData, setSosLocationData] = useState(null); // Thông tin vị trí SOS
 
   const engineRef = useRef(null);
   const timerRef = useRef(null);
@@ -84,6 +87,29 @@ const VideoCallScreen = () => {
       CallNotificationService.dismissIncomingCallNotification(callId);
     }
   }, [callId]);
+
+  // Fetch SOS location data nếu là SOS call
+  useEffect(() => {
+    if (isSOSCall && sosId) {
+      fetchSOSLocation();
+    }
+  }, [isSOSCall, sosId]);
+
+  const fetchSOSLocation = async () => {
+    try {
+      const response = await api.get(`/sos/${sosId}`);
+      const sosData = response.data.data;
+      if (sosData?.location) {
+        setSosLocationData({
+          address: sosData.location.address,
+          latitude: sosData.location.coordinates?.latitude,
+          longitude: sosData.location.coordinates?.longitude,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching SOS location:', error);
+    }
+  };
 
   // Helper function to navigate back safely
   const safeGoBack = () => {
@@ -499,6 +525,20 @@ const VideoCallScreen = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const handleOpenMaps = () => {
+    if (!sosLocationData?.latitude || !sosLocationData?.longitude) return;
+    
+    const { latitude, longitude, address } = sosLocationData;
+    const label = encodeURIComponent(address || 'SOS Location');
+    
+    const url = Platform.select({
+      ios: `maps:0,0?q=${label}@${latitude},${longitude}`,
+      android: `geo:0,0?q=${latitude},${longitude}(${label})`,
+    });
+    
+    Linking.openURL(url);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
@@ -578,6 +618,29 @@ const VideoCallScreen = () => {
           </Text>
         </View>
       ) : null}
+
+      {/* SOS Location Info */}
+      {isSOSCall && sosLocationData && (
+        <View style={[styles.sosLocationContainer, { top: (typeof insets.top === 'number' ? insets.top : 0) + (showNetworkWarning ? 90 : 50) }]}>
+          <View style={styles.sosLocationHeader}>
+            <Icon name="location-on" size={20} color="#FF0000" />
+            <Text style={styles.sosLocationTitle}>Vị trí khẩn cấp</Text>
+          </View>
+          {sosLocationData.address && (
+            <Text style={styles.sosLocationAddress} numberOfLines={2}>
+              {sosLocationData.address}
+            </Text>
+          )}
+          <TouchableOpacity 
+            style={styles.openMapsButton} 
+            onPress={handleOpenMaps}
+            activeOpacity={0.8}
+          >
+            <Icon name="map" size={16} color="#fff" />
+            <Text style={styles.openMapsText}>Mở trong Google Maps</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Bottom Controls */}
       <View style={[styles.bottomControls, { bottom: (typeof insets.bottom === 'number' ? insets.bottom : 0) + 18 }]}> 
@@ -733,6 +796,55 @@ const styles = StyleSheet.create({
     width: wp('16%'),
     height: wp('16%'),
     borderRadius: wp('8%'),
+  },
+  sosLocationContainer: {
+    position: 'absolute',
+    left: wp('4%'),
+    right: wp('4%'),
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    borderRadius: wp('2%'),
+    padding: wp('3%'),
+    borderWidth: 1,
+    borderColor: '#FF0000',
+    elevation: 5,
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  sosLocationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: hp('0.8%'),
+  },
+  sosLocationTitle: {
+    color: '#FF0000',
+    fontSize: wp('3.8%'),
+    fontWeight: 'bold',
+    marginLeft: wp('1.5%'),
+  },
+  sosLocationAddress: {
+    color: '#fff',
+    fontSize: wp('3.2%'),
+    marginBottom: hp('1%'),
+    lineHeight: wp('4.5%'),
+  },
+  openMapsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4285F4',
+    paddingVertical: hp('1%'),
+    paddingHorizontal: wp('3%'),
+    borderRadius: wp('1.5%'),
+    marginTop: hp('0.5%'),
+  },
+  openMapsText: {
+    color: '#fff',
+    fontSize: wp('3.2%'),
+    fontWeight: 'bold',
+    marginLeft: wp('1.5%'),
   },
 });
 
