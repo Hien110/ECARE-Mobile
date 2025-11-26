@@ -17,6 +17,9 @@ import userService from '../../services/userService';
 import supporterServicesService from '../../services/supporterServicesService';
 import supporterSchedulingService from '../../services/supporterSchedulingService';
 
+import { PayOSService } from "../../services/payosService";
+import QRCodeSVG from 'react-native-qrcode-svg';
+
 const PaymentBookingScreen = ({ navigation, route }) => {
   const { supporter, bookingDraft, user } = route.params || {};
   const [userBooking, setUserBooking] = useState();
@@ -24,16 +27,16 @@ const PaymentBookingScreen = ({ navigation, route }) => {
   const [service, setService] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [note, setNote] = useState(''); // ✅ Ghi chú của người đặt lịch
-
-  console.log('User in PaymentBookingScreen:', user);
-  console.log('Booking Draft in PaymentBookingScreen:', bookingDraft);
-  console.log('Supporter in PaymentBookingScreen:', supporter);
+  const [orderCode, setOrderCode] = useState(null);
+  const [loadingQR, setLoadingQR] = useState(false);
+  const [qrError, setQrError] = useState("");
+  const [qrUrl, setQrUrl] = useState(null);
+  const [qrCode, setQrCode] = useState(null);
 
   useEffect(() => {
     const fetchUserBooking = async () => {
       const profileRes = await userService.getUser();
       if (profileRes.success) {
-        console.log('User booking', profileRes.data);
         setUserBooking(profileRes.data);
       }
     };
@@ -42,10 +45,6 @@ const PaymentBookingScreen = ({ navigation, route }) => {
       if (!bookingDraft?.serviceId) return;
       const data = await supporterServicesService.getServiceById(
         bookingDraft.serviceId,
-      );
-      console.log(
-        'Supporter service data:',
-        data.data.byMonth?.sessionsPerDay,
       );
       setService(data.data);
     };
@@ -63,6 +62,30 @@ const PaymentBookingScreen = ({ navigation, route }) => {
       return;
     }
 
+    if (!userBooking) {
+      Alert.alert("Thông báo", "Không tìm thấy thông tin người dùng.");
+      return;
+    }
+
+    if (method === 'online' && !qrCode) {
+      Alert.alert(
+        'Chưa có mã QR',
+        'Vui lòng đợi mã QR được tạo trước khi xác nhận thanh toán online.',
+      );
+      return;
+    }
+
+    if (method === 'online') {
+      const paymentSuccess = await checkPaymentStatus();
+      if (!paymentSuccess) {
+        Alert.alert(
+          'Thanh toán chưa hoàn tất',
+          'Vui lòng hoàn tất thanh toán trước khi xác nhận.',
+        );
+        return;
+      }
+    }
+
     try {
       const schedulingData = {
         supporter: supporter.user._id,
@@ -71,7 +94,7 @@ const PaymentBookingScreen = ({ navigation, route }) => {
         service: bookingDraft.serviceId,
         address: user.currentAddress,
         notes: note?.trim() || '', // ✅ Lưu ghi chú từ input
-        paymentStatus: 'unpaid', // 'unpaid'|'paid'|'refunded'
+        paymentStatus: method === 'online' ? 'paid' : 'unpaid', // 'unpaid'|'paid'|'refunded'
         paymentMethod: method === 'online' ? 'bank_transfer' : 'cash', // ✅ khớp model
         bookingType: bookingDraft?.packageType, // 'session'|'day'|'month'
         scheduleDate:
@@ -83,22 +106,68 @@ const PaymentBookingScreen = ({ navigation, route }) => {
         priceAtBooking: bookingDraft?.priceAtBooking || undefined,
       };
 
-      console.log('schedulingData:', schedulingData);
       const res = await supporterSchedulingService.createScheduling(
         schedulingData,
       );
-      console.log('createScheduling res:', res);
 
       if (method === 'cash') {
         // hiển thị modal custom
         setShowSuccessModal(true);
       } else {
         // online: vẫn dùng Alert đơn giản (bạn có thể đổi thành modal khác nếu muốn)
-        Alert.alert('Xác nhận', 'Thanh toán online đã được ghi nhận (demo).');
+        setShowSuccessModal(true);
+
       }
     } catch (err) {
       console.error('createScheduling error:', err);
       Alert.alert('Lỗi', 'Không thể tạo lịch hỗ trợ. Vui lòng thử lại.');
+    }
+  };
+
+  // Tạo QR khi chọn phương thức online 25/11/2025
+  useEffect(() => {
+    const fetchPayOSAndGenerateQR = async () => {
+      setLoadingQR(true);
+      setQrError("");
+      try {
+        // sinh orderCode ngẫu nhiên
+        const newOrderCode =
+          (Date.now() % 10_000_000_000_000) + Math.floor(Math.random() * 10_000);
+
+        const paymentData = {
+          orderCode: newOrderCode,
+          amount: bookingDraft?.priceAtBooking || 0, // dùng tổng đã chuẩn hoá
+          description: `Thanh toán dịch vụ hỗ trợ'}`,
+          returnUrl: "https://your-app-url.com/payment-success", // Thay thế URL phù hợp
+          cancelUrl: "https://your-app-url.com/payment-cancel", // Thay thế URL phù hợp
+        };
+
+        const result = await PayOSService.createPayment(paymentData);
+        setQrCode(result.qrCode);
+        setOrderCode(newOrderCode);
+
+      } catch (error) {
+        setQrUrl(null);
+        setQrError(error?.message || "Không thể tạo thanh toán.");
+        console.error("Error creating payment or generating QR:", error);
+      } finally {
+        setLoadingQR(false);
+      }
+    };
+
+    if (bookingDraft && method === 'online' && bookingDraft?.priceAtBooking > 0) {
+      fetchPayOSAndGenerateQR();
+    }
+  }, [bookingDraft, method]);
+
+  // Check thanh toán PayOS 25/11/2025
+  const checkPaymentStatus = async () => {
+    try {
+      const statusRes = await PayOSService.verifyPayment(orderCode);
+      return statusRes.status === 'PAID';
+    } catch (error) {
+      console.error("Error verifying payment status:", error);
+      return false;
     }
   };
 
@@ -243,10 +312,7 @@ const PaymentBookingScreen = ({ navigation, route }) => {
               color={method === 'cash' ? '#fff' : '#2563eb'}
             />
             <Text
-              style={[
-                styles.optionText,
-                method === 'cash' && styles.optionTextActive,
-              ]}
+              style={[styles.optionText, method === 'cash' && styles.optionTextActive]}
             >
               Tiền mặt
             </Text>
@@ -262,10 +328,7 @@ const PaymentBookingScreen = ({ navigation, route }) => {
               color={method === 'online' ? '#fff' : '#2563eb'}
             />
             <Text
-              style={[
-                styles.optionText,
-                method === 'online' && styles.optionTextActive,
-              ]}
+              style={[styles.optionText, method === 'online' && styles.optionTextActive]}
             >
               Online
             </Text>
@@ -276,14 +339,15 @@ const PaymentBookingScreen = ({ navigation, route }) => {
         {method === 'online' && (
           <View style={styles.qrContainer}>
             <Text style={styles.qrLabel}>Quét mã QR để thanh toán</Text>
-            <Image
-              source={{
-                uri: 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=PAYMENT_TEST_12345',
-              }}
-              style={styles.qrImage}
-            />
+            {loadingQR ? (
+              <Text style={styles.qrLabel}>Đang tải mã QR...</Text>
+            ) : qrError ? (
+              <Text style={{ color: 'red' }}>{qrError}</Text>
+            ) : qrCode ? (
+              <QRCodeSVG value={qrCode} size={200} />
+            ) : null}
             <Text style={styles.note}>
-              * Đây là mã QR minh hoạ để test giao diện
+              Hãy chụp màn hình mã QR và thanh toán qua ứng dụng ngân hàng của bạn.
             </Text>
           </View>
         )}
@@ -307,9 +371,15 @@ const PaymentBookingScreen = ({ navigation, route }) => {
               <Icon name="checkmark-circle" size={60} color="#22c55e" />
             </View>
             <Text style={styles.modalTitle}>Đặt lịch thành công</Text>
-            <Text style={styles.modalMessage}>
-              Tiền dịch vụ sẽ được thu sau khi dịch vụ hỗ trợ hoàn thành.
-            </Text>
+            {method === 'cash' ? (
+              <Text style={styles.modalMessage}>
+                Lịch hỗ trợ đã được tạo. Vui lòng chuẩn bị tiền mặt để thanh toán
+              </Text>
+            ) : (
+              <Text style={styles.modalMessage}>
+                Thanh toán online đã được ghi nhận.
+              </Text>
+            )}
 
             <TouchableOpacity
               style={styles.modalButton}
@@ -394,7 +464,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   qrImage: { width: 220, height: 220, marginBottom: 10 },
-  note: { fontSize: 12, color: '#64748b' },
+  note: { fontSize: 12, color: '#ff0000ff', paddingTop: 8, textAlign: 'center' },
 
   btnConfirm: {
     backgroundColor: '#2563eb',

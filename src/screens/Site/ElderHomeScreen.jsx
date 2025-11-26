@@ -35,6 +35,11 @@ export default function HomeScreen() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [familyLoading, setFamilyLoading] = useState(true);
   const [familyList, setFamilyList] = useState([]);
+  const [relationships, setRelationships] = useState([]);
+
+  
+  // 🆕 Track SOS sending state
+  const [isSendingSOS, setIsSendingSOS] = useState(false);
 
   // helper: notify
   const notify = useCallback((msg, type = 'info') => {
@@ -67,35 +72,37 @@ export default function HomeScreen() {
 
   // tải danh sách đã kết nối (accepted)
   const loadFamilyRelationships = useCallback(async () => {
-    if (!user?._id) return;
-    try {
-      setFamilyLoading(true);
-      const res = await relationshipService.getAllRelationships();
-      if (res?.success) {
-        const list = (res.data || [])
-          .filter(r => r?.status === 'accepted')
-          .map(r => {
-            const other = getOtherMember(r, user._id);
-            if (!other?._id) return null;
-            return {
-              _id: other._id,
-              fullName: other.fullName || 'Thành viên',
-              role: other.role, // doctor/family/supporter/...
-              avatar: other.avatar,
-              relationship: r?.relationship, // “con trai”, “con gái”,...
-            };
-          })
-          .filter(Boolean);
-        setFamilyList(list);
-      } else {
-        console.log('getAllRelationships error:', res?.message);
-      }
-    } catch (e) {
-      console.log('loadFamilyRelationships error:', e);
-    } finally {
-      setFamilyLoading(false);
+  if (!user?._id) return;
+  try {
+    setFamilyLoading(true);
+    const res = await relationshipService.getAllRelationships();
+    if (res?.success) {
+      const all = res.data || [];
+      setRelationships(all);
+      const list = all
+        .filter(r => r?.status === 'accepted')
+        .map(r => {
+          const other = getOtherMember(r, user._id);
+          if (!other?._id) return null;
+          return {
+            _id: other._id,
+            fullName: other.fullName || 'Thành viên',
+            role: other.role, // doctor/family/supporter/...
+            avatar: other.avatar,
+            relationship: r?.relationship, // “con trai”, “con gái”,...
+          };
+        })
+        .filter(Boolean);
+      setFamilyList(list);
+    } else {
+      console.log('getAllRelationships error:', res?.message);
     }
-  }, [user, getOtherMember]);
+  } catch (e) {
+    console.log('loadFamilyRelationships error:', e);
+  } finally {
+    setFamilyLoading(false);
+  }
+}, [user, getOtherMember]);
 
   // chấp nhận / từ chối yêu cầu
   const respondToRequest = useCallback(
@@ -190,15 +197,29 @@ export default function HomeScreen() {
     }
   }, [user, loadPendingRequests, loadFamilyRelationships]);
 
-    useEffect(() => {
-    const role = (user?.role || '').toLowerCase();
-    if (!user?._id) return;
-    if (role === 'elderly') {
-      enableFloating();   
-    } else {
-      disableFloating();  
-    }
-  }, [user]);
+  useEffect(() => {
+  if (!user?._id) return;
+  const role = (user?.role || '').toLowerCase();
+
+  if (role !== 'elderly') {
+    disableFloating();
+    return;
+  }
+
+  const hasAcceptedRelationship = (relationships || []).some(rel => {
+    const isElderInRel =
+      String(rel?.elderly?._id) === String(user._id) ||
+      String(rel?.family?._id) === String(user._id);
+      return isElderInRel && rel?.status === 'accepted';
+  });
+
+  if (!hasAcceptedRelationship) {
+    disableFloating();
+    return;
+  }
+
+  enableFloating();
+}, [user, relationships]);
 
   // time
   const [now, setNow] = useState(new Date());
@@ -206,6 +227,60 @@ export default function HomeScreen() {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // 🆕 Listener cho SOS call answered (elderly nhận khi có người chấp nhận)
+  useEffect(() => {
+    if (!user?._id) return;
+
+    const handleSOSCallAnswered = (data) => {
+      const { sosId, callId, recipient } = data;
+
+      console.log('✅ SOS call answered by:', recipient?.fullName);
+
+      // 🆕 Clear isSendingSOS state vì đã có người nhận
+      setIsSendingSOS(false);
+
+      // Tự động navigate đến VideoCall
+      nav.navigate('VideoCall', {
+        callId,
+        conversationId: null,
+        otherParticipant: recipient,
+        isIncoming: false,
+        isSOSCall: true,
+        sosId,
+      });
+
+      // Show toast notification
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(
+          `✅ ${recipient?.fullName || 'Thành viên gia đình'} đã chấp nhận cuộc gọi`,
+          ToastAndroid.SHORT
+        );
+      }
+    };
+
+    const handleSOSCallNoAnswer = (data) => {
+      console.log('❌ SOS call - no one answered');
+      
+      // 🆕 Clear isSendingSOS state vì đã hết người để gọi
+      setIsSendingSOS(false);
+      
+      Alert.alert(
+        '⚠️ Không có phản hồi',
+        data.message || 'Không có thành viên nào trả lời cuộc gọi khẩn cấp. Vui lòng thử gọi trực tiếp hoặc liên hệ số khẩn cấp 115.',
+        [{ text: 'OK' }]
+      );
+    };
+
+    socketService.on('sos_call_answered', handleSOSCallAnswered);
+    socketService.on('sos_call_no_answer', handleSOSCallNoAnswer);
+
+    return () => {
+      socketService.off('sos_call_answered', handleSOSCallAnswered);
+      socketService.off('sos_call_no_answer', handleSOSCallNoAnswer);
+    };
+  }, [user, nav]);
+
   const timeStr = useMemo(
     () =>
       now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
@@ -313,7 +388,19 @@ export default function HomeScreen() {
       return;
     }
 
+    // 🆕 Kiểm tra xem đang có SOS đang gửi không
+    if (isSendingSOS) {
+      Alert.alert(
+        '⚠️ Đang xử lý',
+        'Đang có cuộc gọi SOS đang được xử lý. Vui lòng đợi hoàn tất.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     try {
+      setIsSendingSOS(true); // 🆕 Set state đang gửi SOS
+      
       // Kiểm tra token CHI TIẾT
       const token = await AsyncStorage.getItem('ecare_token');
 
@@ -394,15 +481,30 @@ export default function HomeScreen() {
       );
 
       notify('Đã gửi cảnh báo đến tất cả thành viên!', 'success');
+      
+      // 🆕 Note: isSendingSOS sẽ được clear bởi listener sos_call_no_answer hoặc khi cuộc gọi kết thúc
     } catch (error) {
       console.error('❌ Error sending emergency notification:', error);
       console.error('❌ Error details:', error?.response?.data);
-      const errorMsg =
-        error?.response?.data?.message ||
-        'Gửi cảnh báo thất bại. Vui lòng thử lại.';
-      Alert.alert('Lỗi', errorMsg);
+      
+      setIsSendingSOS(false); // 🆕 Reset state khi có lỗi
+      
+      // 🆕 Xử lý error code ACTIVE_SOS_EXISTS
+      const errorCode = error?.response?.data?.code;
+      const errorMsg = error?.response?.data?.message;
+      
+      if (errorCode === 'ACTIVE_SOS_EXISTS') {
+        Alert.alert(
+          '⚠️ SOS đang xử lý',
+          errorMsg || 'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        const defaultMsg = errorMsg || 'Gửi cảnh báo thất bại. Vui lòng thử lại.';
+        Alert.alert('Lỗi', defaultMsg);
+      }
     }
-  }, [notify, user, nav, getCurrentLocation, reverseGeocode]);
+  }, [notify, user, nav, getCurrentLocation, reverseGeocode, isSendingSOS]);
 
   // demo actions
   const bookAppointment = () =>
@@ -518,16 +620,26 @@ export default function HomeScreen() {
 
         {/* Emergency – nút lớn, ít chữ, tương phản cao */}
         <TouchableOpacity
-          style={styles.emgBigBtn}
+          style={[
+            styles.emgBigBtn,
+            isSendingSOS && { opacity: 0.6, backgroundColor: '#ef4444' }
+          ]}
           onPress={handleEmergency}
+          disabled={isSendingSOS}
           accessibilityRole="button"
           accessibilityLabel="Gọi khẩn cấp. Nhấn để báo động cho gia đình"
           activeOpacity={0.9}
         >
           <Text style={styles.emgBigIcon} accessible>🚨</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.emgBigTitle}>GỌI KHẨN CẤP</Text>
-            <Text style={styles.emgBigDesc}>Liên hệ ngay toàn bộ gia đình</Text>
+            <Text style={styles.emgBigTitle}>
+              {isSendingSOS ? 'ĐANG XỬ LÝ...' : 'GỌI KHẨN CẤP'}
+            </Text>
+            <Text style={styles.emgBigDesc}>
+              {isSendingSOS 
+                ? 'Đang gọi đến thành viên gia đình...' 
+                : 'Liên hệ ngay toàn bộ gia đình'}
+            </Text>
           </View>
           <Text style={styles.emgChevron}>›</Text>
         </TouchableOpacity>

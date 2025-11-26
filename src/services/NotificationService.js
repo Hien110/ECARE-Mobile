@@ -5,6 +5,7 @@ import { Alert, PermissionsAndroid, Platform } from 'react-native';
 import api from './api/axiosConfig';
 import CallNotificationService from './CallNotificationService';
 import CallService from './CallService';
+import DeadmanNotificationService from './DeadmanNotificationService';
 
 class NotificationService {
   navigationRef = null;
@@ -34,6 +35,7 @@ class NotificationService {
     // Khởi tạo SOS Notification Service
     const SOSNotificationService = require('./SOSNotificationService').default;
     await SOSNotificationService.initialize();
+    await DeadmanNotificationService.initialize();
 
     // 🔔 Tạo Android channel để có heads-up banner khi foreground (cắm USB)
     if (Platform.OS === 'android') {
@@ -270,6 +272,14 @@ class NotificationService {
     const unsubscribe = messaging().onMessage(async remoteMessage => {
       const { notification, data } = remoteMessage;
 
+      // 🆕 Xử lý SOS call notification (foreground - KHÔNG hiển thị)
+      if (data?.type === 'sos_call') {
+        console.log('📥 [Foreground] SOS call notification received via FCM, NOT showing (Socket handles it)');
+        // Socket.IO đã xử lý và hiển thị UI
+        // KHÔNG cần hiển thị notification
+        return;
+      }
+
       // Xử lý video call notification
       if (data?.type === 'video_call') {
         // Kiểm tra duplicate
@@ -333,6 +343,23 @@ class NotificationService {
           ],
           { cancelable: true }
         );
+      } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+      // Cảnh báo: Người cao tuổi KHÔNG ỔN về SỨC KHỎE
+      const elderName = data?.elderName || data?.senderName || '';
+      const elderAvatar = data?.elderAvatar || data?.senderAvatar || '';
+      const timestamp = data?.timestamp;
+
+      await DeadmanNotificationService.showPhysUnwellNotification({
+        elderId: data?.elderId,
+        elderName,
+        elderAvatar,
+        message: notification?.body || data?.message,
+        timestamp,
+        notificationId: data?.notificationId,
+      });
+
+        // Không hiện Alert.js nữa, vì đã có full-screen notification
+        return;
       } else {
         // Notification thông thường
         await this.showForegroundBanner(notification, data);
@@ -392,6 +419,22 @@ class NotificationService {
         }, 800);
       } else if (data?.type === 'deadman_alert') {
         setTimeout(() => this.navigateToAlertsCenter(data), 800);
+      } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+        const elderName = data?.elderName || data?.senderName || '';
+
+        console.log('[NotificationService] Phys-unwell choice (background open)', {
+          elderId: data?.elderId,
+          elderName,
+        });
+
+        // Không tạo thêm notification, chỉ mở AlertsCenter nếu cần
+        setTimeout(() => {
+          this.navigateToAlertsCenter({
+            ...data,
+            groupKey: data?.groupKey || 'deadman_phys_unwell',
+          });
+        }, 800);
+        return;
       }
     });
   }
@@ -444,6 +487,20 @@ class NotificationService {
             }, 2000);
           } else if (data?.type === 'deadman_alert') {
             setTimeout(() => this.navigateToAlertsCenter(data), 2000);
+          } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+            const elderName = data?.elderName || data?.senderName || '';
+
+            console.log('[NotificationService] Phys-unwell choice (killed open)', {
+              elderId: data?.elderId,
+              elderName,
+            });
+
+            setTimeout(() => {
+              this.navigateToAlertsCenter({
+                ...data,
+                groupKey: data?.groupKey || 'deadman_phys_unwell',
+              });
+            }, 2000);
           }
         }
       });

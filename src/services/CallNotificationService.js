@@ -25,7 +25,19 @@ class CallNotificationService {
         lightColor: '#2196F3',
       });
 
-      console.log('✅ Call notification channel created');
+      // 🆕 Tạo channel cho SOS calls (ưu tiên cao hơn)
+      await notifee.createChannel({
+        id: 'sos_calls',
+        name: 'Cuộc gọi khẩn cấp SOS',
+        importance: AndroidImportance.HIGH,
+        sound: 'sos_alarm', // Sử dụng sound khác biệt cho SOS
+        vibration: true,
+        vibrationPattern: [100, 500, 200, 500, 200, 500, 200, 500], // 🔧 Fixed: Không dùng 0, dùng 100ms delay
+        lights: true,
+        lightColor: '#FF0000', // Đỏ cho SOS
+      });
+
+      console.log('✅ Call notification channels created');
     } catch (error) {
       console.error('❌ Error creating call notification channel:', error);
     }
@@ -136,6 +148,101 @@ class CallNotificationService {
   }
 
   /**
+   * Hiển thị SOS call notification với UI khẩn cấp
+   * @param {Object} callData - Dữ liệu cuộc gọi SOS
+   */
+  async showSOSCallNotification(callData) {
+    try {
+      const { sosId, callId, requester, recipientIndex, totalRecipients } = callData;
+
+      console.log('🆘📞 Showing SOS call notification:', {
+        sosId,
+        callId,
+        requesterName: requester?.fullName,
+        recipientIndex,
+        totalRecipients,
+      });
+
+      // Tạo actions cho SOS notification
+      const notificationActions = [
+        {
+          title: '❌ Từ chối',
+          pressAction: {
+            id: 'reject_sos_call',
+          },
+        },
+        {
+          title: '🚨 CHẤP NHẬN NGAY',
+          pressAction: {
+            id: 'accept_sos_call',
+            launchActivity: 'default',
+          },
+        },
+      ];
+
+      // Hiển thị notification với full-screen intent
+      const notificationId = await notifee.displayNotification({
+        id: callId, // Sử dụng callId làm notification ID
+        title: '🆘 CUỘC GỌI KHẨN CẤP SOS',
+        body: `${requester?.fullName || 'Người thân'} cần trợ giúp khẩn cấp! (${recipientIndex}/${totalRecipients})`,
+        data: {
+          type: 'sos_call',
+          sosId,
+          callId,
+          requesterId: requester?._id,
+          requesterName: requester?.fullName,
+          requesterAvatar: requester?.avatar,
+          requesterPhone: requester?.phoneNumber,
+          recipientIndex: String(recipientIndex),
+          totalRecipients: String(totalRecipients),
+        },
+        android: {
+          channelId: 'sos_calls',
+          importance: AndroidImportance.HIGH,
+          category: AndroidCategory.CALL,
+          
+          // QUAN TRỌNG: Full-screen intent
+          fullScreenAction: {
+            id: 'default',
+            launchActivity: 'default',
+          },
+          
+          autoCancel: true,
+          ongoing: true,
+          showTimestamp: true,
+          timestamp: Date.now(),
+          
+          // Sound & vibration - Mạnh hơn cho SOS
+          sound: 'sos_alarm',
+          loopSound: true,
+          vibrationPattern: [100, 500, 200, 500, 200, 500, 200, 500], // 🔧 Fixed: Không dùng 0
+          
+          // Color đỏ cho SOS
+          color: '#FF0000',
+          
+          smallIcon: 'ic_launcher',
+          largeIcon: requester?.avatar || undefined,
+          circularLargeIcon: true,
+          
+          actions: notificationActions,
+          
+          pressAction: {
+            id: 'ignore',
+          },
+        },
+      });
+
+      this.activeCallNotificationId = notificationId;
+      console.log('✅ SOS call notification displayed:', notificationId);
+
+      return notificationId;
+    } catch (error) {
+      console.error('❌ Error showing SOS call notification:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Dismiss incoming call notification
    */
   async dismissIncomingCallNotification(callId) {
@@ -162,7 +269,8 @@ class CallNotificationService {
       const notifications = await notifee.getDisplayedNotifications();
       
       for (const notification of notifications) {
-        if (notification.notification?.data?.type === 'video_call') {
+        const notifType = notification.notification?.data?.type;
+        if (notifType === 'video_call' || notifType === 'sos_call') {
           await notifee.cancelNotification(notification.id);
         }
       }
