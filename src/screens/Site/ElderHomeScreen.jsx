@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,6 +27,8 @@ import { enableFloating, disableFloating } from '../../utils/floatingCheckinHelp
 /* ===================== HOME ===================== */
 export default function HomeScreen() {
   const nav = useNavigation();
+  const route = useRoute();
+  console.log('🧭 [ElderHome/HomeScreen] route params:', route?.params);
 
   // boot/auth
   const [booting, setBooting] = useState(true);
@@ -304,6 +306,48 @@ export default function HomeScreen() {
       subscription.remove();
     };
   }, [user, handleEmergency]);
+
+  useEffect(() => {
+    if (!user?._id) {
+      console.log('⚠️ [ElderHome/HomeScreen] autoSOSFromDeadman: chưa có user, bỏ qua');
+      return;
+    }
+
+    const role = (user?.role || '').toLowerCase();
+    const autoSOS = route?.params?.autoSOSFromDeadman;
+
+    console.log('🔁 [ElderHome/HomeScreen] check autoSOSFromDeadman:', {
+      userId: user?._id,
+      role,
+      autoSOS,
+      params: route?.params,
+    });
+
+    // Chỉ người cao tuổi mới auto SOS
+    if (role !== 'elderly') {
+      console.log('ℹ️ [ElderHome/HomeScreen] Không phải elderly, bỏ qua autoSOSFromDeadman');
+      return;
+    }
+
+    // Không có flag thì thôi
+    if (!autoSOS) {
+      return;
+    }
+
+    console.log('📞 [ElderHome/HomeScreen] Auto calling handleEmergency() từ autoSOSFromDeadman');
+
+    // GỌI SOS THẲNG
+    handleEmergency();
+
+    // Reset flag để tránh auto gọi lại nhiều lần khi re-render
+    if (nav.setParams) {
+      nav.setParams({
+        ...(route?.params || {}),
+        autoSOSFromDeadman: false,
+      });
+      console.log('✅ [ElderHome/HomeScreen] Đã reset autoSOSFromDeadman về false');
+    }
+  }, [user, route, nav, handleEmergency]);
 
   const timeStr = useMemo(
     () =>
