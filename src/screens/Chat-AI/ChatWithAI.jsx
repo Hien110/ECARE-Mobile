@@ -17,9 +17,17 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Sound, { createSound } from 'react-native-nitro-sound';
+
+// TTS playback deps (only react-native-fs; avoid react-native-sound conflict)
+import RNFS from 'react-native-fs';
 import aiService from '../../services/aiService';
 import { transcriptionService } from '../../services/transcriptionService';
 import { BASE_URL as API_BASE_URL } from '../../services/api/axiosConfig';
+import { Buffer } from 'buffer';
+
+if (!global.Buffer) {
+  global.Buffer = Buffer;
+}
 
 /* ================== Cấu hình ================== */
 // Dùng cùng host với API để tránh lệch địa chỉ khi test LAN/emulator
@@ -31,8 +39,8 @@ const AUTO_STOP_MS = 30_000; // auto dừng ghi sau 30s
 const DEBUG = false; // tắt toàn bộ log
 
 const BANNED_WORDS = [
-  'dm','dit me','ditme','dit con me','dcmm','cl','cc','cac','loz','lozz','lon','buoi','cacc',
-  'fuck','fucking','shit','bitch','asshole','motherfucker','mf'
+  'dm', 'dit me', 'ditme', 'dit con me', 'dcmm', 'cl', 'cc', 'cac', 'loz', 'lozz', 'lon', 'buoi', 'cacc',
+  'fuck', 'fucking', 'shit', 'bitch', 'asshole', 'motherfucker', 'mf'
 ];
 
 function normalizeVN(s = '') {
@@ -122,12 +130,14 @@ const ChatWithAI = ({ navigation, route }) => {
   const [messages, setMessages] = useState([]);
   const [followUps, setFollowUps] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
 
   // ghi âm (React Native thuần)
   const [isRecording, setIsRecording] = useState(false);
   const recordingRef = useRef(null);
   const stopTimerRef = useRef(null);
   const recorder = useRef(createSound()).current;
+  const ttsPlayingRef = useRef(false);
 
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -155,10 +165,29 @@ const ChatWithAI = ({ navigation, route }) => {
   const baseSubtitle = route?.params?.subtitle ?? 'Hỗ trợ tâm lý';
   const title = baseTitle;
   const subtitle =
-    uploading ? 'Đang chuyển giọng nói thành văn bản…' :
-    sending ? 'Đang trả lời…' :
-    connecting ? 'Đang kết nối…' :
-    connected ? 'Đã kết nối máy chủ' : baseSubtitle;
+    speaking ? '🔊 Đang đọc câu trả lời…' :
+      uploading ? 'Đang chuyển giọng nói thành văn bản…' :
+        sending ? 'Đang trả lời…' :
+          connecting ? 'Đang kết nối…' :
+            connected ? 'Đã kết nối máy chủ' : baseSubtitle;
+
+  // ====== Speaking animation (pulsing concentric circles) ======
+  const speakPulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (speaking) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(speakPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+          Animated.timing(speakPulse, { toValue: 0, duration: 700, useNativeDriver: true }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    } else {
+      speakPulse.stop?.();
+      speakPulse.setValue(0);
+    }
+  }, [speaking, speakPulse]);
 
   const scrollToEnd = () =>
     requestAnimationFrame(() =>
@@ -191,14 +220,14 @@ const ChatWithAI = ({ navigation, route }) => {
       const raw = await AsyncStorage.getItem(SESS_KEY);
       const arr = raw ? JSON.parse(raw) : [];
       if (Array.isArray(arr)) setSessions(arr);
-    } catch {}
+    } catch { }
   }, []);
 
   const saveSessionsLocal = useCallback(async list => {
     try {
       setSessions(list);
       await AsyncStorage.setItem(SESS_KEY, JSON.stringify(list));
-    } catch {}
+    } catch { }
   }, []);
 
   const upsertSessionMeta = useCallback(async ({ id, title }) => {
@@ -209,7 +238,7 @@ const ChatWithAI = ({ navigation, route }) => {
         { id, title: normTitle, updatedAt: Date.now() },
         ...rest,
       ].slice(0, 50);
-      AsyncStorage.setItem(SESS_KEY, JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(SESS_KEY, JSON.stringify(next)).catch(() => { });
       return next;
     });
   }, []);
@@ -251,7 +280,7 @@ const ChatWithAI = ({ navigation, route }) => {
 
       list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       await saveSessionsLocal(list);
-    } catch {}
+    } catch { }
   }, [saveSessionsLocal]);
 
   // ========= Khởi tạo =========
@@ -265,7 +294,7 @@ const ChatWithAI = ({ navigation, route }) => {
     addMessage(
       'assistant',
       '👋 Chào mừng bạn đến với Trợ lý AI của E-Care! ' +
-        'Nhấn "Kết nối" để bắt đầu nói chuyện bằng giọng nói 🎙️',
+      'Nhấn "Kết nối" để bắt đầu nói chuyện bằng giọng nói 🎙️',
     );
     scrollToEnd();
   }, [addMessage]);
@@ -324,6 +353,49 @@ const ChatWithAI = ({ navigation, route }) => {
     }
   }, [isRecording, recorder]);
 
+  // ====== TTS Playback helper (FIXED) ======
+  const playTTSBase64 = useCallback(async (base64) => {
+  if (!base64) {
+    console.log('[TTS] empty base64, skip');
+    return;
+  }
+  if (ttsPlayingRef.current) {
+    console.log('[TTS] already playing, skip');
+    return;
+  }
+
+  ttsPlayingRef.current = true;
+  setSpeaking(true);
+
+  try {
+    const filePath = `${RNFS.CachesDirectoryPath}/ai_tts_${Date.now()}.mp3`;
+
+    // Ghi file từ base64
+    await RNFS.writeFile(filePath, base64, 'base64');
+    console.log('[TTS] file written to:', filePath);
+
+    const stat = await RNFS.stat(filePath);
+    console.log('[TTS] file size:', stat.size);
+
+    // Lắng nghe khi phát xong
+    Sound.addPlaybackEndListener(() => {
+      console.log('[TTS] playback completed');
+      ttsPlayingRef.current = false;
+      setSpeaking(false);
+      Sound.removePlaybackEndListener();
+    });
+
+    // Phát file local
+    const result = await Sound.startPlayer(filePath);
+    console.log('[TTS] startPlayer result:', result);
+  } catch (e) {
+    console.log('[TTS] playback error:', e?.message || e);
+    ttsPlayingRef.current = false;
+    setSpeaking(false);
+  }
+}, []);
+
+
   const handleSend = async text => {
     const msg = (text ?? '').trim();
     if (!msg || sending) return;
@@ -365,7 +437,9 @@ const ChatWithAI = ({ navigation, route }) => {
         title: firstLine.slice(0, 60),
       });
 
-      if (data?.reply) addMessage('assistant', data.reply);
+      if (data?.reply) {
+        addMessage('assistant', data.reply);
+      }
       if (data?.emotion?.supportMessage)
         addMessage('assistant', `💬 ${data.emotion.supportMessage}`);
       if (Array.isArray(data?.emotion?.followUps)) {
@@ -406,7 +480,7 @@ const ChatWithAI = ({ navigation, route }) => {
         console.error('Transcription error:', e);
         addMessage(
           'assistant',
-          '❌ Lỗi khi chuyển giọng nói thành văn bản.',
+          'Cháu chưa nghe rõ. Bà nói lại giúp cháu nhé.',
         );
       } finally {
         setUploading(false);
@@ -415,42 +489,6 @@ const ChatWithAI = ({ navigation, route }) => {
     },
     [addMessage, handleSend],
   );
-
-  /* ====== Kết nối + auto-record ====== */
-  const handleConnect = useCallback(async () => {
-    setConnecting(true);
-    try {
-      const ac = new AbortController();
-      const t = setTimeout(() => ac.abort(), 6000);
-      const res = await fetch(HEALTH_URL, { signal: ac.signal });
-      clearTimeout(t);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      setConnected(true);
-      addMessage(
-        'assistant',
-        '🔌 Đã kết nối máy chủ. 🎙️ Bắt đầu ghi âm...',
-      );
-      const started = await startRecord();
-      if (!started) return;
-
-      // Auto stop
-      stopTimerRef.current = setTimeout(async () => {
-        const uri = await stopRecordGetUri();
-        await transcribeAndAppend(uri);
-        stopTimerRef.current = null;
-      }, AUTO_STOP_MS);
-    } catch (e) {
-      setConnected(false);
-      addMessage(
-        'assistant',
-        '⚠️ Kết nối thất bại. Kiểm tra mạng hoặc URL máy chủ.',
-      );
-    } finally {
-      setConnecting(false);
-      scrollToEnd();
-    }
-  }, [HEALTH_URL, addMessage, startRecord, stopRecordGetUri, transcribeAndAppend]);
 
   // ========= Tải lịch sử của session hiện tại =========
   const loadHistory = useCallback(
@@ -462,10 +500,10 @@ const ChatWithAI = ({ navigation, route }) => {
         const res = await (aiService.history
           ? aiService.history({ sessionId, limit: 200 })
           : fetch(
-              '/ai/history?sessionId=' +
-                encodeURIComponent(sessionId) +
-                '&limit=200',
-            ).then(r => r.json()));
+            '/ai/history?sessionId=' +
+            encodeURIComponent(sessionId) +
+            '&limit=200',
+          ).then(r => r.json()));
 
         const ok =
           res?.success ??
@@ -591,7 +629,7 @@ const ChatWithAI = ({ navigation, route }) => {
                 } else {
                   const r = await fetch(
                     '/ai/sessions?sessionId=' +
-                      encodeURIComponent(id),
+                    encodeURIComponent(id),
                     { method: 'DELETE' },
                   );
                   const j = await r.json().catch(() => ({}));
@@ -609,7 +647,7 @@ const ChatWithAI = ({ navigation, route }) => {
               setSessions(prev => {
                 const next = prev.filter(s => s.id !== id);
                 AsyncStorage.setItem(SESS_KEY, JSON.stringify(next)).catch(
-                  () => {},
+                  () => { },
                 );
                 return next;
               });
@@ -643,6 +681,19 @@ const ChatWithAI = ({ navigation, route }) => {
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>AI</Text>
           </View>
+          {speaking && (
+            <View style={styles.speakingWrap}>
+              <Animated.View style={[styles.pulseCircle, {
+                transform: [{ scale: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.4] }) }],
+                opacity: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0.15] })
+              }]} />
+              <Animated.View style={[styles.pulseCircle, {
+                transform: [{ scale: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.2] }) }],
+                opacity: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.08] })
+              }]} />
+              <Ionicons name="volume-high" size={18} color="#FFFFFF" style={styles.pulseIcon} />
+            </View>
+          )}
         </View>
 
         <View style={styles.headerTextContainer}>
@@ -750,6 +801,56 @@ const ChatWithAI = ({ navigation, route }) => {
                   : { backgroundColor: '#FFFFFF' },
               ]}>
               <Text style={styles.messageText}>{m.content}</Text>
+              {m.role === 'assistant' && (
+                <TouchableOpacity
+                  style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center' }}
+                  onPress={async () => {
+                    try {
+                      // Không setSpeaking ở đây, để playTTSBase64 quản lý
+                      const token =
+                        (await AsyncStorage.getItem('accessToken')) ||
+                        (await AsyncStorage.getItem('token')) ||
+                        '';
+                      const r = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/ai/tts`, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify({ text: m.content, lang: 'vi' }),
+                      });
+                      const j = await r.json();
+                      console.log('[TTS] response keys:', Object.keys(j || {}));
+
+                      let b64 = j?.data?.base64 || j?.base64 || '';
+
+                      if (!b64) {
+                        console.log('[TTS] no base64 in response');
+                        return;
+                      }
+
+                      // Nếu backend trả "data:audio/xxx;base64,...." thì cắt prefix
+                      if (b64.startsWith('data:')) {
+                        const idx = b64.indexOf('base64,');
+                        if (idx !== -1) {
+                          b64 = b64.slice(idx + 'base64,'.length);
+                        }
+                      }
+
+                      console.log('[TTS] base64 length:', b64.length);
+
+                      await playTTSBase64(b64);
+                    } catch (e) {
+                      console.log('[TTS] fetch/play failed:', e?.message || e);
+                      setSpeaking(false);
+                      ttsPlayingRef.current = false;
+                    }
+                  }}
+                >
+                  <Ionicons name="volume-high" size={16} color="#1E88E5" />
+                  <Text style={{ marginLeft: 6, color: '#1E88E5', fontSize: 12 }}>Đọc đoạn này</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         ))}
@@ -1040,6 +1141,27 @@ const styles = StyleSheet.create({
   },
   sessionTitle: { fontSize: 14, color: '#212121', marginBottom: 2 },
   sessionMeta: { fontSize: 11, color: '#757575' },
+
+  speakingWrap: {
+    position: 'absolute',
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pulseCircle: {
+    position: 'absolute',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
+  },
+  pulseIcon: {
+    position: 'absolute',
+  },
 });
 
 export default ChatWithAI;
