@@ -15,6 +15,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import socketService from '../../services/socketService';
 import CallNotificationService from '../../services/CallNotificationService';
+import RingtoneService from '../../services/RingtoneService';
 
 const SOSCallScreen = () => {
   const navigation = useNavigation();
@@ -37,6 +38,9 @@ const SOSCallScreen = () => {
     if (callId) {
       CallNotificationService.dismissIncomingCallNotification(callId);
     }
+
+    // Phát âm thanh SOS khẩn cấp
+    RingtoneService.playSOSRingtone(true);
 
     // Animation cho avatar (pulse effect)
     const pulseAnimation = Animated.loop(
@@ -69,6 +73,7 @@ const SOSCallScreen = () => {
     return () => {
       pulseAnimation.stop();
       Vibration.cancel();
+      RingtoneService.stopRingtone(); // Dừng âm thanh khi unmount
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       socketService.off('sos_call_timeout', handleCallTimeout);
       socketService.off('sos_call_cancelled', handleCallCancelled);
@@ -79,6 +84,7 @@ const SOSCallScreen = () => {
     if (data.sosId === sosId && data.callId === callId) {
       console.log('⏰ SOS call timeout');
       Vibration.cancel();
+      RingtoneService.stopRingtone();
       navigation.goBack();
     }
   };
@@ -87,6 +93,7 @@ const SOSCallScreen = () => {
     if (data.sosId === sosId && data.callId === callId) {
       console.log('🛑 SOS call cancelled');
       Vibration.cancel();
+      RingtoneService.stopRingtone();
       navigation.goBack();
     }
   };
@@ -94,6 +101,7 @@ const SOSCallScreen = () => {
   const handleAcceptCall = () => {
     console.log('✅ SOS Call accepted');
     Vibration.cancel();
+    RingtoneService.stopRingtone(); // Dừng âm thanh khi accept
     
     // Emit socket event accept SOS call
     socketService.socket.emit('sos_call_accepted', {
@@ -115,6 +123,7 @@ const SOSCallScreen = () => {
   const handleRejectCall = () => {
     console.log('❌ SOS Call rejected');
     Vibration.cancel();
+    RingtoneService.stopRingtone(); // Dừng âm thanh khi reject
     
     // Emit socket event reject SOS call
     socketService.socket.emit('sos_call_rejected', {
@@ -128,6 +137,7 @@ const SOSCallScreen = () => {
   const handleCallDirect = () => {
     console.log('📞 Calling directly via phone');
     Vibration.cancel();
+    RingtoneService.stopRingtone(); // Dừng âm thanh khi gọi trực tiếp
     
     if (requester?.phoneNumber) {
       Linking.openURL(`tel:${requester.phoneNumber}`);

@@ -14,6 +14,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import socketService from '../../services/socketService';
 import CallNotificationService from '../../services/CallNotificationService';
+import RingtoneService from '../../services/RingtoneService';
 
 const IncomingCallScreen = () => {
   const navigation = useNavigation();
@@ -36,6 +37,20 @@ const IncomingCallScreen = () => {
     if (callId) {
       CallNotificationService.dismissIncomingCallNotification(callId);
     }
+
+    // 🔊 Phát nhạc chuông cuộc gọi đến
+    const playRingtone = async () => {
+      try {
+        if (callType === 'video') {
+          await RingtoneService.playIncomingCallRingtone(true); // Loop = true
+        } else {
+          await RingtoneService.playIncomingCallRingtone(true);
+        }
+      } catch (error) {
+        console.error('❌ Error playing ringtone:', error);
+      }
+    };
+    playRingtone();
 
     // Animation cho avatar (pulse effect)
     const pulseAnimation = Animated.loop(
@@ -67,6 +82,8 @@ const IncomingCallScreen = () => {
     return () => {
       pulseAnimation.stop();
       Vibration.cancel();
+      // 🔇 Dừng nhạc chuông khi rời khỏi màn hình
+      RingtoneService.stopRingtone();
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       socketService.off('video_call_cancelled', handleCallCancelled);
@@ -77,13 +94,14 @@ const IncomingCallScreen = () => {
     if (data.callId === callId) {
       console.log('📞 Caller cancelled the call');
       Vibration.cancel();
+      RingtoneService.stopRingtone(); // Dừng nhạc chuông
       navigation.goBack();
     }
   };
-
   const handleAccept = () => {
     console.log('✅ Call accepted');
     Vibration.cancel();
+    RingtoneService.stopRingtone(); // Dừng nhạc chuông khi chấp nhận
     
     // Emit socket event accept call - SỬA: Dùng acceptVideoCall() thay vì emit()
     const acceptData = {
@@ -106,6 +124,7 @@ const IncomingCallScreen = () => {
   const handleReject = () => {
     console.log('❌ Call rejected by callee');
     Vibration.cancel();
+    RingtoneService.stopRingtone(); // Dừng nhạc chuông khi từ chối
     
     // Kiểm tra socket connection trước khi emit
     const socketStatus = socketService.getConnectionStatus();
