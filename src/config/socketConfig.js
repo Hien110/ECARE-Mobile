@@ -2,8 +2,10 @@
 export const CONFIG = {
   // Development
 
+
   SOCKET_SERVER_URL: 'http://192.168.1.45:3000',
   API_BASE_URL: 'http://192.168.1.45:3000/api',
+
 
   // Production (uncomment when deploying)
   // SOCKET_SERVER_URL: 'https://your-api-domain.com',

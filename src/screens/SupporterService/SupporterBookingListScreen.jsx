@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -23,22 +23,12 @@ import userService from '../../services/userService';
 const HEADER_COLOR = '#4F7EFF';
 const VN_TZ = 'Asia/Ho_Chi_Minh';
 
-const ROUTES = {
-  supporter: 'BookingDetails', // sửa theo route dự án của bạn
-  doctorList: 'DoctorBookingList',
-};
-
-/**
- * SESSION_SLOTS = ['morning', 'afternoon', 'evening']
- * (bỏ night vì model không có)
- */
 const scheduleTimeMap = {
   morning: 'Buổi sáng: 8h - 12h',
   afternoon: 'Buổi chiều: 13h - 17h',
   evening: 'Buổi tối: 18h - 21h',
 };
 
-// Label ngắn gọn cho hiển thị theo tháng
 const scheduleTimeShortMap = {
   morning: 'Buổi sáng',
   afternoon: 'Buổi chiều',
@@ -79,10 +69,6 @@ const statusColors = {
   default: { bg: '#EDF2F7', text: '#4A5568', border: '#E2E8F0', label: 'Khác' },
 };
 
-/**
- * paymentStatus: ['unpaid', 'paid', 'refunded']
- * -> đổi mapping cho đúng với model
- */
 const paymentStatusColors = {
   unpaid: {
     bg: '#FFF7E6',
@@ -105,12 +91,6 @@ const paymentStatusColors = {
   default: { bg: '#EDF2F7', text: '#4A5568', border: '#E2E8F0', label: 'Khác' },
 };
 
-const bookingTypeLabels = {
-  session: 'Theo buổi',
-  day: 'Theo ngày',
-  month: 'Theo tháng',
-};
-
 function formatDateISOToVN(iso) {
   if (!iso) return '';
   try {
@@ -128,7 +108,6 @@ function formatDateISOToVN(iso) {
   }
 }
 
-// chỉ lấy phần ngày dd/mm/yyyy
 function formatDateOnlyVN(iso) {
   if (!iso) return '';
   try {
@@ -170,21 +149,96 @@ const Avatar = ({ uri, fallback, size = 44 }) => (
   />
 );
 
+const Header = ({ navigation, onRefresh }) => (
+  <View style={styles.headerWrap}>
+    <View style={styles.headerRow}>
+      {navigation.canGoBack() ? (
+        <TouchableOpacity
+          onPress={navigation.goBack}
+          style={styles.iconBtn}
+          activeOpacity={0.8}
+        >
+          <Feather name="chevron-left" size={22} color="#fff" />
+        </TouchableOpacity>
+      ) : (
+        <View style={styles.iconBtnPlaceholder} />
+      )}
+
+      <View style={styles.headerCenter}>
+        <Text style={styles.headerTitle}>Danh sách lịch hỗ trợ</Text>
+        <Text style={styles.headerSubtitle}>Theo dõi & quản lý lịch hỗ trợ</Text>
+      </View>
+
+      <TouchableOpacity
+        onPress={onRefresh}
+        style={styles.iconBtn}
+        activeOpacity={0.8}
+      >
+        <Feather name="refresh-ccw" size={18} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
+// ===== Thanh tab để chuyển giữa lịch hỗ trợ & lịch tư vấn bác sĩ =====
+const BookingTabBar = ({ onPressSupporter, onPressDoctor }) => {
+  // Màn này luôn là lịch hỗ trợ → tab "Lịch hỗ trợ" đang active
+  const activeTab = 'supporter';
+
+  return (
+    <View style={styles.tabBarContainer}>
+      <TouchableOpacity
+        style={[
+          styles.tabItem,
+          activeTab === 'supporter' && styles.tabItemActive,
+        ]}
+        activeOpacity={0.9}
+        onPress={onPressSupporter}
+      >
+        <Text
+          style={[
+            styles.tabItemText,
+            activeTab === 'supporter' && styles.tabItemTextActive,
+          ]}
+        >
+          Lịch hỗ trợ
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          styles.tabItem,
+          activeTab === 'doctor' && styles.tabItemActive,
+        ]}
+        activeOpacity={0.9}
+        onPress={onPressDoctor}
+      >
+        <Text
+          style={[
+            styles.tabItemText,
+            activeTab === 'doctor' && styles.tabItemTextActive,
+          ]}
+        >
+          Lịch tư vấn bác sĩ
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const SupporterBookingListScreen = ({ navigation, route }) => {
+  // ===== Hooks =====
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [userId, setUserId] = useState(null);
 
-  // Tab: supporter | doctor (UI)
-  const [activeTab, setActiveTab] = useState('supporter');
-
-  // 1) Lấy userId (ưu tiên route, fallback API)
+  // ===== Lấy userId =====
   useEffect(() => {
     let cancelled = false;
 
-    (async () => {
+    const getUserId = async () => {
       const idFromRoute = route?.params?.userId;
       if (idFromRoute) {
         if (!cancelled) setUserId(idFromRoute);
@@ -199,15 +253,18 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
       } else {
         setError('Không thể lấy thông tin người dùng. Vui lòng đăng nhập lại.');
       }
-    })();
+    };
+
+    getUserId();
 
     return () => {
       cancelled = true;
     };
   }, [route?.params?.userId]);
 
-  // 2) Tải bookings khi đã có userId
-  const fetchBookings = useCallback(async () => {
+  // ===== Hàm tải bookings =====
+  const fetchBookings = async () => {
+    if (!userId) return;
     try {
       setError(null);
       setLoading(true);
@@ -216,8 +273,6 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
       );
       if (response?.success) {
         console.log(response.data);
-
-        // Đảo ngược danh sách để mới nhất lên trên
         setBookings(Array.isArray(response.data) ? response.data.reverse() : []);
       } else {
         setError('Không thể tải danh sách đặt lịch.');
@@ -229,53 +284,33 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  };
 
+  // ===== Gọi fetchBookings khi đã có userId =====
   useEffect(() => {
     if (!userId) return;
     fetchBookings();
-  }, [userId, fetchBookings]);
+  }, [userId]);
 
-  const onRefresh = useCallback(async () => {
+  const onRefresh = async () => {
     setRefreshing(true);
     try {
       await fetchBookings();
     } finally {
       setRefreshing(false);
     }
-  }, [fetchBookings]);
+  };
 
-  /* ===== Header đẹp hơn ===== */
-  const Header = () => (
-    <View style={styles.headerWrap}>
-      <View style={styles.headerRow}>
-        {navigation.canGoBack() ? (
-          <TouchableOpacity
-            onPress={navigation.goBack}
-            style={styles.iconBtn}
-            activeOpacity={0.8}
-          >
-            <Feather name="chevron-left" size={22} color="#fff" />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.iconBtnPlaceholder} />
-        )}
+  // ===== Handler chuyển tab =====
+  const handlePressSupporterTab = () => {
+    // Đang ở màn này rồi → có thể refresh nhẹ nếu bạn muốn
+    // onRefresh();
+  };
 
-        <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Danh sách lịch đặt</Text>
-          <Text style={styles.headerSubtitle}>Theo dõi & quản lý đặt lịch</Text>
-        </View>
-
-        <TouchableOpacity
-          onPress={onRefresh}
-          style={styles.iconBtn}
-          activeOpacity={0.8}
-        >
-          <Feather name="refresh-ccw" size={18} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const handlePressDoctorTab = () => {
+    // Chuyển sang màn lịch sử đặt lịch tư vấn với bác sĩ
+    navigation.navigate('DoctorBookingHistoryScreen');
+  };
 
   const renderBookingItem = ({ item }) => {
     const id = item?._id;
@@ -286,7 +321,6 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
 
     const bookingType = item?.bookingType || 'session';
 
-    // Thời gian cho từng loại bookingType
     let mainTimeText = '';
     let subTimeText = '';
 
@@ -305,12 +339,14 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     } else if (bookingType === 'month') {
       const start = formatDateOnlyVN(item?.monthStart);
       const end = formatDateOnlyVN(item?.monthEnd);
-      mainTimeText =
-        start && end ? `${start} - ${end}` : 'Theo tháng';
+      mainTimeText = start && end ? `${start} - ${end}` : 'Theo tháng';
 
-      if (Array.isArray(item?.monthSessionsPerDay) && item.monthSessionsPerDay.length) {
+      if (
+        Array.isArray(item?.monthSessionsPerDay) &&
+        item.monthSessionsPerDay.length
+      ) {
         const sessionsText = item.monthSessionsPerDay
-          .map(slot => scheduleTimeShortMap[slot] || slot)
+          .map((slot) => scheduleTimeShortMap[slot] || slot)
           .join(', ');
         subTimeText = `Buổi trong ngày: ${sessionsText}`;
       } else {
@@ -321,7 +357,6 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     const statusKey = (item?.status || 'default').toLowerCase();
     const statusScheme = statusColors[statusKey] || statusColors.default;
 
-    // Dùng paymentStatus đúng với model: ['unpaid','paid','refunded']
     const paymentStatusKey = (item?.paymentStatus || 'unpaid').toLowerCase();
     const payScheme =
       paymentStatusColors[paymentStatusKey] || paymentStatusColors.default;
@@ -343,7 +378,6 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
             <Text style={styles.cardTitle} numberOfLines={1}>
               Đặt lịch #{id?.slice(-6) || ''}
             </Text>
-            {/* Hiển thị loại lịch */}
           </View>
           <Chip scheme={statusScheme} text={statusScheme.label} />
         </View>
@@ -388,15 +422,28 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
           <View style={{ flex: 1, paddingRight: 8 }}>
             <Text style={styles.sectionLabel}>Thời gian</Text>
             <Text style={styles.timeText}>{mainTimeText}</Text>
-            {subTimeText ? (
-              <Text style={styles.timeSub}>{subTimeText}</Text>
-            ) : null}
+            {subTimeText ? <Text style={styles.timeSub}>{subTimeText}</Text> : null}
             <Text style={[styles.timeSub, { marginTop: 4 }]}>
               Phương thức: {paymentMethodLabel}
             </Text>
           </View>
           <Chip scheme={payScheme} text={payScheme.label} />
         </View>
+
+        {/* Thông báo khi dịch vụ đã hoàn thành */}
+        {statusKey === 'completed' && (
+          <View style={styles.completedNotice}>
+            <Feather
+              name="check-circle"
+              size={16}
+              color="#16A34A"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.completedNoticeText}>
+              Dịch vụ của bạn đã hoàn thành. Nhấn vào chi tiết để đánh giá.
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -404,7 +451,11 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   if (loading) {
     return (
       <SafeAreaView style={styles.screen}>
-        <Header />
+        <Header navigation={navigation} onRefresh={onRefresh} />
+        <BookingTabBar
+          onPressSupporter={handlePressSupporterTab}
+          onPressDoctor={handlePressDoctorTab}
+        />
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>Đang tải danh sách đặt lịch…</Text>
@@ -416,7 +467,11 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   if (error) {
     return (
       <SafeAreaView style={styles.screen}>
-        <Header />
+        <Header navigation={navigation} onRefresh={onRefresh} />
+        <BookingTabBar
+          onPressSupporter={handlePressSupporterTab}
+          onPressDoctor={handlePressDoctorTab}
+        />
         <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity onPress={fetchBookings} style={styles.retryBtn}>
@@ -430,7 +485,11 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   if (!bookings?.length) {
     return (
       <SafeAreaView style={styles.screen}>
-        <Header />
+        <Header navigation={navigation} onRefresh={onRefresh} />
+        <BookingTabBar
+          onPressSupporter={handlePressSupporterTab}
+          onPressDoctor={handlePressDoctorTab}
+        />
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>Chưa có đặt lịch nào</Text>
           <Text style={styles.emptySub}>
@@ -444,59 +503,19 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     );
   }
 
+  // ===== Return chính (chỉ list) =====
   return (
     <SafeAreaView style={styles.screen}>
-      {/* Header tách riêng để full width */}
-      <Header />
-      {/* Tabs */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={[
-            styles.tabBtn,
-            activeTab === 'supporter' ? styles.tabActive : styles.tabInactive,
-          ]}
-          onPress={() => setActiveTab('supporter')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'supporter'
-                ? styles.tabTextActive
-                : styles.tabTextInactive,
-            ]}
-          >
-            Lịch hỗ trợ
-          </Text>
-        </TouchableOpacity>
+      <Header navigation={navigation} onRefresh={onRefresh} />
+      <BookingTabBar
+        onPressSupporter={handlePressSupporterTab}
+        onPressDoctor={handlePressDoctorTab}
+      />
 
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={[
-            styles.tabBtn,
-            activeTab === 'doctor' ? styles.tabActive : styles.tabInactive,
-          ]}
-          onPress={() => {
-            setActiveTab('doctor');
-            navigation.navigate(ROUTES.doctorList);
-          }}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'doctor'
-                ? styles.tabTextActive
-                : styles.tabTextInactive,
-            ]}
-          >
-            Lịch khám bác sĩ
-          </Text>
-        </TouchableOpacity>
-      </View>
       <FlatList
         data={bookings}
         renderItem={renderBookingItem}
-        keyExtractor={item =>
+        keyExtractor={(item) =>
           item?._id?.toString() ?? Math.random().toString(36).slice(2)
         }
         contentContainerStyle={styles.list}
@@ -512,14 +531,11 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FFFFFF' },
-
-  // Padding chỉ áp cho list, KHÔNG áp cho Header
   list: {
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 16,
   },
-  /* ===== Header mới ===== */
   headerWrap: {
     backgroundColor: HEADER_COLOR,
     paddingHorizontal: wp('4%'),
@@ -564,28 +580,40 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* Tabs */
-  tabRow: {
-    marginTop: 12,
+  // ===== Tab bar =====
+  tabBarContainer: {
     flexDirection: 'row',
-    gap: 12,
-    marginLeft: 16,
-    marginRight: 16,
+    marginTop: 10,
+    marginHorizontal: 16,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 999,
+    padding: 4,
   },
-  tabBtn: {
+  tabItem: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
+    paddingVertical: 8,
+    borderRadius: 999,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  tabActive: { backgroundColor: '#335CFF', borderColor: '#335CFF' },
-  tabInactive: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
-  tabText: { fontWeight: '700' },
-  tabTextActive: { color: '#FFFFFF' },
-  tabTextInactive: { color: '#0F172A' },
+  tabItemActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  tabItemText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  tabItemTextActive: {
+    color: '#1D4ED8',
+    fontWeight: '700',
+  },
 
-  /* Cards & common */
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -631,8 +659,6 @@ const styles = StyleSheet.create({
   personSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
   timeText: { fontSize: 14, fontWeight: '600', color: '#111827' },
   timeSub: { fontSize: 13, color: '#334155', marginTop: 2 },
-
-  /* States */
   center: {
     flex: 1,
     padding: 24,
@@ -670,6 +696,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '700' },
+
+  // Thông báo khi dịch vụ đã hoàn thành
+  completedNotice: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF3',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  completedNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#166534',
+  },
 });
 
 export default SupporterBookingListScreen;

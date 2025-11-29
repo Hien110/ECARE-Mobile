@@ -157,7 +157,6 @@ export const relationshipService = {
   },
   // Hủy kết nối người hỗ trợ với người cao tuổi
   cancelByElderlyAndFamily: async (elderlyId, familyId) => {
-    console.log("elder", elderlyId, familyId);
     
     try {
       const response = await api.post('/relationships/disconnect-supporter', {
