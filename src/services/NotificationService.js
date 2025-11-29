@@ -221,6 +221,17 @@ class NotificationService {
      return role === 'elderly';
    }
 
+   if (data?.type === 'deadman_auto_sos') {
+      const currentUser = await this.getCurrentUser();
+      const role = currentUser?.role?.toLowerCase?.() || '';
+      const allowed = ['elderly', 'family', 'supporter'].includes(role);
+      console.log('[NotificationService] shouldDisplayNotification deadman_auto_sos ->', {
+        role,
+        allowed,
+      });
+      return allowed;
+    }
+
     // 2) Kiểm tra vai trò
     const currentUser = await this.getCurrentUser();
     const role = currentUser?.role?.toLowerCase?.() || '';
@@ -267,6 +278,42 @@ class NotificationService {
       }
     } catch (e) {
       console.error('❌ showForegroundBanner error:', e);
+    }
+  }
+
+  async showDeadmanAutoSOS(notification, data) {
+    try {
+      const currentUser = await this.getCurrentUser();
+      const role = currentUser?.role?.toLowerCase?.() || '';
+      console.log('[NotificationService] showDeadmanAutoSOS', { role, data });
+
+      // Nếu là máy người cao tuổi → điều hướng sang ElderHome,
+      // ở đó useEffect sẽ tự gọi handleEmergency()
+      if (role === 'elderly') {
+        console.log('[NotificationService] Auto-SOS on ELDERLY device → navigate ElderHome');
+        if (this.navigationRef?.navigate) {
+          try {
+            this.navigationRef.navigate('ElderHome', {
+              autoSOSFromDeadman: true,
+              deadmanData: data,
+            });
+          } catch (e) {
+            console.error(
+              '[NotificationService] navigate ElderHome for autoSOS error:',
+              e,
+            );
+          }
+        }
+        return;
+      }
+
+      // 🛑 Các role khác (family, supporter) KHÔNG làm gì với deadman_auto_sos nữa
+      console.log(
+        '[NotificationService] deadman_auto_sos received on non-elderly device → ignore (will see normal SOS later)',
+      );
+      return;
+    } catch (e) {
+      console.error('[NotificationService] showDeadmanAutoSOS error:', e);
     }
   }
 
@@ -365,6 +412,11 @@ class NotificationService {
 
         // Không hiện Alert.js nữa, vì đã có full-screen notification
         return;
+      } else if (data?.type === 'deadman_auto_sos') {
+        // 🆕 Auto-SOS sau 3 lần nhắc
+        console.log('[NotificationService] Foreground deadman_auto_sos received', data);
+        await this.showDeadmanAutoSOS(notification, data);
+        return;
       } else {
         // Notification thông thường
         await this.showForegroundBanner(notification, data);
@@ -440,6 +492,39 @@ class NotificationService {
           });
         }, 800);
         return;
+      } else if (data?.type === 'deadman_auto_sos') {
+        // 🆕 Auto-SOS khi người dùng bấm vào noti (background)
+        console.log('[NotificationService] deadman_auto_sos opened from background', data);
+        const currentUser = await this.getCurrentUser();
+        const role = currentUser?.role?.toLowerCase?.() || '';
+
+        if (role === 'elderly') {
+          // Elderly: điều hướng sang ElderHome, bên đó tự xử lý handleEmergency
+          setTimeout(() => {
+            if (this.navigationRef?.navigate) {
+              try {
+                this.navigationRef.navigate('ElderHome', {
+                  autoSOSFromDeadman: true,
+                  deadmanData: data,
+                });
+              } catch (e) {
+                console.error(
+                  '[NotificationService] navigate ElderHome (background autoSOS) error:',
+                  e,
+                );
+              }
+            }
+          }, 500);
+        } else {
+          // Người thân / supporter: mở AlertsCenter nhóm auto_sos
+          setTimeout(() => {
+            this.navigateToAlertsCenter({
+              ...data,
+              groupKey: data?.groupKey || 'deadman_auto_sos',
+            });
+          }, 800);
+        }
+        return;
       }
     });
   }
@@ -447,7 +532,7 @@ class NotificationService {
   /**
    * Kiểm tra notification khởi động app (app đã tắt)
    */
-  getInitialNotification() {
+   getInitialNotification() {
     messaging()
       .getInitialNotification()
       .then(async remoteMessage => {
@@ -506,6 +591,36 @@ class NotificationService {
                 groupKey: data?.groupKey || 'deadman_phys_unwell',
               });
             }, 2000);
+          } else if (data?.type === 'deadman_auto_sos') {
+            // 🆕 Auto-SOS khi mở app từ killed state
+            console.log('[NotificationService] deadman_auto_sos from killed state', data);
+            const currentUser = await this.getCurrentUser();
+            const role = currentUser?.role?.toLowerCase?.() || '';
+
+            if (role === 'elderly') {
+              setTimeout(() => {
+                if (this.navigationRef?.navigate) {
+                  try {
+                    this.navigationRef.navigate('ElderHome', {
+                      autoSOSFromDeadman: true,
+                      deadmanData: data,
+                    });
+                  } catch (e) {
+                    console.error(
+                      '[NotificationService] navigate ElderHome (killed autoSOS) error:',
+                      e,
+                    );
+                  }
+                }
+              }, 2000);
+            } else {
+              setTimeout(() => {
+                this.navigateToAlertsCenter({
+                  ...data,
+                  groupKey: data?.groupKey || 'deadman_auto_sos',
+                });
+              }, 2000);
+            }
           }
         }
       });

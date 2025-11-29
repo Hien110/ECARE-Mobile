@@ -25,10 +25,6 @@ import userService from '../../services/userService';
 const HEADER_COLOR = '#4F7EFF';
 const VN_TZ = 'Asia/Ho_Chi_Minh';
 
-// Nếu sau này bạn vẫn muốn đi tới danh sách bác sĩ, có thể gắn thêm 1 icon riêng
-const ROUTES = {
-  doctorList: 'DoctorBookingList',
-};
 
 const scheduleTimeMap = {
   morning: 'Buổi sáng: 8h - 12h',
@@ -78,7 +74,7 @@ const paymentColors = {
     border: '#E9D5FF',
     label: 'Tiền mặt',
   },
-  prepaid: {
+  bank_transfer: {
     bg: '#ECFEFF',
     text: '#155E75',
     border: '#CFFAFE',
@@ -290,7 +286,7 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
       scheduleTimeMap[item?.scheduleTime] || item?.scheduleTime || '';
     const statusKey = (item?.status || 'default').toLowerCase();
     const statusScheme = statusColors[statusKey] || statusColors.default;
-    const paymentKey = (item?.paymentStatus || 'default').toLowerCase();
+    const paymentKey = (item?.paymentMethod || 'default').toLowerCase();
     const payScheme = paymentColors[paymentKey] || paymentColors.default;
 
     return (

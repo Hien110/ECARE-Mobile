@@ -1,5 +1,7 @@
-import { useNavigation } from '@react-navigation/native';
+// src/screens/doctorBooking/IntroductionBookingDoctor.jsx
+import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useState, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import {
   Image,
   ScrollView,
@@ -12,6 +14,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const heroImages = [
   { uri: 'https://images.pexels.com/photos/6129683/pexels-photo-6129683.jpeg' },
@@ -20,22 +23,66 @@ const heroImages = [
   { uri: 'https://isofhcare-backup.s3-ap-southeast-1.amazonaws.com/images/162041kham-xuong-khop_785696ed_2602_4d9d_a250_e68a504b646a.jpg' },
 ];
 
-const IntroductionBookingDoctor = () => {
+const IntroductionBookingDoctor = (props) => {
   const navigation = useNavigation();
+  const route = useRoute();
+
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const autoSlideTimer = useRef(null);
 
+  // ===== Lấy role ban đầu từ props / params =====
+  const [role, setRole] = useState(() => {
+    const fromPropsUser = props?.user?.role;
+    const fromUserRoleProp = props?.userRole;
+    const fromParams =
+      route?.params?.role ||
+      route?.params?.userRole ||
+      route?.params?.currentRole ||
+      null;
+
+    const initialRole = fromUserRoleProp || fromPropsUser || fromParams || null;
+
+    console.log('[IntroBooking] user from props =', props?.user);
+    console.log('[IntroBooking] props.userRole =', props?.userRole);
+    console.log('[IntroBooking] route.params =', route?.params);
+    console.log('[IntroBooking] initial role state =', initialRole);
+
+    return initialRole;
+  });
+
+  // ===== Nếu chưa có role thì thử đọc từ AsyncStorage =====
+  useEffect(() => {
+    const loadRole = async () => {
+      if (role) return;
+
+      try {
+        const raw = await AsyncStorage.getItem('userInfo');
+        console.log('[IntroBooking] AsyncStorage userInfo raw =', raw);
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw);
+        if (parsed?.role) {
+          console.log('[IntroBooking] setRole from AsyncStorage =', parsed.role);
+          setRole(parsed.role);
+        }
+      } catch (e) {
+        console.log('[IntroBooking] AsyncStorage error =', e?.message);
+      }
+    };
+
+    loadRole();
+  }, [role]);
+
   // ==========================
-  // 🔄 AUTO SLIDE EVERY 4 SECONDS
+  // 🔄 AUTO SLIDE 4 GIÂY / ẢNH
   // ==========================
   useEffect(() => {
     startAutoSlide();
-
     return () => stopAutoSlide();
   }, []);
 
   const startAutoSlide = () => {
-    stopAutoSlide(); // clear trước tránh lặp timer
+    stopAutoSlide();
     autoSlideTimer.current = setInterval(() => {
       setCurrentImageIndex(prev =>
         prev === heroImages.length - 1 ? 0 : prev + 1,
@@ -44,7 +91,9 @@ const IntroductionBookingDoctor = () => {
   };
 
   const stopAutoSlide = () => {
-    if (autoSlideTimer.current) clearInterval(autoSlideTimer.current);
+    if (autoSlideTimer.current) {
+      clearInterval(autoSlideTimer.current);
+    }
   };
 
   const nextImage = () => {
@@ -101,6 +150,23 @@ const IntroductionBookingDoctor = () => {
   const handleBack = () => navigation.goBack();
 
   const handleContinue = () => {
+    const normalizedRole = role?.toLowerCase?.() || null;
+    console.log('[IntroBooking] handleContinue raw role =', role);
+    console.log('[IntroBooking] handleContinue normalizedRole =', normalizedRole);
+
+    // Elderly → đi thẳng tới HealthPackageListScreen
+    if (normalizedRole === 'elderly') {
+      console.log('[IntroBooking] Navigating to HealthPackageListScreen (elderly flow)');
+      navigation.navigate('HealthPackageListScreen', {
+        flowType: 'doctorBooking',
+        fromIntro: true,
+        bookingFor: 'self',
+      });
+      return;
+    }
+
+    // Còn lại → giữ flow cũ
+    console.log('[IntroBooking] Navigating to FamilyListFunctionScreen (non-elderly flow)');
     navigation.navigate('FamilyListFunctionScreen', {
       message: 'Chức năng đặt lịch bác sĩ',
       flowType: 'doctorBooking',
@@ -142,7 +208,7 @@ const IntroductionBookingDoctor = () => {
               />
             </View>
 
-            {/* ▶ NEXT / PREV BUTTONS */}
+            {/* ◀ ▶ nút chuyển ảnh */}
             <TouchableOpacity style={styles.leftArrow} onPress={prevImage}>
               <Icon name="chevron-back" size={28} color="#ffffff" />
             </TouchableOpacity>
@@ -166,7 +232,7 @@ const IntroductionBookingDoctor = () => {
             ))}
           </View>
 
-          {/* Introduction Text */}
+          {/* Intro text */}
           <View style={styles.doctorInfo}>
             <Text style={styles.doctorTitle}>
               Đặt lịch với Bác sĩ cho Người Cao Tuổi
@@ -180,11 +246,13 @@ const IntroductionBookingDoctor = () => {
           </View>
         </View>
 
-        {/* BENEFITS */}
+        {/* Lợi ích */}
         <View style={styles.benefitsSection}>
           <View style={styles.benefitsHeader}>
             <Icon name="star" size={20} color="#FFD700" />
-            <Text style={styles.benefitsTitle}>Lợi ích khi đặt lịch qua E-Care</Text>
+            <Text style={styles.benefitsTitle}>
+              Lợi ích khi đặt lịch qua E-Care
+            </Text>
           </View>
 
           <View style={styles.benefitsGrid}>
@@ -207,20 +275,26 @@ const IntroductionBookingDoctor = () => {
           </View>
         </View>
 
-        {/* NOTICE */}
+        {/* Lưu ý */}
         <View style={styles.noticeSection}>
           <View style={styles.noticeContent}>
             <Icon name="alert-circle" size={20} color="#ffffff" />
             <Text style={styles.noticeText}>
-              Vui lòng chuẩn bị thông tin sức khỏe, thuốc đang dùng và kết quả xét nghiệm gần đây (nếu có) để buổi tư vấn với bác sĩ hiệu quả hơn.
+              Vui lòng chuẩn bị thông tin sức khỏe, thuốc đang dùng và kết quả
+              xét nghiệm gần đây (nếu có) để buổi tư vấn với bác sĩ hiệu quả hơn.
             </Text>
           </View>
         </View>
 
-        {/* BUTTON */}
+        {/* Nút tiếp tục */}
         <TouchableOpacity style={styles.continueButton} onPress={handleContinue}>
           <Text style={styles.continueButtonText}>Bắt đầu đặt lịch</Text>
-          <Icon name="arrow-forward" size={16} color="#ffffff" style={styles.buttonIcon} />
+          <Icon
+            name="arrow-forward"
+            size={16}
+            color="#ffffff"
+            style={styles.buttonIcon}
+          />
         </TouchableOpacity>
 
         <View style={{ height: 24 }} />
@@ -230,7 +304,7 @@ const IntroductionBookingDoctor = () => {
 };
 
 /* ==========================
-       💅  STYLES 
+       💅  STYLES
 ========================== */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
@@ -280,8 +354,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 3,
   },
-
-  /* ◀ Arrow buttons ▶ */
   leftArrow: {
     position: 'absolute',
     top: '50%',
@@ -298,7 +370,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#00000060',
   },
-
   dotsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -312,7 +383,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#D0D0D0',
   },
   activeDot: { backgroundColor: '#4F7EFF' },
-
   doctorInfo: {
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
@@ -325,7 +395,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   doctorDescription: { fontSize: 14, color: '#666', lineHeight: 20 },
-
   benefitsSection: { marginBottom: 16 },
   benefitsHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   benefitsTitle: {
@@ -334,7 +403,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     color: '#000',
   },
-
   benefitsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   benefitCard: {
     width: '48%',
@@ -358,7 +426,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
   },
-
   noticeSection: {
     backgroundColor: '#FF9800',
     borderRadius: 12,
@@ -367,7 +434,6 @@ const styles = StyleSheet.create({
   },
   noticeContent: { flexDirection: 'row', gap: 12 },
   noticeText: { color: '#fff', fontSize: 14, flex: 1, lineHeight: 20 },
-
   continueButton: {
     backgroundColor: '#4F7EFF',
     borderRadius: 8,
@@ -379,5 +445,16 @@ const styles = StyleSheet.create({
   continueButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   buttonIcon: { marginLeft: 6 },
 });
+IntroductionBookingDoctor.propTypes = {
+  user: PropTypes.shape({
+    role: PropTypes.string,
+  }),
+  userRole: PropTypes.string,
+};
+
+IntroductionBookingDoctor.defaultProps = {
+  user: undefined,
+  userRole: undefined,
+};
 
 export default IntroductionBookingDoctor;

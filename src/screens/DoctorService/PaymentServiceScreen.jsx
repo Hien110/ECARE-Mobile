@@ -1,5 +1,6 @@
 // src/screens/doctorBooking/PaymentServiceScreen.jsx
 import { useNavigation, useRoute } from '@react-navigation/native';
+import PropTypes from 'prop-types';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -14,8 +15,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
-import PropTypes from 'prop-types';
 import { doctorBookingService } from '../../services/doctorBookingService';
+import userService from '../../services/userService';
 
 const TAG = '[PaymentServiceScreen]';
 
@@ -38,6 +39,26 @@ const PaymentServiceScreen = () => {
     price: priceParam,
   } = route.params || {};
 
+  const [userRole, setUserRole] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    console.log(TAG, '[getUser] calling userService.getUser');
+    userService
+      .getUser()
+      .then(res => {
+        console.log(TAG, '[getUser] response =', res?.data);
+        const r = res?.data?.role || null;
+        setUserRole(r);
+        setCurrentUser(res?.data || null);
+      })
+      .catch(err => {
+        console.log(TAG, '[getUser] ERROR =', err?.message || err);
+        setUserRole(null);
+        setCurrentUser(null);
+      });
+  }, []);
+
   useEffect(() => {
     console.log(TAG, 'route.params =', route.params);
   }, [route.params]);
@@ -59,7 +80,7 @@ const PaymentServiceScreen = () => {
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // NEW: chọn phương thức thanh toán + popup thành công
+  // chọn phương thức thanh toán + popup thành công
   const [selectedMethod, setSelectedMethod] = useState(null); // 'cash' | 'qr'
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -92,9 +113,15 @@ const PaymentServiceScreen = () => {
     ? `${durationDays} ngày (~${Math.round(durationDays / 30)} tháng)`
     : '';
 
-  const supporterName = registrant.fullName || registrant.name || '';
+  // tên người đăng ký (family) – fallback currentUser.fullName
+  const supporterName =
+    registrant.fullName ||
+    registrant.name ||
+    (currentUser && currentUser.fullName) ||
+    '';
 
-  const elderlyName =
+  // tên người được khám (elderly) – fallback currentUser.fullName nếu elderly tự đặt
+  const rawElderlyName =
     beneficiary.fullName ||
     beneficiary.name ||
     (beneficiary.elderly &&
@@ -103,11 +130,32 @@ const PaymentServiceScreen = () => {
       (beneficiary.user.fullName || beneficiary.user.name)) ||
     '';
 
+  // role hiện tại (để biết elderly tự đặt hay family)
+  const normalizedRole =
+    (route?.params?.role || userRole || '')?.toString().toLowerCase() || '';
+
+  const isElderlySelfBooking = normalizedRole === 'elderly';
+
+  const elderlyName =
+    rawElderlyName ||
+    (isElderlySelfBooking && currentUser && currentUser.fullName) ||
+    '';
+
+  // Label & name hiển thị cho dòng "Người ..."
+  const registrantLabel = isElderlySelfBooking
+    ? 'Người đặt khám:'
+    : 'Người đăng ký:';
+
+  const registrantDisplayName = isElderlySelfBooking
+    ? elderlyName || supporterName
+    : supporterName || elderlyName;
+
   const displayAddress =
     addressParam ||
     beneficiary.currentAddress ||
     (beneficiary.elderly && beneficiary.elderly.currentAddress) ||
     registrant.currentAddress ||
+    (currentUser && currentUser.currentAddress) ||
     '';
 
   const displayServiceName =
@@ -161,7 +209,9 @@ const PaymentServiceScreen = () => {
     registration.packageRefId ||
     null;
 
-  const elderlyId =
+  // ======== TÍNH ELDERLY ID =========
+  // elderlyId lấy từ lựa chọn beneficiary / elderlyParam (dùng cho role family)
+  const elderlyIdFromSelection =
     (beneficiary &&
       typeof beneficiary === 'object' &&
       (beneficiary._id ||
@@ -172,6 +222,51 @@ const PaymentServiceScreen = () => {
       typeof elderlyParam === 'object' &&
       (elderlyParam._id || elderlyParam.elderlyId)) ||
     (typeof elderlyParam === 'string' ? elderlyParam : null);
+
+  // Nếu elderly tự đặt, ưu tiên dùng _id của currentUser
+  const elderlyId =
+    isElderlySelfBooking && currentUser && currentUser._id
+      ? currentUser._id
+      : elderlyIdFromSelection || null;
+
+  // Log chi tiết để debug tên / role / elderlyId
+  useEffect(() => {
+    console.log(TAG, '--- DEBUG BOOKING NAME / ROLE ---');
+    console.log(TAG, 'route.params.role =', route?.params?.role);
+    console.log(TAG, 'userRole from API =', userRole);
+    console.log(TAG, 'normalizedRole =', normalizedRole);
+    console.log(TAG, 'isElderlySelfBooking =', isElderlySelfBooking);
+    console.log(TAG, 'currentUser._id =', currentUser?._id);
+    console.log(TAG, 'elderlyIdFromSelection =', elderlyIdFromSelection);
+    console.log(TAG, '=> elderlyId (final) =', elderlyId);
+    console.log(TAG, 'supporterName (registrant.fullName/name) =', supporterName);
+    console.log(TAG, 'rawElderlyName (beneficiary...) =', rawElderlyName);
+    console.log(TAG, 'elderlyName (after fallback) =', elderlyName);
+    console.log(TAG, 'registrantLabel =', registrantLabel);
+    console.log(TAG, 'registrantDisplayName =', registrantDisplayName);
+    console.log(TAG, 'registrant object =', registrant);
+    console.log(TAG, 'beneficiary object =', beneficiary);
+    console.log(TAG, 'displayAddress =', displayAddress);
+    console.log(TAG, 'displayServiceName =', displayServiceName);
+    console.log(TAG, '----------------------------');
+  }, [
+    route?.params,
+    userRole,
+    normalizedRole,
+    isElderlySelfBooking,
+    supporterName,
+    rawElderlyName,
+    elderlyName,
+    registrantLabel,
+    registrantDisplayName,
+    registrant,
+    beneficiary,
+    displayAddress,
+    displayServiceName,
+    currentUser,
+    elderlyIdFromSelection,
+    elderlyId,
+  ]);
 
   useEffect(() => {
     console.log(TAG, 'Derived entities:', {
@@ -202,7 +297,12 @@ const PaymentServiceScreen = () => {
 
   const validatePayload = () => {
     if (!elderlyId) {
-      console.warn(TAG, 'Missing elderlyId', { beneficiary, elderlyParam });
+      console.warn(TAG, 'Missing elderlyId', {
+        beneficiary,
+        elderlyParam,
+        currentUser,
+        isElderlySelfBooking,
+      });
       Alert.alert(
         'Lỗi dữ liệu',
         'Thiếu thông tin người được khám (elderlyId).',
@@ -259,6 +359,9 @@ const PaymentServiceScreen = () => {
         doctorId,
         paymentMethod: method,
         note,
+        // gửi thêm thông tin cho backend phân biệt elderly tự đặt
+        bookingRole: normalizedRole,
+        isElderlySelfBooking,
       };
 
       console.log(TAG, 'Booking payload =', payload);
@@ -292,7 +395,6 @@ const PaymentServiceScreen = () => {
       console.log(TAG, 'Booking response =', res);
 
       if (res?.success) {
-        // ✅ Không dùng Alert nữa, hiển thị popup custom
         setShowSuccessModal(true);
       } else {
         Alert.alert(
@@ -316,9 +418,16 @@ const PaymentServiceScreen = () => {
   };
 
   const handleGoHome = () => {
-    setShowSuccessModal(false);
+  setShowSuccessModal(false);
+
+  if (isElderlySelfBooking) {
+    // Người cao tuổi tự đặt → về trang ElderHome
+    navigation.navigate('ElderHome');
+  } else {
+    // Người thân đặt cho elderly → giữ nguyên
     navigation.navigate('FamilyMemberHome');
-  };
+  }
+};
 
   return (
     <SafeAreaView style={styles.container}>
@@ -339,10 +448,7 @@ const PaymentServiceScreen = () => {
       >
         {/* THÔNG TIN ĐƠN ĐẶT LỊCH */}
         <View style={styles.infoCard}>
-          <InfoRow label="Người đăng ký:" value={supporterName} />
-          <InfoRow label="Người được khám:" value={elderlyName} />
-          <InfoRow label="Địa chỉ:" value={displayAddress} />
-
+          <InfoRow label={registrantLabel} value={registrantDisplayName} />
           <InfoRow label="Gói khám:" value={displayServiceName} />
           <InfoRow label="Hình thức thuê:" value={displayHireType} />
           <InfoRow label="Thời lượng gói:" value={displayDurationText} />
@@ -443,7 +549,6 @@ const PaymentServiceScreen = () => {
           <View style={styles.qrContainer}>
             <Text style={styles.qrTitle}>Mã QR thanh toán</Text>
             <View style={styles.qrBox}>
-              {/* chỗ này bạn có thể thay bằng <Image source={...} /> nếu có file ảnh QR */}
               <Icon name="qr-code-outline" size={80} color="#111827" />
             </View>
             <Text style={styles.qrHint}>
@@ -502,9 +607,18 @@ const PaymentServiceScreen = () => {
 };
 
 export default PaymentServiceScreen;
+
 const InfoRow = ({ label, value }) => {
   if (!label && !value) return null;
-  if (!value) return null;
+  if (!value) {
+    console.log(
+      TAG,
+      '[InfoRow] skip render vì value rỗng, label =',
+      label,
+    );
+    return null;
+  }
+  console.log(TAG, '[InfoRow] render row:', { label, value });
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -515,7 +629,11 @@ const InfoRow = ({ label, value }) => {
 
 InfoRow.propTypes = {
   label: PropTypes.oneOfType([PropTypes.string, PropTypes.node]),
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.node, PropTypes.number]),
+  value: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.node,
+    PropTypes.number,
+  ]),
 };
 
 InfoRow.defaultProps = {
@@ -523,6 +641,7 @@ InfoRow.defaultProps = {
   value: '',
 };
 
+// styles giữ nguyên
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -719,7 +838,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',

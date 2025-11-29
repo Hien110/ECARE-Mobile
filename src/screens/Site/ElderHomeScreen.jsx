@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,6 +27,8 @@ import { enableFloating, disableFloating } from '../../utils/floatingCheckinHelp
 /* ===================== HOME ===================== */
 export default function HomeScreen() {
   const nav = useNavigation();
+  const route = useRoute();
+  console.log('🧭 [ElderHome/HomeScreen] route params:', route?.params);
 
   // boot/auth
   const [booting, setBooting] = useState(true);
@@ -305,6 +307,48 @@ export default function HomeScreen() {
     };
   }, [user, handleEmergency]);
 
+  useEffect(() => {
+    if (!user?._id) {
+      console.log('⚠️ [ElderHome/HomeScreen] autoSOSFromDeadman: chưa có user, bỏ qua');
+      return;
+    }
+
+    const role = (user?.role || '').toLowerCase();
+    const autoSOS = route?.params?.autoSOSFromDeadman;
+
+    console.log('🔁 [ElderHome/HomeScreen] check autoSOSFromDeadman:', {
+      userId: user?._id,
+      role,
+      autoSOS,
+      params: route?.params,
+    });
+
+    // Chỉ người cao tuổi mới auto SOS
+    if (role !== 'elderly') {
+      console.log('ℹ️ [ElderHome/HomeScreen] Không phải elderly, bỏ qua autoSOSFromDeadman');
+      return;
+    }
+
+    // Không có flag thì thôi
+    if (!autoSOS) {
+      return;
+    }
+
+    console.log('📞 [ElderHome/HomeScreen] Auto calling handleEmergency() từ autoSOSFromDeadman');
+
+    // GỌI SOS THẲNG
+    handleEmergency();
+
+    // Reset flag để tránh auto gọi lại nhiều lần khi re-render
+    if (nav.setParams) {
+      nav.setParams({
+        ...(route?.params || {}),
+        autoSOSFromDeadman: false,
+      });
+      console.log('✅ [ElderHome/HomeScreen] Đã reset autoSOSFromDeadman về false');
+    }
+  }, [user, route, nav, handleEmergency]);
+
   const timeStr = useMemo(
     () =>
       now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
@@ -530,25 +574,11 @@ export default function HomeScreen() {
     }
   }, [notify, user, nav, getCurrentLocation, reverseGeocode, isSendingSOS]);
 
-  // demo actions
-  const bookAppointment = () =>
-    Alert.alert('Đặt lịch tư vấn', '📅 Chọn ngày giờ • 👩‍⚕️ Chọn bác sĩ • 💬 Trực tiếp/Video');
-  const healthDiary = () =>
-    Alert.alert('Nhật ký sức khỏe', '📝 Triệu chứng • 📊 Chỉ số • 💭 Tâm trạng');
 
   const findSupport = () => {
-    const flag = 'BookingFromElderly';
-    const userPayload = {
-      elderlyId: user?._id,
-      fullName: user?.fullName || '',
-      phoneNumber: user?.phoneNumber || '',
-      avatar: user?.avatar || '',
-      address: user?.addressEnc || '',
-      currentLocation: user?.currentLocation || null,
-    };
     nav.navigate('ServiceSelectionScreen', {
-      user: member,
-      source: 'FamilyListFunction', // để màn sau biết đi từ đâu
+      elderlyId: user?._id || null,
+      source: 'FamilyListFunction_Supporter', // để màn sau biết đi từ đâu
     });
   };
   const chatSupport = () => nav.navigate('ChatWithAI');
