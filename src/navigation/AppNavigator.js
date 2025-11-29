@@ -562,6 +562,12 @@ const NavigationContent = () => {
           component={withFooter(DoctorListScreen, 'home')}
           options={{ headerShown: false }}
         />
+        {/* Xem chi tiết hồ sơ bác sĩ từ danh sách chọn bác sĩ */}
+        <Stack.Screen
+          name="ProfileDoctorScreen"
+          component={withFooter(ProfileDoctorScreen, 'home')}
+          options={{ headerShown: false }}
+        />
         <Stack.Screen
           name="PaymentServiceScreen"
           component={withFooter(PaymentServiceScreen, 'home')}
