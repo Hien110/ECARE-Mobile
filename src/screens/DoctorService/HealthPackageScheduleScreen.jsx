@@ -16,10 +16,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Fallback mặc định nếu package không có thông tin duration
 const DEFAULT_DURATIONS = [
-  { label: '1 tháng', days: 30 },
-  { label: '3 tháng', days: 90 },
-  { label: '6 tháng', days: 180 },
-  { label: '9 tháng', days: 270 },
+  { label: '30 ngày', days: 30 },
+  { label: '90 ngày', days: 90 },
+  { label: '180 ngày', days: 180 },
+  { label: '270 ngày', days: 270 },
 ];
 
 const TAG = '[HealthPackageScheduleScreen]';
@@ -43,13 +43,10 @@ const addDays = (date, days) => {
   return d;
 };
 
-// Helper tạo label từ số ngày
+// Helper tạo label từ số ngày: hiển thị luôn X ngày
 const makeDurationLabel = days => {
   const d = Number(days);
   if (!d || Number.isNaN(d)) return '';
-  if (d % 30 === 0) {
-    return `${d / 30} tháng`;
-  }
   return `${d} ngày`;
 };
 
@@ -69,7 +66,7 @@ const HealthPackageScheduleScreen = () => {
 
   // ===== LẤY DURATION TỪ DATABASE =====
   const durationOptions = useMemo(() => {
-    // 1) Nếu backend trả mảng durations
+    // 1) Nếu backend trả mảng durations dạng [{ days, fee, isOption }, ...]
     if (
       healthPackage &&
       Array.isArray(healthPackage.durations) &&
@@ -77,11 +74,21 @@ const HealthPackageScheduleScreen = () => {
     ) {
       const opts = healthPackage.durations
         .map(raw => {
-          const days = Number(raw);
+          if (!raw) return null;
+
+          const days = Number(raw.days);
           if (!days || Number.isNaN(days)) return null;
+
+          const fee =
+            raw.fee != null && !Number.isNaN(Number(raw.fee))
+              ? Number(raw.fee)
+              : null;
+
           return {
             days,
-            label: makeDurationLabel(days),
+            fee, // đọc fee trực tiếp từ DB
+            isOption: !!raw.isOption,
+            label: makeDurationLabel(days), // ví dụ: "90 ngày"
           };
         })
         .filter(Boolean);
@@ -89,11 +96,21 @@ const HealthPackageScheduleScreen = () => {
       if (opts.length) return opts;
     }
 
-    // 2) Nếu backend chỉ có 1 duration
+    // 2) Nếu backend chỉ có 1 duration đơn lẻ (trường cũ durationDays)
     if (healthPackage?.durationDays) {
       const days = Number(healthPackage.durationDays);
       if (days) {
-        return [{ days, label: makeDurationLabel(days) }];
+        return [
+          {
+            days,
+            fee:
+              healthPackage?.price != null &&
+              !Number.isNaN(Number(healthPackage.price))
+                ? Number(healthPackage.price)
+                : null,
+            label: makeDurationLabel(days),
+          },
+        ];
       }
     }
 
@@ -116,11 +133,25 @@ const HealthPackageScheduleScreen = () => {
     [startDate, selectedDuration.days],
   );
 
+  // Giá tạm tính:
+  // 1) Nếu duration có field fee → dùng trực tiếp
+  // 2) Nếu không có fee → fallback theo logic cũ: basePrice * (days / 30)
   const estimatedPrice = useMemo(() => {
+    const durationFee =
+      selectedDuration?.fee != null &&
+      !Number.isNaN(Number(selectedDuration.fee))
+        ? Number(selectedDuration.fee)
+        : null;
+
+    if (durationFee != null) {
+      return durationFee;
+    }
+
     const base = Number(healthPackage?.price || 0);
     if (!base) return null;
+
     return base * (selectedDuration.days / 30);
-  }, [healthPackage, selectedDuration.days]);
+  }, [healthPackage, selectedDuration]);
 
   const handleBack = () => navigation.goBack();
 
@@ -147,16 +178,18 @@ const HealthPackageScheduleScreen = () => {
       });
 
       if (!res?.success) {
-        Alert.alert('Không thể tải bác sĩ', res?.message || 'Vui lòng thử lại');
+        Alert.alert(
+          'Không thể tải bác sĩ',
+          res?.message || 'Vui lòng thử lại',
+        );
         return;
       }
 
-      const doctors =
-        Array.isArray(res?.data)
-          ? res.data
-          : Array.isArray(res?.data?.doctors)
-          ? res.data.doctors
-          : [];
+      const doctors = Array.isArray(res?.data)
+        ? res.data
+        : Array.isArray(res?.data?.doctors)
+        ? res.data.doctors
+        : [];
 
       navigation.navigate('DoctorListScreen', {
         elderly,
@@ -322,7 +355,6 @@ const HealthPackageScheduleScreen = () => {
 };
 
 export default HealthPackageScheduleScreen;
-
 
 // Styles giữ nguyên y chang
 const styles = StyleSheet.create({

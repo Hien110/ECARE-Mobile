@@ -3,19 +3,19 @@ import { useNavigation } from '@react-navigation/native';
 import PropTypes from 'prop-types';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    Platform,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Platform,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import {
-    heightPercentageToDP as hp,
-    widthPercentageToDP as wp,
+  heightPercentageToDP as hp,
+  widthPercentageToDP as wp,
 } from 'react-native-responsive-screen';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
@@ -135,6 +135,7 @@ Chip.defaultProps = {
   text: '',
   style: undefined,
 };
+
 const Avatar = ({ uri, fallback, size = 44 }) => {
   if (!uri) {
     // fallback icon nếu không có avatar
@@ -321,9 +322,9 @@ const DoctorBookingHistoryScreen = () => {
         )}
 
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Danh sách lịch đặt</Text>
+          <Text style={styles.headerTitle}>Danh sách lịch tư vấn</Text>
           <Text style={styles.headerSubtitle}>
-            Theo dõi & quản lý đặt lịch
+            Theo dõi & quản lý lịch tư vấn bác sĩ
           </Text>
         </View>
 
@@ -338,12 +339,58 @@ const DoctorBookingHistoryScreen = () => {
     </View>
   );
 
-  // ---- RENDER CARD GIỐNG ẢNH MẪU ----
+  // ---- NAV TABS (đồng bộ với SupporterBookingListScreen) ----
+  const renderTabs = () => (
+    <View style={styles.tabRow}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        style={[
+          styles.tabBtn,
+          activeTab === 'supporter' ? styles.tabActive : styles.tabInactive,
+        ]}
+        onPress={() => {
+          setActiveTab('supporter');
+          navigation.navigate('SupporterBookingListScreen');
+        }}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === 'supporter'
+              ? styles.tabTextActive
+              : styles.tabTextInactive,
+          ]}
+        >
+          Lịch hỗ trợ
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        activeOpacity={0.9}
+        style={[
+          styles.tabBtn,
+          activeTab === 'doctor' ? styles.tabActive : styles.tabInactive,
+        ]}
+        onPress={() => setActiveTab('doctor')}
+      >
+        <Text
+          style={[
+            styles.tabText,
+            activeTab === 'doctor'
+              ? styles.tabTextActive
+              : styles.tabTextInactive,
+          ]}
+        >
+          Lịch tư vấn bác sĩ
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // ---- RENDER CARD ----
   const renderBookingItem = ({ item }) => {
     const { bookScheme, payScheme } = getStatusLabelAndStyle(item);
 
-    // Consultation: packageInfo.startDate | scheduledDate
-    // RegistrationHealthPackage: registeredAt
     const startDate =
       item.packageInfo?.startDate ||
       item.scheduledDate ||
@@ -448,6 +495,7 @@ const DoctorBookingHistoryScreen = () => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header />
+        {renderTabs()}
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>
@@ -462,6 +510,7 @@ const DoctorBookingHistoryScreen = () => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header />
+        {renderTabs()}
         <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity onPress={fetchBookings} style={styles.retryBtn}>
@@ -475,52 +524,12 @@ const DoctorBookingHistoryScreen = () => {
   return (
     <SafeAreaView style={styles.screen}>
       <Header />
-
-      {/* Tabs giống supporter: tab Doctor đang active */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={[styles.tabBtn, 
-          activeTab === 'supporter' ? styles.tabActive : styles.tabInactive,
-        ]}
-          onPress={() => {
-            setActiveTab('supporter');
-            navigation.navigate('SupporterBookingListScreen');
-          }} 
-        >
-        <Text 
-        style={[styles.tabText,
-            activeTab === 'supporter' 
-            ? styles.tabTextActive
-            : styles.tabTextInactive
-            ]}
-        >
-            Lịch hỗ trợ
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-        activeOpacity={0.9}
-        style={[styles.tabBtn,
-        activeTab === 'doctor' ? styles.tabActive : styles.tabInactive,
-        ]}
-        onPress={() => setActiveTab('doctor')}
-        >
-          <Text style={[styles.tabText,
-            activeTab === 'doctor' 
-            ? styles.tabTextActive
-            : styles.tabTextInactive,
-            ]}
-        >
-            Lịch khám bác sĩ
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {renderTabs()}
 
       {bookings.length ? (
         <FlatList
           data={bookings}
-          renderItem={renderBookingItem} 
+          renderItem={renderBookingItem}
           keyExtractor={item =>
             item?._id?.toString() ?? Math.random().toString(36).slice(2)
           }
@@ -533,7 +542,9 @@ const DoctorBookingHistoryScreen = () => {
         />
       ) : (
         <View style={styles.center}>
-          <Text style={styles.emptyTitle}>Hiện tại chưa có lịch khám bác sĩ nào.</Text>
+          <Text style={styles.emptyTitle}>
+            Hiện tại chưa có lịch tư vấn bác sĩ nào.
+          </Text>
           <Text style={styles.emptySub}>
             Khi có lịch mới, bạn sẽ thấy chúng tại đây.
           </Text>
@@ -603,26 +614,45 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Tabs
+  // Tabs (pill style giống màn supporter)
   tabRow: {
-    marginTop: 12,
     flexDirection: 'row',
-    gap: 12,
-    marginLeft: 16,
-    marginRight: 16,
+    marginTop: 10,
+    marginHorizontal: 16,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 999,
+    padding: 4,
   },
   tabBtn: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
+    paddingVertical: 8,
+    borderRadius: 999,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  tabActive: { backgroundColor: '#335CFF', borderColor: '#335CFF' },
-  tabInactive: { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
-  tabText: { fontWeight: '700' },
-  tabTextActive: { color: '#FFFFFF' },
-  tabTextInactive: { color: '#0F172A' },
+  tabActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  tabInactive: {
+    backgroundColor: 'transparent',
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  tabTextActive: {
+    color: '#1D4ED8',
+    fontWeight: '700',
+  },
+  tabTextInactive: {
+    color: '#64748B',
+  },
 
   // Card
   card: {
