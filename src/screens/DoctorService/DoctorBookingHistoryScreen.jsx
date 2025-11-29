@@ -1,5 +1,4 @@
-// src/screens/doctorBooking/DoctorBookingHistoryScreen.jsx
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import PropTypes from 'prop-types';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -22,6 +21,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import Icon from 'react-native-vector-icons/Ionicons';
 
 import { doctorBookingService } from '../../services/doctorBookingService';
+import userService from '../../services/userService';
 
 const TAG = '[DoctorBookingHistoryScreen]';
 const HEADER_COLOR = '#4F7EFF';
@@ -74,6 +74,12 @@ const paymentStatusColors = {
     border: '#FFE1B6',
     label: 'Chưa thanh toán',
   },
+  pending: {
+    bg: '#FFF7E6',
+    text: '#B46900',
+    border: '#FFE1B6',
+    label: 'Chưa thanh toán',
+  },
   paid: {
     bg: '#E6FFFB',
     text: '#00796B',
@@ -81,7 +87,6 @@ const paymentStatusColors = {
     label: 'Đã thanh toán',
   },
   completed: {
-    // phòng khi backend trả "completed"
     bg: '#E6FFFB',
     text: '#00796B',
     border: '#B2F5EA',
@@ -138,7 +143,6 @@ Chip.defaultProps = {
 
 const Avatar = ({ uri, fallback, size = 44 }) => {
   if (!uri) {
-    // fallback icon nếu không có avatar
     return (
       <View
         style={{
@@ -154,7 +158,6 @@ const Avatar = ({ uri, fallback, size = 44 }) => {
       </View>
     );
   }
-
   return (
     <Image
       source={{ uri }}
@@ -193,15 +196,102 @@ const formatDateOnlyVN = iso => {
   }
 };
 
+// ==== DURATION HELPERS ====
+// Trả về chuỗi "30 ngày", "90 ngày" dựa trên durationDays / packageInfo
+const getDurationLabel = item => {
+  try {
+    let days =
+      item?.durationDays ?? item?.packageInfo?.durationDays ?? null;
+
+    if (
+      (days == null || Number.isNaN(Number(days))) &&
+      item?.packageInfo?.startDate &&
+      item?.packageInfo?.endDate
+    ) {
+      const start = new Date(item.packageInfo.startDate);
+      const end = new Date(item.packageInfo.endDate);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+        const startMs = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          start.getDate(),
+        ).getTime();
+        const endMs = new Date(
+          end.getFullYear(),
+          end.getMonth(),
+          end.getDate(),
+        ).getTime();
+        const diffDays = Math.round(
+          (endMs - startMs) / (1000 * 60 * 60 * 24),
+        );
+        days = diffDays + 1;
+      }
+    }
+
+    const n = Number(days);
+    if (!Number.isFinite(n) || n <= 0) {
+      return '—';
+    }
+    return n === 1 ? '1 ngày' : `${n} ngày`;
+  } catch {
+    return '—';
+  }
+};
+
+// ==== PAYMENT HELPERS ====
+const normalizePaymentStatusKey = raw => {
+  const key = String(raw || '').toLowerCase();
+  if (!key) return 'unpaid';
+  if (['unpaid', 'pending'].includes(key)) return 'unpaid';
+  if (['paid', 'completed', 'success', 'successful'].includes(key)) {
+    return 'completed';
+  }
+  if (['refunded', 'refund'].includes(key)) return 'refunded';
+  return 'default';
+};
+
+const getPaymentMethodRaw = item => {
+  // ưu tiên field đã merge sẵn từ backend
+  return (
+    item.paymentMethod ||
+    item.payment?.method ||
+    item.payment?.paymentMethod ||
+    item.consultation?.payment?.method ||
+    'cash'
+  );
+};
+
+const getPaymentMethodLabel = item => {
+  const raw = String(getPaymentMethodRaw(item) || '').toLowerCase();
+
+  console.log(
+    `${TAG}[getPaymentMethodLabel]`,
+    item._id,
+    'rawMethod =',
+    raw,
+    'payment =',
+    item.payment,
+    'consultation.payment =',
+    item.consultation?.payment,
+  );
+
+  if (['qr', 'online', 'bank_transfer', 'bank-transfer'].includes(raw)) {
+    return 'Online';
+  }
+  return 'Tiền mặt';
+};
+
 // =================== MAIN SCREEN ===================
 const DoctorBookingHistoryScreen = () => {
   const navigation = useNavigation();
+  const route = useRoute();
 
   const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('doctor');
+  const [elderlyId, setElderlyId] = useState(null);
 
   // ---- FORMAT HELPERS (bookings) ----
   const getBookingCode = item => {
@@ -209,15 +299,6 @@ const DoctorBookingHistoryScreen = () => {
     if (item._id) return `Đặt lịch #${String(item._id).slice(-6)}`;
     return 'Đặt lịch';
   };
-
-  const getSupporterName = item =>
-    item.supporter?.fullName ||
-    item.bookedBy?.fullName || // consultation
-    item.registrant?.fullName || // nếu backend populate
-    'Bạn';
-
-  const getSupporterAvatar = item =>
-    item.supporter?.avatar || item.bookedBy?.avatar || null;
 
   const getElderlyName = item =>
     item.elderly?.fullName ||
@@ -233,79 +314,197 @@ const DoctorBookingHistoryScreen = () => {
     item.doctor?.fullName || item.doctor?.name || 'Bác sĩ';
 
   const getStatusLabelAndStyle = item => {
-    const statusKey = (item.status || 'pending').toLowerCase();
-    const scheme = statusColors[statusKey] || statusColors.default;
+    // ---- booking status ----
+    const rawStatus =
+      item.status ||
+      item.consultation?.status ||
+      item.registration?.status ||
+      'pending';
 
-    const payRaw =
-      item.payment?.status || // consultation
-      item.paymentStatus || // nếu registration có
+    const statusKey = String(rawStatus || 'pending').toLowerCase();
+    const bookScheme = statusColors[statusKey] || statusColors.default;
+
+    // ---- payment status (raw) ----
+    const rawPayStatus =
+      item.paymentStatus ||
+      item.payment?.status ||
+      item.consultation?.payment?.status ||
       'unpaid';
-    const payKey = String(payRaw).toLowerCase();
-    const payScheme =
+
+    const payKey = normalizePaymentStatusKey(rawPayStatus);
+    let payScheme =
       paymentStatusColors[payKey] || paymentStatusColors.default;
 
-    return { bookScheme: scheme, payScheme };
-  };
+    // ---- override: booking bị hủy nhưng đã thanh toán online ----
+    // Yêu cầu: nếu trước đó đã thanh toán online rồi mới hủy
+    // thì chip thanh toán vẫn phải là "Đã thanh toán"
+    const methodRaw = String(getPaymentMethodRaw(item) || '').toLowerCase();
+    const isOnlineMethod = ['qr', 'online', 'bank_transfer', 'bank-transfer'].includes(
+      methodRaw,
+    );
+    const payStatusLower = String(rawPayStatus || '').toLowerCase();
+    const isPaidRaw = ['paid', 'completed', 'success', 'successful'].includes(
+      payStatusLower,
+    );
 
-  const getPaymentMethodLabel = item => {
-    const method =
-      item.payment?.method ||
-      item.paymentMethod ||
-      'cash';
-    if (method === 'qr' || method === 'online' || method === 'bank_transfer') {
-      return 'Online';
+    if (statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw)) {
+      // ép về trạng thái "Đã thanh toán"
+      payScheme = paymentStatusColors.completed;
     }
-    return 'Tiền mặt';
+
+    console.log(`${TAG}[getStatusLabelAndStyle]`, {
+      id: item?._id,
+      rawStatus,
+      statusKey,
+      statusLabel: bookScheme.label,
+      rawPayStatus,
+      payKey,
+      payLabel: payScheme.label,
+      methodRaw,
+    });
+
+    return { bookScheme, payScheme };
   };
 
-  // ---- API ----
-  const fetchBookings = useCallback(async () => {
-    const TAG_FETCH = `${TAG}[fetchBookings]`;
-    try {
-      setLoading(true);
-      setError('');
+  // ===== 1. Resolve elderlyId =====
+  useEffect(() => {
+    let cancelled = false;
 
-      const res = await doctorBookingService.getMyBookings?.();
+    const resolveElderlyId = async () => {
+      try {
+        console.log(TAG, '[resolveElderlyId] route.params =', route?.params);
+        const fromRoute = route?.params?.elderlyId;
+        if (fromRoute) {
+          console.log(
+            TAG,
+            '[resolveElderlyId] Using elderlyId from route =',
+            fromRoute,
+          );
+          if (!cancelled) setElderlyId(fromRoute);
+          return;
+        }
 
-      console.log(TAG_FETCH, 'RAW_RESULT =', res);
+        const userRes = await userService.getUser();
+        console.log(TAG, '[resolveElderlyId] userService =', userRes);
+        if (cancelled) return;
 
-      if (res?.success && Array.isArray(res.data)) {
+        if (userRes?.success && userRes?.data?._id) {
+          const role = (userRes.data.role || '').toLowerCase();
+          if (role === 'elderly') {
+            console.log(
+              TAG,
+              '[resolveElderlyId] role elderly → use user._id =',
+              userRes.data._id,
+            );
+            setElderlyId(userRes.data._id);
+          } else {
+            console.log(
+              TAG,
+              '[resolveElderlyId] role is',
+              role,
+              '→ không xác định được elderlyId',
+            );
+            setError(
+              'Không xác định được người cao tuổi để xem lịch tư vấn bác sĩ.',
+            );
+            setLoading(false);
+          }
+        } else {
+          setError('Không lấy được thông tin người dùng. Vui lòng đăng nhập lại.');
+          setLoading(false);
+        }
+      } catch (e) {
+        console.log(TAG, '[resolveElderlyId] ERROR =', e?.message || e);
+        if (!cancelled) {
+          setError('Không lấy được thông tin người dùng.');
+          setLoading(false);
+        }
+      }
+    };
+
+    resolveElderlyId();
+    return () => {
+      cancelled = true;
+    };
+  }, [route?.params?.elderlyId]);
+
+  // ===== 2. Gọi API lấy bookings theo elderlyId =====
+  const fetchBookings = useCallback(
+    async (opts = { showLoading: true }) => {
+      const TAG_FETCH = `${TAG}[fetchBookings]`;
+      const { showLoading } = opts;
+
+      if (!elderlyId) {
+        console.log(TAG_FETCH, 'No elderlyId → skip fetch.');
+        if (showLoading) setLoading(false);
+        return;
+      }
+
+      try {
+        if (showLoading) setLoading(true);
+        setError('');
+        console.log(TAG_FETCH, 'CALL API with elderlyId =', elderlyId);
+
+        const res =
+          await doctorBookingService.getBookingsByElderlyId(elderlyId);
+
         console.log(
           TAG_FETCH,
-          'DATA_FROM_API =',
-          JSON.stringify(res.data, null, 2),
+          'RAW_RESULT =',
+          JSON.stringify(res, null, 2),
         );
-        setBookings(res.data);
-      } else {
-        setBookings([]);
-        setError(
-          res?.message ||
-            'Không lấy được danh sách lịch khám bác sĩ. Vui lòng thử lại.',
-        );
-      }
-    } catch (err) {
-      console.log(TAG_FETCH, 'ERROR =', err?.message || err);
-      setError('Không lấy được danh sách lịch khám bác sĩ. Vui lòng thử lại.');
-      setBookings([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
+        if (res?.success && Array.isArray(res.data)) {
+          console.log(
+            TAG_FETCH,
+            'PARSED_BOOKINGS_COUNT =',
+            res.data.length,
+          );
+          setBookings(res.data);
+        } else {
+          setBookings([]);
+          setError(
+            res?.message ||
+              'Không lấy được danh sách lịch tư vấn bác sĩ. Vui lòng thử lại.',
+          );
+        }
+      } catch (err) {
+        console.log(TAG_FETCH, 'ERROR =', err?.message || err);
+        setError(
+          'Không lấy được danh sách lịch tư vấn bác sĩ. Vui lòng thử lại.',
+        );
+        setBookings([]);
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [elderlyId],
+  );
+
+  // Gọi khi elderlyId đã có (lần đầu)
   useEffect(() => {
-    fetchBookings();
-  }, [fetchBookings]);
+    if (!elderlyId) return;
+    fetchBookings({ showLoading: true });
+  }, [elderlyId, fetchBookings]);
+
+  // GỌI LẠI MỖI KHI MÀN ĐƯỢC FOCUS
+  useFocusEffect(
+    useCallback(() => {
+      console.log(TAG, '[focus] screen focused → refetch bookings');
+      fetchBookings({ showLoading: false });
+    }, [fetchBookings]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchBookings();
+      await fetchBookings({ showLoading: false });
     } finally {
       setRefreshing(false);
     }
   }, [fetchBookings]);
 
-  // ---- HEADER giống SupporterBookingListScreen ----
+  // ---- HEADER ----
   const Header = () => (
     <View style={styles.headerWrap}>
       <View style={styles.headerRow}>
@@ -324,7 +523,7 @@ const DoctorBookingHistoryScreen = () => {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Danh sách lịch tư vấn</Text>
           <Text style={styles.headerSubtitle}>
-            Theo dõi & quản lý lịch tư vấn bác sĩ
+            Theo dõi &amp; quản lý lịch tư vấn bác sĩ
           </Text>
         </View>
 
@@ -339,7 +538,7 @@ const DoctorBookingHistoryScreen = () => {
     </View>
   );
 
-  // ---- NAV TABS (đồng bộ với SupporterBookingListScreen) ----
+  // ---- NAV TABS ----
   const renderTabs = () => (
     <View style={styles.tabRow}>
       <TouchableOpacity
@@ -349,8 +548,15 @@ const DoctorBookingHistoryScreen = () => {
           activeTab === 'supporter' ? styles.tabActive : styles.tabInactive,
         ]}
         onPress={() => {
+          console.log(
+            TAG,
+            '[Tab] Press Lịch hỗ trợ, navigate with elderlyId =',
+            elderlyId,
+          );
           setActiveTab('supporter');
-          navigation.navigate('SupporterBookingListScreen');
+          navigation.navigate('SupporterBookingListScreen', {
+            userId: elderlyId,
+          });
         }}
       >
         <Text
@@ -390,46 +596,50 @@ const DoctorBookingHistoryScreen = () => {
   // ---- RENDER CARD ----
   const renderBookingItem = ({ item }) => {
     const { bookScheme, payScheme } = getStatusLabelAndStyle(item);
-
     const startDate =
       item.packageInfo?.startDate ||
       item.scheduledDate ||
       item.registeredAt;
 
     const methodLabel = getPaymentMethodLabel(item);
-
-    const supporterName = getSupporterName(item);
-    const supporterAvatar = getSupporterAvatar(item);
     const elderlyName = getElderlyName(item);
     const elderlyAvatar = getElderlyAvatar(item);
     const doctorName = getDoctorName(item);
     const packageTitle =
-      item.packageInfo?.title || item.packageRef?.title || 'Gói khám sức khỏe';
+      item.packageInfo?.title ||
+      item.packageRef?.title ||
+      'Gói khám sức khỏe';
+    const durationLabel = getDurationLabel(item);
+
+    console.log(`${TAG}[renderBookingItem]`, {
+      id: item?._id,
+      code: item?.code,
+      status: item?.status,
+      consultationStatus: item?.consultation?.status,
+      paymentMethod: item?.paymentMethod,
+      paymentStatus: item?.paymentStatus,
+      nestedPayment: item?.payment,
+      consultationPayment: item?.consultation?.payment,
+      methodLabel,
+      payChip: payScheme.label,
+    });
 
     return (
-      <View style={styles.card}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={styles.card}
+        onPress={() =>
+          navigation.navigate('DoctorConsultationDetailScreen', {
+            bookingId: item._id,
+          })
+        }
+      >
         {/* Mã lịch + trạng thái booking */}
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle} numberOfLines={1}>
             {getBookingCode(item)}
           </Text>
           <Chip scheme={bookScheme} text={bookScheme.label} />
-        </View>
-
-        {/* Người hỗ trợ */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>NGƯỜI HỖ TRỢ</Text>
-          <View style={styles.row}>
-            <Avatar uri={supporterAvatar} fallback={supporterName} />
-            <View style={styles.personInfo}>
-              <Text style={styles.personName} numberOfLines={1}>
-                {supporterName}
-              </Text>
-              <Text style={styles.personSub} numberOfLines={1}>
-                Vai trò: Người hỗ trợ
-              </Text>
-            </View>
-          </View>
         </View>
 
         {/* Người cao tuổi */}
@@ -446,27 +656,6 @@ const DoctorBookingHistoryScreen = () => {
               </Text>
             </View>
           </View>
-        </View>
-
-        {/* Thời gian + thanh toán */}
-        <View
-          style={[
-            styles.section,
-            styles.rowBetween,
-            { alignItems: 'flex-start' },
-          ]}
-        >
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={styles.sectionLabel}>THỜI GIAN</Text>
-            <Text style={styles.timeText}>
-              {formatDateOnlyVN(startDate)}
-            </Text>
-            <Text style={styles.timeSub}>Cả ngày</Text>
-            <Text style={[styles.timeSub, { marginTop: 4 }]}>
-              Phương thức: {methodLabel}
-            </Text>
-          </View>
-          <Chip scheme={payScheme} text={payScheme.label} />
         </View>
 
         {/* Bác sĩ phụ trách */}
@@ -486,7 +675,26 @@ const DoctorBookingHistoryScreen = () => {
             </View>
           </View>
         </View>
-      </View>
+
+        {/* Thời gian + thanh toán */}
+        <View
+          style={[
+            styles.section,
+            styles.rowBetween,
+            { alignItems: 'flex-start' },
+          ]}
+        >
+          <View style={{ flex: 1, paddingRight: 8 }}>
+            <Text style={styles.sectionLabel}>THỜI GIAN</Text>
+            <Text style={styles.timeText}>{formatDateOnlyVN(startDate)}</Text>
+            <Text style={styles.timeSub}>{durationLabel}</Text>
+            <Text style={[styles.timeSub, { marginTop: 4 }]}>
+              Phương thức: {methodLabel}
+            </Text>
+          </View>
+          <Chip scheme={payScheme} text={payScheme.label} />
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -499,7 +707,7 @@ const DoctorBookingHistoryScreen = () => {
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>
-            Đang tải danh sách lịch khám bác sĩ…
+            Đang tải danh sách lịch tư vấn bác sĩ…
           </Text>
         </View>
       </SafeAreaView>
@@ -513,7 +721,10 @@ const DoctorBookingHistoryScreen = () => {
         {renderTabs()}
         <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={fetchBookings} style={styles.retryBtn}>
+          <TouchableOpacity
+            onPress={() => fetchBookings({ showLoading: true })}
+            style={styles.retryBtn}
+          >
             <Text style={styles.retryText}>Thử lại</Text>
           </TouchableOpacity>
         </View>
@@ -531,7 +742,8 @@ const DoctorBookingHistoryScreen = () => {
           data={bookings}
           renderItem={renderBookingItem}
           keyExtractor={item =>
-            item?._id?.toString() ?? Math.random().toString(36).slice(2)
+            item?._id?.toString() ??
+            Math.random().toString(36).slice(2)
           }
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
@@ -548,7 +760,10 @@ const DoctorBookingHistoryScreen = () => {
           <Text style={styles.emptySub}>
             Khi có lịch mới, bạn sẽ thấy chúng tại đây.
           </Text>
-          <TouchableOpacity onPress={fetchBookings} style={styles.primaryBtn}>
+          <TouchableOpacity
+            onPress={() => fetchBookings({ showLoading: true })}
+            style={styles.primaryBtn}
+          >
             <Text style={styles.primaryBtnText}>Làm mới</Text>
           </TouchableOpacity>
         </View>
@@ -559,10 +774,12 @@ const DoctorBookingHistoryScreen = () => {
 
 export default DoctorBookingHistoryScreen;
 
-// =================== STYLES (đồng bộ với SupporterBookingListScreen) ===================
+// =================== STYLES ===================
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#FFFFFF' },
-
+  screen: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
   list: {
     paddingHorizontal: 16,
     paddingTop: 12,
@@ -584,7 +801,9 @@ const styles = StyleSheet.create({
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 6 },
       },
-      android: { elevation: 8 },
+      android: {
+        elevation: 8,
+      },
     }),
   },
   headerRow: {
@@ -600,8 +819,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  iconBtnPlaceholder: { width: 40, height: 40 },
-  headerCenter: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  iconBtnPlaceholder: {
+    width: 40,
+    height: 40,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
   headerTitle: {
     color: '#FFFFFF',
     fontSize: wp('5%'),
@@ -614,7 +840,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Tabs (pill style giống màn supporter)
+  // Tabs
   tabRow: {
     flexDirection: 'row',
     marginTop: 10,
@@ -672,7 +898,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  row: { flexDirection: 'row', alignItems: 'center' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -685,8 +914,13 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  chipText: { fontSize: 12, fontWeight: '600' },
-  section: { marginTop: 14 },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  section: {
+    marginTop: 14,
+  },
   sectionLabel: {
     fontSize: 12,
     color: '#64748B',
@@ -695,11 +929,30 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
-  personInfo: { marginLeft: 12, flex: 1 },
-  personName: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  personSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  timeText: { fontSize: 14, fontWeight: '600', color: '#111827' },
-  timeSub: { fontSize: 13, color: '#334155', marginTop: 2 },
+  personInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  personName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  personSub: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  timeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  timeSub: {
+    fontSize: 13,
+    color: '#334155',
+    marginTop: 2,
+  },
   doctorAvatarCircle: {
     width: 40,
     height: 40,
@@ -718,7 +971,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
   },
-  loadingText: { marginTop: 12, color: '#475569' },
+  loadingText: {
+    marginTop: 12,
+    color: '#475569',
+  },
   errorText: {
     fontSize: 15,
     color: '#B91C1C',
@@ -733,7 +989,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10,
   },
-  retryText: { color: '#991B1B', fontWeight: '600' },
+  retryText: {
+    color: '#991B1B',
+    fontWeight: '600',
+  },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -741,12 +1000,19 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textAlign: 'center',
   },
-  emptySub: { color: '#475569', marginBottom: 16, textAlign: 'center' },
+  emptySub: {
+    color: '#475569',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
   primaryBtn: {
     backgroundColor: '#335CFF',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
   },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '700' },
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
 });

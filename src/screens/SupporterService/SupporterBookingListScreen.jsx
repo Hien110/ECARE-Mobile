@@ -308,8 +308,19 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   };
 
   const handlePressDoctorTab = () => {
-    // Chuyển sang màn lịch sử đặt lịch tư vấn với bác sĩ
-    navigation.navigate('DoctorBookingHistoryScreen');
+    console.log('[SupporterBookingListScreen][handlePressDoctorTab] userId =', userId);
+
+    // userId ở màn này CHÍNH LÀ elderlyId (được truyền từ withFooter)
+    if (!userId) {
+      console.log(
+        '[SupporterBookingListScreen][handlePressDoctorTab] Không có userId/elderlyId, không thể chuyển tab tư vấn.'
+      );
+      return;
+    }
+
+    navigation.navigate('DoctorBookingHistoryScreen', {
+      elderlyId: userId,
+    });
   };
 
   const renderBookingItem = ({ item }) => {

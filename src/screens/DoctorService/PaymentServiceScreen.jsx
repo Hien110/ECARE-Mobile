@@ -15,10 +15,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/Ionicons';
+import QRCodeSVG from 'react-native-qrcode-svg';
+
 import { doctorBookingService } from '../../services/doctorBookingService';
 import userService from '../../services/userService';
-
-const TAG = '[PaymentServiceScreen]';
+import { PayOSService } from '../../services/payosService';
 
 const PaymentServiceScreen = () => {
   const navigation = useNavigation();
@@ -42,26 +43,33 @@ const PaymentServiceScreen = () => {
   const [userRole, setUserRole] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
 
+  // --- STATE CHO GHI CHÚ + SUBMIT ---
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // method: 'cash' | 'qr'
+  const [selectedMethod, setSelectedMethod] = useState(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  // --- PAYOS ---
+  const [orderCode, setOrderCode] = useState(null);
+  const [qrCode, setQrCode] = useState(null);
+  const [loadingQR, setLoadingQR] = useState(false);
+  const [qrError, setQrError] = useState('');
+
   useEffect(() => {
-    console.log(TAG, '[getUser] calling userService.getUser');
     userService
       .getUser()
       .then(res => {
-        console.log(TAG, '[getUser] response =', res?.data);
         const r = res?.data?.role || null;
         setUserRole(r);
         setCurrentUser(res?.data || null);
       })
-      .catch(err => {
-        console.log(TAG, '[getUser] ERROR =', err?.message || err);
+      .catch(() => {
         setUserRole(null);
         setCurrentUser(null);
       });
   }, []);
-
-  useEffect(() => {
-    console.log(TAG, 'route.params =', route.params);
-  }, [route.params]);
 
   const registration = registrationParam || {};
   const packageRef = registration.packageRef || packageParam || {};
@@ -76,13 +84,6 @@ const PaymentServiceScreen = () => {
     (registration.registeredAt
       ? new Date(registration.registeredAt).toISOString().slice(0, 10)
       : '');
-
-  const [note, setNote] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  // chọn phương thức thanh toán + popup thành công
-  const [selectedMethod, setSelectedMethod] = useState(null); // 'cash' | 'qr'
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const formatDate = iso => {
     if (!iso) return '';
@@ -120,7 +121,7 @@ const PaymentServiceScreen = () => {
     (currentUser && currentUser.fullName) ||
     '';
 
-  // tên người được khám (elderly) – fallback currentUser.fullName nếu elderly tự đặt
+  // tên người được khám (elderly)
   const rawElderlyName =
     beneficiary.fullName ||
     beneficiary.name ||
@@ -130,7 +131,6 @@ const PaymentServiceScreen = () => {
       (beneficiary.user.fullName || beneficiary.user.name)) ||
     '';
 
-  // role hiện tại (để biết elderly tự đặt hay family)
   const normalizedRole =
     (route?.params?.role || userRole || '')?.toString().toLowerCase() || '';
 
@@ -141,7 +141,6 @@ const PaymentServiceScreen = () => {
     (isElderlySelfBooking && currentUser && currentUser.fullName) ||
     '';
 
-  // Label & name hiển thị cho dòng "Người ..."
   const registrantLabel = isElderlySelfBooking
     ? 'Người đặt khám:'
     : 'Người đăng ký:';
@@ -149,14 +148,6 @@ const PaymentServiceScreen = () => {
   const registrantDisplayName = isElderlySelfBooking
     ? elderlyName || supporterName
     : supporterName || elderlyName;
-
-  const displayAddress =
-    addressParam ||
-    beneficiary.currentAddress ||
-    (beneficiary.elderly && beneficiary.elderly.currentAddress) ||
-    registrant.currentAddress ||
-    (currentUser && currentUser.currentAddress) ||
-    '';
 
   const displayServiceName =
     serviceNameParam ||
@@ -188,13 +179,67 @@ const PaymentServiceScreen = () => {
     (doctor.profile && doctor.profile.hospitalName) ||
     '';
 
+  // ====== TÌM DURATION TRONG GÓI ĐỂ LẤY FEE THEO SCHEMA MỚI ======
+  const matchedDuration = useMemo(() => {
+    if (
+      !durationDays ||
+      !packageRef ||
+      !Array.isArray(packageRef.durations) ||
+      !packageRef.durations.length
+    ) {
+      return null;
+    }
+
+    const found = packageRef.durations.find(d => {
+      const dDays = Number(d?.days);
+      return Number.isFinite(dDays) && dDays === Number(durationDays);
+    });
+
+    return found || null;
+  }, [packageRef, durationDays]);
+
+  // Giá số (raw) dùng cho PayOS
+  const rawPriceNumber = useMemo(() => {
+    // Ưu tiên: priceParam → registration.price → durations[].fee → packageRef.price
+    const fromParam =
+      priceParam != null && !Number.isNaN(Number(priceParam))
+        ? Number(priceParam)
+        : null;
+    const fromRegistration =
+      registration &&
+      registration.price != null &&
+      !Number.isNaN(Number(registration.price))
+        ? Number(registration.price)
+        : null;
+    const fromDurationFee =
+      matchedDuration &&
+      matchedDuration.fee != null &&
+      !Number.isNaN(Number(matchedDuration.fee))
+        ? Number(matchedDuration.fee)
+        : null;
+    const fromPackagePrice =
+      packageRef &&
+      packageRef.price != null &&
+      !Number.isNaN(Number(packageRef.price))
+        ? Number(packageRef.price)
+        : null;
+
+    let num =
+      fromParam ??
+      fromRegistration ??
+      fromDurationFee ??
+      fromPackagePrice ??
+      0;
+
+    if (!num || Number.isNaN(num)) return 0;
+    return num;
+  }, [priceParam, registration, matchedDuration, packageRef, durationDays]);
+
+  // Chuỗi hiển thị giá
   const displayPrice = useMemo(() => {
-    const num = Number(
-      priceParam ?? registration.price ?? packageRef.price ?? 0,
-    );
-    if (!num || Number.isNaN(num)) return '';
-    return num.toLocaleString('vi-VN');
-  }, [priceParam, registration.price, packageRef.price]);
+    if (!rawPriceNumber) return '';
+    return rawPriceNumber.toLocaleString('vi-VN');
+  }, [rawPriceNumber]);
 
   const doctorId =
     doctor.doctorId ||
@@ -210,7 +255,6 @@ const PaymentServiceScreen = () => {
     null;
 
   // ======== TÍNH ELDERLY ID =========
-  // elderlyId lấy từ lựa chọn beneficiary / elderlyParam (dùng cho role family)
   const elderlyIdFromSelection =
     (beneficiary &&
       typeof beneficiary === 'object' &&
@@ -223,86 +267,15 @@ const PaymentServiceScreen = () => {
       (elderlyParam._id || elderlyParam.elderlyId)) ||
     (typeof elderlyParam === 'string' ? elderlyParam : null);
 
-  // Nếu elderly tự đặt, ưu tiên dùng _id của currentUser
   const elderlyId =
     isElderlySelfBooking && currentUser && currentUser._id
       ? currentUser._id
       : elderlyIdFromSelection || null;
 
-  // Log chi tiết để debug tên / role / elderlyId
-  useEffect(() => {
-    console.log(TAG, '--- DEBUG BOOKING NAME / ROLE ---');
-    console.log(TAG, 'route.params.role =', route?.params?.role);
-    console.log(TAG, 'userRole from API =', userRole);
-    console.log(TAG, 'normalizedRole =', normalizedRole);
-    console.log(TAG, 'isElderlySelfBooking =', isElderlySelfBooking);
-    console.log(TAG, 'currentUser._id =', currentUser?._id);
-    console.log(TAG, 'elderlyIdFromSelection =', elderlyIdFromSelection);
-    console.log(TAG, '=> elderlyId (final) =', elderlyId);
-    console.log(TAG, 'supporterName (registrant.fullName/name) =', supporterName);
-    console.log(TAG, 'rawElderlyName (beneficiary...) =', rawElderlyName);
-    console.log(TAG, 'elderlyName (after fallback) =', elderlyName);
-    console.log(TAG, 'registrantLabel =', registrantLabel);
-    console.log(TAG, 'registrantDisplayName =', registrantDisplayName);
-    console.log(TAG, 'registrant object =', registrant);
-    console.log(TAG, 'beneficiary object =', beneficiary);
-    console.log(TAG, 'displayAddress =', displayAddress);
-    console.log(TAG, 'displayServiceName =', displayServiceName);
-    console.log(TAG, '----------------------------');
-  }, [
-    route?.params,
-    userRole,
-    normalizedRole,
-    isElderlySelfBooking,
-    supporterName,
-    rawElderlyName,
-    elderlyName,
-    registrantLabel,
-    registrantDisplayName,
-    registrant,
-    beneficiary,
-    displayAddress,
-    displayServiceName,
-    currentUser,
-    elderlyIdFromSelection,
-    elderlyId,
-  ]);
-
-  useEffect(() => {
-    console.log(TAG, 'Derived entities:', {
-      registrant,
-      beneficiary,
-      packageRef,
-      doctor,
-      durationDays,
-      startDateIso,
-      elderlyName,
-      elderlyId,
-    });
-    console.log(TAG, 'IDs:', { doctorId, healthPackageId });
-  }, [
-    registrant,
-    beneficiary,
-    packageRef,
-    doctor,
-    durationDays,
-    startDateIso,
-    doctorId,
-    healthPackageId,
-    elderlyName,
-    elderlyId,
-  ]);
-
   const handleBack = () => navigation.goBack();
 
   const validatePayload = () => {
     if (!elderlyId) {
-      console.warn(TAG, 'Missing elderlyId', {
-        beneficiary,
-        elderlyParam,
-        currentUser,
-        isElderlySelfBooking,
-      });
       Alert.alert(
         'Lỗi dữ liệu',
         'Thiếu thông tin người được khám (elderlyId).',
@@ -310,33 +283,122 @@ const PaymentServiceScreen = () => {
       return false;
     }
     if (!healthPackageId) {
-      console.warn(TAG, 'Missing healthPackageId', {
-        packageRef,
-        packageParam,
-        registration,
-      });
       Alert.alert('Lỗi dữ liệu', 'Thiếu thông tin gói khám.');
       return false;
     }
     if (!doctorId) {
-      console.warn(TAG, 'Missing doctorId', doctor);
       Alert.alert('Lỗi dữ liệu', 'Thiếu thông tin bác sĩ.');
       return false;
     }
     if (!durationDays || !startDateIso) {
-      console.warn(TAG, 'Missing durationDays or startDateIso', {
-        durationDays,
-        startDateIso,
-      });
       Alert.alert(
         'Lỗi dữ liệu',
         'Thiếu thời lượng gói hoặc ngày bắt đầu.',
       );
       return false;
     }
+    if (!rawPriceNumber || rawPriceNumber <= 0) {
+      Alert.alert('Lỗi dữ liệu', 'Giá gói khám không hợp lệ.');
+      return false;
+    }
     return true;
   };
 
+  // ================= PAYOS: TẠO QR KHI CHỌN ONLINE (qr) =================
+  useEffect(() => {
+    const generateQRCode = async () => {
+      if (selectedMethod !== 'qr') {
+        setQrCode(null);
+        setOrderCode(null);
+        setQrError('');
+        return;
+      }
+
+      if (!rawPriceNumber || rawPriceNumber <= 0) {
+        setQrError('Không xác định được số tiền thanh toán.');
+        setQrCode(null);
+        return;
+      }
+
+      setLoadingQR(true);
+      setQrError('');
+      try {
+        const newOrderCode =
+          (Date.now() % 10_000_000_000_000) + Math.floor(Math.random() * 10_000);
+
+        const MAX_DESC_LEN = 25;
+
+        // Chuỗi mô tả ngắn gọn
+        let shortDesc = `Goi kham BS - ${elderlyName || 'NCT'}`;
+
+        // Nếu dài hơn 25 ký tự thì cắt
+        if (shortDesc.length > MAX_DESC_LEN) {
+          shortDesc = shortDesc.slice(0, MAX_DESC_LEN);
+        }
+
+        const paymentData = {
+          orderCode: newOrderCode,
+          amount: rawPriceNumber,
+          description: shortDesc, // ⚡ PayOS yêu cầu <= 25 ký tự
+          returnUrl: 'https://your-app-url.com/doctor-payment-success',
+          cancelUrl: 'https://your-app-url.com/doctor-payment-cancel',
+        };
+
+        const result = await PayOSService.createPayment(paymentData);
+
+        const qr =
+          result?.qrCode ||
+          result?.data?.qrCode ||
+          result?.data?.qr_link ||
+          null;
+
+        if (!qr) {
+          setQrError('Không nhận được mã QR từ PayOS.');
+          setQrCode(null);
+        } else {
+          setQrCode(qr);
+          setOrderCode(newOrderCode);
+        }
+      } catch (error) {
+        const friendlyMessage =
+          error?.response?.data?.message ||
+          'Không thể tạo thanh toán QR. Vui lòng thử lại sau.';
+        setQrError(friendlyMessage);
+        setQrCode(null);
+      } finally {
+        setLoadingQR(false);
+      }
+    };
+
+    generateQRCode();
+  }, [selectedMethod, rawPriceNumber, elderlyName]);
+
+  // ================= PAYOS: KIỂM TRA TRẠNG THÁI THANH TOÁN =================
+  const checkPaymentStatus = async () => {
+    if (!orderCode) {
+      return false;
+    }
+    try {
+      const statusRes = await PayOSService.verifyPayment(orderCode);
+
+      const status =
+        statusRes?.status ||
+        statusRes?.data?.status ||
+        statusRes?.payment?.status ||
+        '';
+
+      return (
+        status === 'PAID' ||
+        status === 'paid' ||
+        status === 'SUCCESS' ||
+        status === 'success'
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  // ================= GỬI BOOKING LÊN BACKEND =================
   const handlePayment = async method => {
     if (submitting) return;
     if (!method) {
@@ -357,42 +419,30 @@ const PaymentServiceScreen = () => {
         durationDays,
         startDate: startDateIso,
         doctorId,
-        paymentMethod: method,
+        paymentMethod: method, // 'cash' | 'qr'
         note,
-        // gửi thêm thông tin cho backend phân biệt elderly tự đặt
         bookingRole: normalizedRole,
         isElderlySelfBooking,
       };
-
-      console.log(TAG, 'Booking payload =', payload);
 
       let res = null;
       if (
         doctorBookingService &&
         typeof doctorBookingService.bookDoctor === 'function'
       ) {
-        console.log(TAG, 'Calling doctorBookingService.bookDoctor');
         res = await doctorBookingService.bookDoctor(payload);
       } else if (
         doctorBookingService &&
         typeof doctorBookingService.createBooking === 'function'
       ) {
-        console.log(TAG, 'bookDoctor not found, fallback to createBooking');
         res = await doctorBookingService.createBooking(payload);
       } else {
-        console.error(
-          TAG,
-          'Không tìm thấy hàm bookDoctor / createBooking trong doctorBookingService',
-          Object.keys(doctorBookingService || {}),
-        );
         Alert.alert(
           'Lỗi cấu hình',
-          'Không tìm thấy hàm đặt lịch trong doctorBookingService. Vui lòng kiểm tra lại service.',
+          'Không tìm thấy hàm đặt lịch trong doctorBookingService.',
         );
         return;
       }
-
-      console.log(TAG, 'Booking response =', res);
 
       if (res?.success) {
         setShowSuccessModal(true);
@@ -402,8 +452,7 @@ const PaymentServiceScreen = () => {
           res?.message || 'Không thể tạo booking.',
         );
       }
-    } catch (err) {
-      console.log(TAG, '[handlePayment] ERROR =', err?.message || err);
+    } catch {
       Alert.alert(
         'Lỗi hệ thống',
         'Không thể xử lý thanh toán. Vui lòng thử lại sau.',
@@ -413,21 +462,47 @@ const PaymentServiceScreen = () => {
     }
   };
 
-  const handleConfirmPayment = () => {
-    handlePayment(selectedMethod);
+  // ================= NÚT "XÁC NHẬN THANH TOÁN" =================
+  const handleConfirmPayment = async () => {
+    if (!selectedMethod) {
+      Alert.alert(
+        'Chưa chọn phương thức',
+        'Vui lòng chọn phương thức thanh toán trước.',
+      );
+      return;
+    }
+
+    if (selectedMethod === 'qr') {
+      if (!qrCode) {
+        Alert.alert(
+          'Chưa có mã QR',
+          'Vui lòng đợi mã QR được tạo trước khi xác nhận thanh toán online.',
+        );
+        return;
+      }
+
+      const paymentSuccess = await checkPaymentStatus();
+      if (!paymentSuccess) {
+        Alert.alert(
+          'Thanh toán chưa hoàn tất',
+          'Vui lòng hoàn tất thanh toán qua ứng dụng ngân hàng trước khi xác nhận.',
+        );
+        return;
+      }
+    }
+
+    await handlePayment(selectedMethod);
   };
 
   const handleGoHome = () => {
-  setShowSuccessModal(false);
+    setShowSuccessModal(false);
 
-  if (isElderlySelfBooking) {
-    // Người cao tuổi tự đặt → về trang ElderHome
-    navigation.navigate('ElderHome');
-  } else {
-    // Người thân đặt cho elderly → giữ nguyên
-    navigation.navigate('FamilyMemberHome');
-  }
-};
+    if (isElderlySelfBooking) {
+      navigation.navigate('ElderHome');
+    } else {
+      navigation.navigate('FamilyMemberHome');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -469,7 +544,7 @@ const PaymentServiceScreen = () => {
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Giá gói khám:</Text>
             <Text style={styles.priceValue}>
-              {displayPrice ? `${displayPrice} đ` : ''}
+              {displayPrice ? `${displayPrice} đ` : '—'}
             </Text>
           </View>
 
@@ -544,12 +619,30 @@ const PaymentServiceScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* HIỂN THỊ QR KHI CHỌN ONLINE */}
+        {/* HIỂN THỊ QR KHI CHỌN ONLINE + GIÁ TIỀN THANH TOÁN */}
         {selectedMethod === 'qr' && (
           <View style={styles.qrContainer}>
             <Text style={styles.qrTitle}>Mã QR thanh toán</Text>
+
+            <View style={styles.qrAmountRow}>
+              <Text style={styles.qrAmountLabel}>Số tiền cần thanh toán:</Text>
+              <Text style={styles.qrAmountValue}>
+                {displayPrice ? `${displayPrice} đ` : '—'}
+              </Text>
+            </View>
+
             <View style={styles.qrBox}>
-              <Icon name="qr-code-outline" size={80} color="#111827" />
+              {loadingQR ? (
+                <Text>Đang tạo mã QR...</Text>
+              ) : qrError ? (
+                <Text style={{ color: '#DC2626', textAlign: 'center' }}>
+                  {qrError}
+                </Text>
+              ) : qrCode ? (
+                <QRCodeSVG value={qrCode} size={180} />
+              ) : (
+                <Icon name="qr-code-outline" size={80} color="#111827" />
+              )}
             </View>
             <Text style={styles.qrHint}>
               Vui lòng quét mã QR bằng ứng dụng ngân hàng hoặc ví điện tử trước
@@ -570,7 +663,11 @@ const PaymentServiceScreen = () => {
             onPress={handleConfirmPayment}
           >
             <Text style={styles.confirmButtonText}>
-              {submitting ? 'Đang xử lý...' : 'Xác nhận thanh toán'}
+              {submitting
+                ? 'Đang xử lý...'
+                : displayPrice
+                ? `Xác nhận thanh toán ${displayPrice} đ`
+                : 'Xác nhận thanh toán'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -590,7 +687,9 @@ const PaymentServiceScreen = () => {
             </View>
             <Text style={styles.modalTitle}>Đặt lịch thành công</Text>
             <Text style={styles.modalSubtitle}>
-              Tiền dịch vụ sẽ được thu sau khi dịch vụ hỗ trợ hoàn thành.
+              {selectedMethod === 'qr'
+                ? 'Thanh toán online đã được ghi nhận.'
+                : 'Tiền dịch vụ sẽ được thu sau khi dịch vụ hỗ trợ hoàn thành.'}
             </Text>
 
             <TouchableOpacity
@@ -610,15 +709,7 @@ export default PaymentServiceScreen;
 
 const InfoRow = ({ label, value }) => {
   if (!label && !value) return null;
-  if (!value) {
-    console.log(
-      TAG,
-      '[InfoRow] skip render vì value rỗng, label =',
-      label,
-    );
-    return null;
-  }
-  console.log(TAG, '[InfoRow] render row:', { label, value });
+  if (!value) return null;
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
@@ -805,6 +896,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
     marginBottom: 8,
+  },
+  qrAmountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  qrAmountLabel: {
+    fontSize: 12,
+    color: '#4B5563',
+  },
+  qrAmountValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#16A34A',
   },
   qrBox: {
     alignItems: 'center',
