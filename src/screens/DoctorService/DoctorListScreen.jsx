@@ -139,6 +139,7 @@ const DoctorListScreen = () => {
       doctor._id ||
       doctor?.doctor?._id ||
       doctor?.doctorProfile?._id;
+    const doctorName = getDoctorName(doctor);
 
     console.log(TAG, 'Navigate DoctorDetail với:', {
       elderly,
@@ -149,13 +150,14 @@ const DoctorListScreen = () => {
       doctorId,
     });
 
-    navigation.navigate('DoctorDetail', {
-      elderly, // ✅ giữ người được khám
-      family, // ✅ truyền thêm người đăng ký
+    navigation.navigate('ProfileDoctorScreen', {
+      elderly, // người được khám
+      family, // người đăng ký
       healthPackage,
       durationDays,
       startDate,
       doctorId,
+      doctorName,
     });
   };
 
