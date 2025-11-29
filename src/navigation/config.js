@@ -49,5 +49,6 @@ export const routeMap = {
   tasks: 'SupporterIntro',
   patients: 'DOCTOR_PATIENTS',
   insights: 'DOCTOR_INSIGHTS',
-  calendar: 'ProfileGate'
+  calendar: 'ProfileGate',
+  doctor: 'IntroductionBookingDoctor'
 };

@@ -180,6 +180,52 @@ const Header = ({ navigation, onRefresh }) => (
   </View>
 );
 
+// ===== Thanh tab để chuyển giữa lịch hỗ trợ & lịch tư vấn bác sĩ =====
+const BookingTabBar = ({ onPressSupporter, onPressDoctor }) => {
+  // Màn này luôn là lịch hỗ trợ → tab "Lịch hỗ trợ" đang active
+  const activeTab = 'supporter';
+
+  return (
+    <View style={styles.tabBarContainer}>
+      <TouchableOpacity
+        style={[
+          styles.tabItem,
+          activeTab === 'supporter' && styles.tabItemActive,
+        ]}
+        activeOpacity={0.9}
+        onPress={onPressSupporter}
+      >
+        <Text
+          style={[
+            styles.tabItemText,
+            activeTab === 'supporter' && styles.tabItemTextActive,
+          ]}
+        >
+          Lịch hỗ trợ
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          styles.tabItem,
+          activeTab === 'doctor' && styles.tabItemActive,
+        ]}
+        activeOpacity={0.9}
+        onPress={onPressDoctor}
+      >
+        <Text
+          style={[
+            styles.tabItemText,
+            activeTab === 'doctor' && styles.tabItemTextActive,
+          ]}
+        >
+          Lịch tư vấn bác sĩ
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const SupporterBookingListScreen = ({ navigation, route }) => {
   // ===== Hooks =====
   const [bookings, setBookings] = useState([]);
@@ -253,6 +299,17 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  // ===== Handler chuyển tab =====
+  const handlePressSupporterTab = () => {
+    // Đang ở màn này rồi → có thể refresh nhẹ nếu bạn muốn
+    // onRefresh();
+  };
+
+  const handlePressDoctorTab = () => {
+    // Chuyển sang màn lịch sử đặt lịch tư vấn với bác sĩ
+    navigation.navigate('DoctorBookingHistoryScreen');
   };
 
   const renderBookingItem = ({ item }) => {
@@ -395,6 +452,10 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header navigation={navigation} onRefresh={onRefresh} />
+        <BookingTabBar
+          onPressSupporter={handlePressSupporterTab}
+          onPressDoctor={handlePressDoctorTab}
+        />
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>Đang tải danh sách đặt lịch…</Text>
@@ -407,6 +468,10 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header navigation={navigation} onRefresh={onRefresh} />
+        <BookingTabBar
+          onPressSupporter={handlePressSupporterTab}
+          onPressDoctor={handlePressDoctorTab}
+        />
         <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity onPress={fetchBookings} style={styles.retryBtn}>
@@ -421,6 +486,10 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header navigation={navigation} onRefresh={onRefresh} />
+        <BookingTabBar
+          onPressSupporter={handlePressSupporterTab}
+          onPressDoctor={handlePressDoctorTab}
+        />
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>Chưa có đặt lịch nào</Text>
           <Text style={styles.emptySub}>
@@ -438,6 +507,10 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   return (
     <SafeAreaView style={styles.screen}>
       <Header navigation={navigation} onRefresh={onRefresh} />
+      <BookingTabBar
+        onPressSupporter={handlePressSupporterTab}
+        onPressDoctor={handlePressDoctorTab}
+      />
 
       <FlatList
         data={bookings}
@@ -506,6 +579,41 @@ const styles = StyleSheet.create({
     fontSize: wp('3.4%'),
     marginTop: 2,
   },
+
+  // ===== Tab bar =====
+  tabBarContainer: {
+    flexDirection: 'row',
+    marginTop: 10,
+    marginHorizontal: 16,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 999,
+    padding: 4,
+  },
+  tabItem: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabItemActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  tabItemText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  tabItemTextActive: {
+    color: '#1D4ED8',
+    fontWeight: '700',
+  },
+
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
