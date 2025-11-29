@@ -20,6 +20,8 @@ import relationshipService from '../../services/relationshipService';
 import socketService from '../../services/socketService';
 import sosService from '../../services/sosService';
 import userService from '../../services/userService';
+import conversationService from '../../services/conversationService';
+import CallService from '../../services/CallService';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { enableFloating, disableFloating } from '../../utils/floatingCheckinHelper';
@@ -163,6 +165,68 @@ export default function HomeScreen() {
     },
     [loadPendingRequests, loadFamilyRelationships, notify],
   );
+
+  // Xử lý video call đến thành viên gia đình
+  const handleVideoCallToMember = useCallback(async (member) => {
+    try {
+      // Kiểm tra socket đã kết nối chưa
+      if (!socketService.isConnected) {
+        notify('Không thể thực hiện cuộc gọi. Vui lòng kiểm tra kết nối.', 'error');
+        return;
+      }
+
+      // Kiểm tra có user hiện tại không
+      if (!user) {
+        notify('Không thể lấy thông tin người dùng', 'error');
+        return;
+      }
+
+      // Lấy conversation giữa 2 người
+      const convResult = await conversationService.getConversationByParticipants(
+        user._id,
+        member._id
+      );
+
+      if (!convResult.success) {
+        notify('Không tìm thấy cuộc trò chuyện với thành viên này', 'error');
+        return;
+      }
+
+      const conversationId = convResult.data._id;
+
+      // Tạo cuộc gọi mới
+      const call = CallService.createCall({
+        conversationId,
+        otherParticipant: member,
+        callType: 'video'
+      });
+
+      console.log('📞 Initiating video call to member:', call);
+
+      // Emit socket event để gọi
+      socketService.requestVideoCall({
+        callId: call.callId,
+        conversationId,
+        callerId: user._id,
+        callerName: user.fullName,
+        callerAvatar: user.avatar,
+        calleeId: member._id,
+        callType: 'video'
+      });
+
+      // Navigate đến VideoCallScreen
+      nav.navigate('VideoCall', {
+        callId: call.callId,
+        conversationId,
+        otherParticipant: member,
+        isIncoming: false, // Người gọi
+      });
+
+    } catch (error) {
+      console.error('❌ Error initiating video call:', error);
+      notify('Không thể thực hiện cuộc gọi. Vui lòng thử lại.', 'error');
+    }
+  }, [user, nav, notify]);
 
   // boot user
   useEffect(() => {
@@ -788,7 +852,7 @@ export default function HomeScreen() {
                       (m.role === 'doctor' ? 'Bác sĩ' : 'Thành viên')
                     }
                     title={m.fullName}
-                    onPress={() => notify(`Đang gọi cho ${m.fullName}...`, 'success')}
+                    onPress={() => handleVideoCallToMember(m)}
                     online={false}
                   />
                 ))}
@@ -801,7 +865,7 @@ export default function HomeScreen() {
                     width: '100%',
                   }}
                 >
-                  Nhấn vào tên của thành viên để gọi
+                  Nhấn vào tên của thành viên để gọi video
                 </Text>
               </View>
             )}
