@@ -31,6 +31,8 @@ const SLOT_LABEL = {
 };
 const SLOT_SHORT = { morning: 'Sáng', afternoon: 'Chiều', evening: 'Tối' };
 
+const TAG = '[ViewIntroductionProfile]';
+
 const ViewIntroductionProfile = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,14 +65,25 @@ const ViewIntroductionProfile = ({ navigation }) => {
   const fetchProfile = async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
+      console.log(TAG, '--- call supporterService.getMyProfile, isRefresh =', isRefresh);
       const res = await supporterService.getMyProfile();
+      console.log(
+        TAG,
+        'getMyProfile raw response =',
+        // dùng JSON.stringify để xem rõ cấu trúc
+        JSON.stringify(res, null, 2),
+      );
+
       if (res.success) {
         setProfile(res.data);
         hydrateBankForm(res.data);
+        console.log(TAG, 'profile.user from API =', JSON.stringify(res.data?.user, null, 2));
       } else {
+        console.log(TAG, 'getMyProfile error message =', res.message);
         Alert.alert('Lỗi', res.message || 'Không tải được hồ sơ.');
       }
     } catch (e) {
+      console.log(TAG, 'getMyProfile exception =', e);
       Alert.alert('Lỗi', e?.message || 'Không tải được hồ sơ.');
     } finally {
       if (isRefresh) setRefreshing(false);
@@ -78,9 +91,27 @@ const ViewIntroductionProfile = ({ navigation }) => {
     }
   };
 
-  useEffect(() => { fetchProfile(false); }, []);
-  useFocusEffect(useCallback(() => { fetchProfile(true); }, []));
-  const onRefresh = () => { setRefreshing(true); fetchProfile(true); };
+  useEffect(() => {
+    fetchProfile(false);
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfile(true);
+    }, []),
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchProfile(true);
+  };
+
+  // log khi profile thay đổi để dễ debug
+  useEffect(() => {
+    if (profile) {
+      console.log(TAG, 'profile state updated =', JSON.stringify(profile, null, 2));
+    }
+  }, [profile]);
 
   // --- Schedule transforms ---
   const scheduleByDay = useMemo(() => {
@@ -94,10 +125,7 @@ const ViewIntroductionProfile = ({ navigation }) => {
   }, [profile]);
 
   /**
-   * SỬA TẠI ĐÂY:
-   * todaySlots giờ là "các ca đã được ĐẶT trong hôm nay",
-   * mặc định rỗng => 3 ô đều "Có thể nhận".
-   * Chỉ khi có booking thật sự mới hiển thị "Đã có lịch".
+   * todaySlots = các ca đã được ĐẶT trong hôm nay
    */
   const todaySlots = useMemo(() => {
     const today = new Date();
@@ -112,7 +140,6 @@ const ViewIntroductionProfile = ({ navigation }) => {
       );
     };
 
-    // chấp nhận nhiều kiểu dữ liệu để dễ tích hợp BE:
     // profile.bookings | profile.appointments | profile.todayBookings
     const list =
       (Array.isArray(profile?.todayBookings) && profile.todayBookings) ||
@@ -120,17 +147,14 @@ const ViewIntroductionProfile = ({ navigation }) => {
       (Array.isArray(profile?.appointments) && profile.appointments) ||
       [];
 
-    // các status được coi là đã giữ lịch
     const BOOKED_STATUS = ['confirmed', 'accepted', 'booked', 'approved', 'pending'];
 
     const bookedToday = list.filter((b) => {
       const status = String(b?.status || '').toLowerCase();
-      // cố gắng bắt nhiều tên field ngày bắt đầu
       const dateField = b?.date || b?.bookingDate || b?.start || b?.startTime || b?.startAt;
       return BOOKED_STATUS.includes(status) && isSameYMD(dateField);
     });
 
-    // map về key slot: morning/afternoon/evening
     const slots = bookedToday
       .map((b) => b?.timeSlot || b?.slot || b?.timeSlots)
       .filter((s) => s === 'morning' || s === 'afternoon' || s === 'evening');
@@ -154,9 +178,8 @@ const ViewIntroductionProfile = ({ navigation }) => {
       const feeVal = profile?.sessionFee?.[slotKey];
       if (typeof feeVal !== 'number' || feeVal <= 0) return 'Chưa có';
       return `${formatCurrency(feeVal)}đ/ca`;
-      // Nếu muốn theo giờ: `${formatCurrency(feeVal)}đ/giờ`
     },
-    [profile]
+    [profile],
   );
   // ======================================================
 
@@ -183,7 +206,7 @@ const ViewIntroductionProfile = ({ navigation }) => {
       Alert.alert('Năm hết hạn không hợp lệ', `Năm phải từ ${now.getFullYear()} trở đi.`);
       return false;
     }
-    if (y === now.getFullYear() && m < (now.getMonth() + 1)) {
+    if (y === now.getFullYear() && m < now.getMonth() + 1) {
       Alert.alert('Thời hạn không hợp lệ', 'Thẻ đã hết hạn.');
       return false;
     }
@@ -201,12 +224,15 @@ const ViewIntroductionProfile = ({ navigation }) => {
       if (res?.success) {
         setProfile(res.data);
         hydrateBankForm(res.data);
+        console.log(TAG, 'bank card saved, new profile =', JSON.stringify(res.data, null, 2));
         Alert.alert('Thành công', 'Đã lưu thẻ ngân hàng.');
       } else {
+        console.log(TAG, 'updateMyProfile (bankCard) error =', res?.message);
         Alert.alert('Không thành công', res?.message || 'Không thể lưu thẻ.');
       }
     } catch (e) {
       setSavingCard(false);
+      console.log(TAG, 'updateMyProfile (bankCard) exception =', e);
       Alert.alert('Lỗi', e?.message || 'Không thể lưu thẻ.');
     }
   };
@@ -227,6 +253,19 @@ const ViewIntroductionProfile = ({ navigation }) => {
   const description =
     profile?.experience?.description || 'Chưa có mô tả. Hãy cập nhật để khách hàng hiểu rõ hơn về bạn.';
   const serviceAreaKm = profile?.serviceArea ?? 0;
+
+  // 🔹 ĐỊA CHỈ SUPPORTER: bắt nhiều dạng field, kèm log
+  const userObj = profile?.user || {};
+  const addressText =
+    userObj.currentAddress ||
+    userObj.current_address ||
+    userObj.address ||
+    userObj.currentLocation?.address ||
+    userObj.currentLocation?.formatted ||
+    'Chưa cập nhật địa chỉ.';
+
+  console.log(TAG, 'userObj for address =', JSON.stringify(userObj, null, 2));
+  console.log(TAG, 'computed addressText =', addressText);
 
   const reviews = Array.isArray(profile?.reviews) ? profile.reviews : [];
   const ratingAvg =
@@ -269,6 +308,20 @@ const ViewIntroductionProfile = ({ navigation }) => {
                 <Icon name="checkmark-circle" size={16} color="#0046FF" />
                 <Text style={styles.verifiedText}>Đã xác minh</Text>
               </View>
+
+              {/* 🔹 ĐỊA CHỈ HỖ TRỢ VIÊN */}
+              <View style={styles.addressRow}>
+                <Icon
+                  name="location-outline"
+                  size={16}
+                  color="#4A90E2"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.addressText} numberOfLines={2}>
+                  {addressText}
+                  {serviceAreaKm > 0 ? ` • Bán kính phục vụ ~${serviceAreaKm} km` : ''}
+                </Text>
+              </View>
             </View>
           </View>
 
@@ -290,10 +343,6 @@ const ViewIntroductionProfile = ({ navigation }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Mô tả công việc</Text>
           <Text style={styles.description}>{description}</Text>
-
-          {/* <View style={styles.tagContainer}>
-            <View style={styles.tag}><Text style={styles.tagText}>Chăm sóc người già</Text></View>
-          </View> */}
         </View>
 
         {/* Reviews */}
@@ -355,7 +404,9 @@ const ViewIntroductionProfile = ({ navigation }) => {
             onPress={() =>
               navigation?.navigate?.('EditIntroduction', {
                 initialProfile: profile,
-                onUpdated: (updatedProfile) => { if (updatedProfile) setProfile(updatedProfile); },
+                onUpdated: (updatedProfile) => {
+                  if (updatedProfile) setProfile(updatedProfile);
+                },
               })
             }
           >
@@ -370,8 +421,13 @@ const ViewIntroductionProfile = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8F9FA' },
   header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#2F66FF', height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#2F66FF',
+    height: 60,
   },
   backButton: { padding: 8 },
   headerTitle: { fontSize: 18, fontWeight: '600', color: '#ffffff', flex: 1, textAlign: 'center', marginRight: 10 },
@@ -386,6 +442,19 @@ const styles = StyleSheet.create({
   profileRole: { fontSize: 14, color: '#666666', marginBottom: 4 },
   verifiedBadge: { flexDirection: 'row', alignItems: 'center' },
   verifiedText: { fontSize: 12, color: '#0046FF', marginLeft: 4 },
+
+  // 🔹 ĐỊA CHỈ
+  addressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    flexWrap: 'wrap',
+  },
+  addressText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#374151',
+  },
 
   statsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   statItem: { alignItems: 'center', flex: 1 },
@@ -404,9 +473,16 @@ const styles = StyleSheet.create({
 
   // Weekly schedule item with border
   scheduleItem: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 14, paddingHorizontal: 14, borderWidth: 1, borderColor: '#E3E8EF',
-    borderRadius: 12, backgroundColor: '#FFFFFF', marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#E3E8EF',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 10,
   },
   dayText: { fontSize: 14, color: '#0B1220', fontWeight: '700' },
   timeContainer: { flexDirection: 'row', alignItems: 'center' },
@@ -427,8 +503,13 @@ const styles = StyleSheet.create({
   serviceTitle: { fontSize: 14, fontWeight: '600', color: '#000000', marginTop: 16, marginBottom: 12 },
   serviceItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   serviceIcon: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: '#F0F7FF',
-    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F0F7FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   serviceInfo: { flex: 1 },
   serviceName: { fontSize: 14, color: '#000000', fontWeight: '500' },
@@ -453,8 +534,13 @@ const styles = StyleSheet.create({
   reviewItem: { marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
   reviewHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   reviewAvatar: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: '#FF6B35',
-    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#FF6B35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   avatarText: { fontSize: 14, color: '#ffffff', fontWeight: '600' },
   reviewInfo: { flex: 1 },
@@ -485,12 +571,22 @@ const styles = StyleSheet.create({
   cardHolder: { fontSize: 12, color: '#999999' },
   inputLabel: { fontSize: 13, color: '#0B1220', marginBottom: 6, fontWeight: '500' },
   textInput: {
-    borderWidth: 1, borderColor: '#E0E6EF', borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, color: '#000', backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E0E6EF',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#000',
+    backgroundColor: '#fff',
     marginBottom: 12,
   },
   saveBankBtn: {
-    backgroundColor: '#FF8040', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginTop: 4,
+    backgroundColor: '#FF8040',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 4,
   },
   saveBankText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
