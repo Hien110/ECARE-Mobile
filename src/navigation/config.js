@@ -50,5 +50,5 @@ export const routeMap = {
   patients: 'DOCTOR_PATIENTS',
   insights: 'DOCTOR_INSIGHTS',
   calendar: 'ProfileGate',
-  doctor: 'IntroductionBookingDoctor'
+  doctor: 'DoctorBookingHistoryScreen'
 };

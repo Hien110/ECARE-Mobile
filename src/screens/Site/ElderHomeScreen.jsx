@@ -638,6 +638,11 @@ export default function HomeScreen() {
     }
   }, [notify, user, nav, getCurrentLocation, reverseGeocode, isSendingSOS]);
 
+  const bookAppointment = () => {
+    nav.navigate('IntroductionBookingDoctor', {
+      elderlyId: user?._id || null,
+    });
+  };
 
   const findSupport = () => {
     nav.navigate('ServiceSelectionScreen', {
@@ -765,13 +770,13 @@ export default function HomeScreen() {
         {/* Quick actions – 2 cột, nút lớn */}
         <Section title="Tác vụ nhanh" icon="" color="#2563eb">
           <View style={styles.quickGrid}>
-            {/* <BigAction
+            <BigAction
               tint="#F59E0B"
               icon="🧑🏻‍⚕️"
               title="Hẹn bác sĩ"
               desc="Khám trực tiếp/Video"
               onPress={bookAppointment}
-            /> */}
+            />
             <BigAction
               tint="#4F46E5"
               icon="💬"

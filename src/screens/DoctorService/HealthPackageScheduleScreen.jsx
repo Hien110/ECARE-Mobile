@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { doctorBookingService } from '../../services/doctorBookingService';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -24,9 +25,13 @@ const DEFAULT_DURATIONS = [
 
 const TAG = '[HealthPackageScheduleScreen]';
 
+// ✅ SỬA Ở ĐÂY: format theo LOCAL, KHÔNG dùng toISOString
 const formatDate = date => {
   if (!(date instanceof Date)) return '';
-  return date.toISOString().slice(0, 10); // YYYY-MM-DD
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`; // YYYY-MM-DD theo giờ local
 };
 
 const formatDateVN = date => {
@@ -61,7 +66,9 @@ const HealthPackageScheduleScreen = () => {
     console.log(TAG, 'healthPackage =', healthPackage);
   }, [route.params, healthPackage]);
 
-  const [startDate] = useState(new Date());
+  // Cho phép đổi ngày bắt đầu
+  const [startDate, setStartDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // ===== LẤY DURATION TỪ DATABASE =====
@@ -155,7 +162,10 @@ const HealthPackageScheduleScreen = () => {
 
   const handleBack = () => navigation.goBack();
 
-  const handleOpenDatePicker = () => {};
+  const handleOpenDatePicker = () => {
+    if (submitting) return;
+    setShowDatePicker(true);
+  };
 
   // ========== CALL API LẤY BÁC SĨ ==========
   const handleContinue = async () => {
@@ -166,7 +176,7 @@ const HealthPackageScheduleScreen = () => {
       return;
     }
 
-    const startDateStr = formatDate(startDate);
+    const startDateStr = formatDate(startDate); // dùng hàm format mới
 
     try {
       setSubmitting(true);
@@ -289,6 +299,31 @@ const HealthPackageScheduleScreen = () => {
                 {formatDate(startDate)} (YYYY-MM-DD)
               </Text>
             </TouchableOpacity>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={startDate}
+                mode="date"
+                display="default"
+                minimumDate={new Date()} // không cho chọn ngày quá khứ
+                onChange={(event, selected) => {
+                  setShowDatePicker(false);
+                  if (event?.type === 'dismissed') return;
+                  if (selected) {
+                    const normalized = new Date(
+                      selected.getFullYear(),
+                      selected.getMonth(),
+                      selected.getDate(),
+                      0,
+                      0,
+                      0,
+                      0,
+                    );
+                    setStartDate(normalized);
+                  }
+                }}
+              />
+            )}
 
             <Text style={styles.infoLine}>
               Gói có hiệu lực liên tục trong suốt thời gian đã chọn.
