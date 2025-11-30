@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +11,8 @@ import {
   Text,
   ToastAndroid,
   TouchableOpacity, View,
+  NativeEventEmitter,
+  NativeModules,
 } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 
@@ -18,6 +20,8 @@ import relationshipService from '../../services/relationshipService';
 import socketService from '../../services/socketService';
 import sosService from '../../services/sosService';
 import userService from '../../services/userService';
+import conversationService from '../../services/conversationService';
+import CallService from '../../services/CallService';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { enableFloating, disableFloating } from '../../utils/floatingCheckinHelper';
@@ -25,6 +29,8 @@ import { enableFloating, disableFloating } from '../../utils/floatingCheckinHelp
 /* ===================== HOME ===================== */
 export default function HomeScreen() {
   const nav = useNavigation();
+  const route = useRoute();
+  console.log('🧭 [ElderHome/HomeScreen] route params:', route?.params);
 
   // boot/auth
   const [booting, setBooting] = useState(true);
@@ -35,6 +41,11 @@ export default function HomeScreen() {
   const [pendingRequests, setPendingRequests] = useState([]);
   const [familyLoading, setFamilyLoading] = useState(true);
   const [familyList, setFamilyList] = useState([]);
+  const [relationships, setRelationships] = useState([]);
+
+  
+  // 🆕 Track SOS sending state
+  const [isSendingSOS, setIsSendingSOS] = useState(false);
 
   // helper: notify
   const notify = useCallback((msg, type = 'info') => {
@@ -67,35 +78,37 @@ export default function HomeScreen() {
 
   // tải danh sách đã kết nối (accepted)
   const loadFamilyRelationships = useCallback(async () => {
-    if (!user?._id) return;
-    try {
-      setFamilyLoading(true);
-      const res = await relationshipService.getAllRelationships();
-      if (res?.success) {
-        const list = (res.data || [])
-          .filter(r => r?.status === 'accepted')
-          .map(r => {
-            const other = getOtherMember(r, user._id);
-            if (!other?._id) return null;
-            return {
-              _id: other._id,
-              fullName: other.fullName || 'Thành viên',
-              role: other.role, // doctor/family/supporter/...
-              avatar: other.avatar,
-              relationship: r?.relationship, // “con trai”, “con gái”,...
-            };
-          })
-          .filter(Boolean);
-        setFamilyList(list);
-      } else {
-        console.log('getAllRelationships error:', res?.message);
-      }
-    } catch (e) {
-      console.log('loadFamilyRelationships error:', e);
-    } finally {
-      setFamilyLoading(false);
+  if (!user?._id) return;
+  try {
+    setFamilyLoading(true);
+    const res = await relationshipService.getAllRelationships();
+    if (res?.success) {
+      const all = res.data || [];
+      setRelationships(all);
+      const list = all
+        .filter(r => r?.status === 'accepted')
+        .map(r => {
+          const other = getOtherMember(r, user._id);
+          if (!other?._id) return null;
+          return {
+            _id: other._id,
+            fullName: other.fullName || 'Thành viên',
+            role: other.role, // doctor/family/supporter/...
+            avatar: other.avatar,
+            relationship: r?.relationship, // “con trai”, “con gái”,...
+          };
+        })
+        .filter(Boolean);
+      setFamilyList(list);
+    } else {
+      console.log('getAllRelationships error:', res?.message);
     }
-  }, [user, getOtherMember]);
+  } catch (e) {
+    console.log('loadFamilyRelationships error:', e);
+  } finally {
+    setFamilyLoading(false);
+  }
+}, [user, getOtherMember]);
 
   // chấp nhận / từ chối yêu cầu
   const respondToRequest = useCallback(
@@ -153,6 +166,68 @@ export default function HomeScreen() {
     [loadPendingRequests, loadFamilyRelationships, notify],
   );
 
+  // Xử lý video call đến thành viên gia đình
+  const handleVideoCallToMember = useCallback(async (member) => {
+    try {
+      // Kiểm tra socket đã kết nối chưa
+      if (!socketService.isConnected) {
+        notify('Không thể thực hiện cuộc gọi. Vui lòng kiểm tra kết nối.', 'error');
+        return;
+      }
+
+      // Kiểm tra có user hiện tại không
+      if (!user) {
+        notify('Không thể lấy thông tin người dùng', 'error');
+        return;
+      }
+
+      // Lấy conversation giữa 2 người
+      const convResult = await conversationService.getConversationByParticipants(
+        user._id,
+        member._id
+      );
+
+      if (!convResult.success) {
+        notify('Không tìm thấy cuộc trò chuyện với thành viên này', 'error');
+        return;
+      }
+
+      const conversationId = convResult.data._id;
+
+      // Tạo cuộc gọi mới
+      const call = CallService.createCall({
+        conversationId,
+        otherParticipant: member,
+        callType: 'video'
+      });
+
+      console.log('📞 Initiating video call to member:', call);
+
+      // Emit socket event để gọi
+      socketService.requestVideoCall({
+        callId: call.callId,
+        conversationId,
+        callerId: user._id,
+        callerName: user.fullName,
+        callerAvatar: user.avatar,
+        calleeId: member._id,
+        callType: 'video'
+      });
+
+      // Navigate đến VideoCallScreen
+      nav.navigate('VideoCall', {
+        callId: call.callId,
+        conversationId,
+        otherParticipant: member,
+        isIncoming: false, // Người gọi
+      });
+
+    } catch (error) {
+      console.error('❌ Error initiating video call:', error);
+      notify('Không thể thực hiện cuộc gọi. Vui lòng thử lại.', 'error');
+    }
+  }, [user, nav, notify]);
+
   // boot user
   useEffect(() => {
     (async () => {
@@ -190,15 +265,29 @@ export default function HomeScreen() {
     }
   }, [user, loadPendingRequests, loadFamilyRelationships]);
 
-    useEffect(() => {
-    const role = (user?.role || '').toLowerCase();
-    if (!user?._id) return;
-    if (role === 'elderly') {
-      enableFloating();   
-    } else {
-      disableFloating();  
-    }
-  }, [user]);
+  useEffect(() => {
+  if (!user?._id) return;
+  const role = (user?.role || '').toLowerCase();
+
+  if (role !== 'elderly') {
+    disableFloating();
+    return;
+  }
+
+  const hasAcceptedRelationship = (relationships || []).some(rel => {
+    const isElderInRel =
+      String(rel?.elderly?._id) === String(user._id) ||
+      String(rel?.family?._id) === String(user._id);
+      return isElderInRel && rel?.status === 'accepted';
+  });
+
+  if (!hasAcceptedRelationship) {
+    disableFloating();
+    return;
+  }
+
+  enableFloating();
+}, [user, relationships]);
 
   // time
   const [now, setNow] = useState(new Date());
@@ -206,6 +295,124 @@ export default function HomeScreen() {
     const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // 🆕 Listener cho SOS call answered (elderly nhận khi có người chấp nhận)
+  useEffect(() => {
+    if (!user?._id) return;
+
+    const handleSOSCallAnswered = (data) => {
+      const { sosId, callId, recipient } = data;
+
+      console.log('✅ SOS call answered by:', recipient?.fullName);
+
+      // 🆕 Clear isSendingSOS state vì đã có người nhận
+      setIsSendingSOS(false);
+
+      // Tự động navigate đến VideoCall
+      nav.navigate('VideoCall', {
+        callId,
+        conversationId: null,
+        otherParticipant: recipient,
+        isIncoming: false,
+        isSOSCall: true,
+        sosId,
+      });
+
+      // Show toast notification
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(
+          `✅ ${recipient?.fullName || 'Thành viên gia đình'} đã chấp nhận cuộc gọi`,
+          ToastAndroid.SHORT
+        );
+      }
+    };
+
+    const handleSOSCallNoAnswer = (data) => {
+      console.log('❌ SOS call - no one answered');
+      
+      // 🆕 Clear isSendingSOS state vì đã hết người để gọi
+      setIsSendingSOS(false);
+      
+      Alert.alert(
+        '⚠️ Không có phản hồi',
+        data.message || 'Không có thành viên nào trả lời cuộc gọi khẩn cấp. Vui lòng thử gọi trực tiếp hoặc liên hệ số khẩn cấp 115.',
+        [{ text: 'OK' }]
+      );
+    };
+
+    socketService.on('sos_call_answered', handleSOSCallAnswered);
+    socketService.on('sos_call_no_answer', handleSOSCallNoAnswer);
+
+    return () => {
+      socketService.off('sos_call_answered', handleSOSCallAnswered);
+      socketService.off('sos_call_no_answer', handleSOSCallNoAnswer);
+    };
+  }, [user, nav]);
+
+  // 🆕 Listener cho event từ Floating Checkin khi vuốt xuống
+  useEffect(() => {
+    if (!user?._id) return;
+
+    const eventEmitter = new NativeEventEmitter(NativeModules.FloatingCheckin);
+    
+    const subscription = eventEmitter.addListener('onDeadmanSwipe', (event) => {
+      const { choice } = event;
+      console.log('🚨 Deadman swipe event received:', choice);
+      
+      // Nếu vuốt xuống (phys_unwell) → gọi handleEmergency
+      if (choice === 'phys_unwell') {
+        console.log('📞 Triggering handleEmergency from swipe down...');
+        handleEmergency();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [user, handleEmergency]);
+
+  useEffect(() => {
+    if (!user?._id) {
+      console.log('⚠️ [ElderHome/HomeScreen] autoSOSFromDeadman: chưa có user, bỏ qua');
+      return;
+    }
+
+    const role = (user?.role || '').toLowerCase();
+    const autoSOS = route?.params?.autoSOSFromDeadman;
+
+    console.log('🔁 [ElderHome/HomeScreen] check autoSOSFromDeadman:', {
+      userId: user?._id,
+      role,
+      autoSOS,
+      params: route?.params,
+    });
+
+    // Chỉ người cao tuổi mới auto SOS
+    if (role !== 'elderly') {
+      console.log('ℹ️ [ElderHome/HomeScreen] Không phải elderly, bỏ qua autoSOSFromDeadman');
+      return;
+    }
+
+    // Không có flag thì thôi
+    if (!autoSOS) {
+      return;
+    }
+
+    console.log('📞 [ElderHome/HomeScreen] Auto calling handleEmergency() từ autoSOSFromDeadman');
+
+    // GỌI SOS THẲNG
+    handleEmergency();
+
+    // Reset flag để tránh auto gọi lại nhiều lần khi re-render
+    if (nav.setParams) {
+      nav.setParams({
+        ...(route?.params || {}),
+        autoSOSFromDeadman: false,
+      });
+      console.log('✅ [ElderHome/HomeScreen] Đã reset autoSOSFromDeadman về false');
+    }
+  }, [user, route, nav, handleEmergency]);
+
   const timeStr = useMemo(
     () =>
       now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
@@ -313,7 +520,19 @@ export default function HomeScreen() {
       return;
     }
 
+    // 🆕 Kiểm tra xem đang có SOS đang gửi không
+    if (isSendingSOS) {
+      Alert.alert(
+        '⚠️ Đang xử lý',
+        'Đang có cuộc gọi SOS đang được xử lý. Vui lòng đợi hoàn tất.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     try {
+      setIsSendingSOS(true); // 🆕 Set state đang gửi SOS
+      
       // Kiểm tra token CHI TIẾT
       const token = await AsyncStorage.getItem('ecare_token');
 
@@ -394,35 +613,41 @@ export default function HomeScreen() {
       );
 
       notify('Đã gửi cảnh báo đến tất cả thành viên!', 'success');
+      
+      // 🆕 Note: isSendingSOS sẽ được clear bởi listener sos_call_no_answer hoặc khi cuộc gọi kết thúc
     } catch (error) {
       console.error('❌ Error sending emergency notification:', error);
       console.error('❌ Error details:', error?.response?.data);
-      const errorMsg =
-        error?.response?.data?.message ||
-        'Gửi cảnh báo thất bại. Vui lòng thử lại.';
-      Alert.alert('Lỗi', errorMsg);
+      
+      setIsSendingSOS(false); // 🆕 Reset state khi có lỗi
+      
+      // 🆕 Xử lý error code ACTIVE_SOS_EXISTS
+      const errorCode = error?.response?.data?.code;
+      const errorMsg = error?.response?.data?.message;
+      
+      if (errorCode === 'ACTIVE_SOS_EXISTS') {
+        Alert.alert(
+          '⚠️ SOS đang xử lý',
+          errorMsg || 'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        const defaultMsg = errorMsg || 'Gửi cảnh báo thất bại. Vui lòng thử lại.';
+        Alert.alert('Lỗi', defaultMsg);
+      }
     }
-  }, [notify, user, nav, getCurrentLocation, reverseGeocode]);
+  }, [notify, user, nav, getCurrentLocation, reverseGeocode, isSendingSOS]);
 
-  // demo actions
-  const bookAppointment = () =>
-    Alert.alert('Đặt lịch tư vấn', '📅 Chọn ngày giờ • 👩‍⚕️ Chọn bác sĩ • 💬 Trực tiếp/Video');
-  const healthDiary = () =>
-    Alert.alert('Nhật ký sức khỏe', '📝 Triệu chứng • 📊 Chỉ số • 💭 Tâm trạng');
+  const bookAppointment = () => {
+    nav.navigate('IntroductionBookingDoctor', {
+      elderlyId: user?._id || null,
+    });
+  };
 
   const findSupport = () => {
-    const flag = 'BookingFromElderly';
-    const userPayload = {
-      elderlyId: user?._id,
-      fullName: user?.fullName || '',
-      phoneNumber: user?.phoneNumber || '',
-      avatar: user?.avatar || '',
-      address: user?.addressEnc || '',
-      currentLocation: user?.currentLocation || null,
-    };
     nav.navigate('ServiceSelectionScreen', {
-      user: member,
-      source: 'FamilyListFunction', // để màn sau biết đi từ đâu
+      elderlyId: user?._id || null,
+      source: 'FamilyListFunction_Supporter', // để màn sau biết đi từ đâu
     });
   };
   const chatSupport = () => nav.navigate('ChatWithAI');
@@ -518,16 +743,26 @@ export default function HomeScreen() {
 
         {/* Emergency – nút lớn, ít chữ, tương phản cao */}
         <TouchableOpacity
-          style={styles.emgBigBtn}
+          style={[
+            styles.emgBigBtn,
+            isSendingSOS && { opacity: 0.6, backgroundColor: '#ef4444' }
+          ]}
           onPress={handleEmergency}
+          disabled={isSendingSOS}
           accessibilityRole="button"
           accessibilityLabel="Gọi khẩn cấp. Nhấn để báo động cho gia đình"
           activeOpacity={0.9}
         >
           <Text style={styles.emgBigIcon} accessible>🚨</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.emgBigTitle}>GỌI KHẨN CẤP</Text>
-            <Text style={styles.emgBigDesc}>Liên hệ ngay toàn bộ gia đình</Text>
+            <Text style={styles.emgBigTitle}>
+              {isSendingSOS ? 'ĐANG XỬ LÝ...' : 'GỌI KHẨN CẤP'}
+            </Text>
+            <Text style={styles.emgBigDesc}>
+              {isSendingSOS 
+                ? 'Đang gọi đến thành viên gia đình...' 
+                : 'Liên hệ ngay toàn bộ gia đình'}
+            </Text>
           </View>
           <Text style={styles.emgChevron}>›</Text>
         </TouchableOpacity>
@@ -535,13 +770,13 @@ export default function HomeScreen() {
         {/* Quick actions – 2 cột, nút lớn */}
         <Section title="Tác vụ nhanh" icon="" color="#2563eb">
           <View style={styles.quickGrid}>
-            {/* <BigAction
+            <BigAction
               tint="#F59E0B"
               icon="🧑🏻‍⚕️"
               title="Hẹn bác sĩ"
               desc="Khám trực tiếp/Video"
               onPress={bookAppointment}
-            /> */}
+            />
             <BigAction
               tint="#4F46E5"
               icon="💬"
@@ -622,7 +857,7 @@ export default function HomeScreen() {
                       (m.role === 'doctor' ? 'Bác sĩ' : 'Thành viên')
                     }
                     title={m.fullName}
-                    onPress={() => notify(`Đang gọi cho ${m.fullName}...`, 'success')}
+                    onPress={() => handleVideoCallToMember(m)}
                     online={false}
                   />
                 ))}
@@ -635,7 +870,7 @@ export default function HomeScreen() {
                     width: '100%',
                   }}
                 >
-                  Nhấn vào tên của thành viên để gọi
+                  Nhấn vào tên của thành viên để gọi video
                 </Text>
               </View>
             )}

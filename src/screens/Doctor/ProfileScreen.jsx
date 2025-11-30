@@ -1,11 +1,37 @@
 // src/screens/Doctor/ProfileScreen.jsx
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useRoute } from '@react-navigation/native';
+import doctorService from '../../services/doctorService';
 import { SafeAreaView, ScrollView, View, Text, Image } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Star, Calendar, MapPin, Clock, Heart, Award } from "lucide-react-native";
 import Card from "../../components/Cart";
 
 export default function ProfileScreen() {
+  const route = useRoute();
+  const { doctorName, doctorId } = route.params || {};
+  const [profile, setProfile] = useState(null);
+  const displayName = doctorName || profile?.user?.fullName || 'Bác sĩ';
+
+  // Simple mapper: convert hospitalName to approximate coordinates
+  // Mapping function removed since map is hidden
+
+  const hospitalName = useMemo(() => {
+    return profile?.hospitalName || profile?.doctorProfile?.hospitalName || 'Bệnh viện Đà Nẵng';
+  }, [profile]);
+
+  // const hospitalCoords = useMemo(() => getCoordinatesFromHospitalName(hospitalName), [hospitalName]);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!doctorId) return;
+      const res = await doctorService.getProfileById(doctorId);
+      if (res?.success) {
+        setProfile(res.data);
+      }
+    };
+    fetchProfile();
+  }, [doctorId]);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
       <LinearGradient
@@ -29,13 +55,13 @@ export default function ProfileScreen() {
             <View style={{ flexDirection: "row", gap: 16 }}>
               <View style={{ width: 64, height: 64, borderRadius: 32, overflow: "hidden", borderWidth: 3, borderColor: "rgba(255,255,255,0.3)" }}>
                 <Image
-                  source={{ uri: "https://raw.githubusercontent.com/ranui-ch/images/main/doctor_profile_placeholder.png" }}
+                  source={{ uri: (profile?.user?.avatar || profile?.doctorProfile?.user?.avatar || "https://raw.githubusercontent.com/ranui-ch/images/main/doctor_profile_placeholder.png") }}
                   style={{ width: "100%", height: "100%" }}
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: "#fff", fontWeight: "800", fontSize: 20 }}>uqwqwq</Text>
-                <Text style={{ color: "#DBEAFE", marginTop: 2 }}>Bác sĩ chuyên khoa</Text>
+                <Text style={{ color: "#fff", fontWeight: "800", fontSize: 20 }}>{displayName}</Text>
+                <Text style={{ color: "#DBEAFE", marginTop: 2 }}>{profile?.specializations?.join(', ') || 'Bác sĩ chuyên khoa'}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
                   <Star size={16} color="#FACC15" fill="#FACC15" />
                   <Text style={{ color: "#fff", fontWeight: "700" }}>4.8</Text>
@@ -87,12 +113,65 @@ export default function ProfileScreen() {
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
             <MapPin size={16} color="#6B7280" />
-            <Text style={{ fontWeight: "600", color: "#111827" }}>Bệnh viện Đà Nẵng</Text>
+            <Text style={{ fontWeight: "600", color: "#111827" }}>{hospitalName}</Text>
           </View>
-          <View style={{ height: 130, borderRadius: 12, backgroundColor: "#DBEAFE", overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
-            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "#EF4444", borderWidth: 2, borderColor: "#fff" }} />
-            <Text style={{ position: "absolute", bottom: 8, left: 8, color: "#2563EB", fontWeight: "600", fontSize: 12 }}>Phường 1</Text>
-            <Text style={{ position: "absolute", bottom: 8, right: 8, color: "#2563EB", fontWeight: "600", fontSize: 12 }}>Phường 3</Text>
+          <View style={{ gap: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontWeight: '700', color: '#111827' }}>Giới thiệu</Text>
+            </View>
+            <Text style={{ color: '#374151' }}>
+              {profile?.bio || 'Bác sĩ tận tâm, nhiều kinh nghiệm trong khám và tư vấn sức khỏe.'}
+            </Text>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              <Text style={{ fontWeight: '700', color: '#111827' }}>Chuyên khoa</Text>
+            </View>
+            <Text style={{ color: '#374151' }}>
+              {Array.isArray(profile?.specializations) && profile.specializations.length
+                ? profile.specializations.join(', ')
+                : 'Đang cập nhật'}
+            </Text>
+
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 }}>
+              <RowIcon
+                icon={<Clock color="#6B7280" size={16} />}
+                title="Kinh nghiệm"
+                subtitle={`${profile?.experience ?? profile?.doctorProfile?.experience ?? '—'} năm`}
+              />
+              {(() => {
+                const avg = profile?.ratingStats?.averageRating ?? profile?.doctorProfile?.ratingStats?.averageRating;
+                const avgText = typeof avg === 'number' ? avg.toFixed(1) : '—';
+                return (
+                  <RowIcon
+                    icon={<Star color="#F59E0B" size={16} />}
+                    title="Đánh giá"
+                    subtitle={`${avgText} điểm`}
+                    right
+                  />
+                );
+              })()}
+            </View>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
+              <Text style={{ fontWeight: '700', color: '#111827' }}>Thông tin liên hệ</Text>
+            </View>
+            <Text style={{ color: '#374151' }}>
+              Nơi làm việc: {profile?.hospitalName || profile?.doctorProfile?.hospitalName || 'Đang cập nhật'}
+            </Text>
+            {!!profile?.clinicAddress && (
+              <Text style={{ color: '#6B7280' }}>Địa chỉ: {profile.clinicAddress}</Text>
+            )}
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 }}>
+              <Text style={{ fontWeight: '700', color: '#111827' }}>Dịch vụ phổ biến</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+              {['Khám tổng quát', 'Tư vấn online', 'Theo dõi điều trị'].map((t) => (
+                <View key={t} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: '#EEF2FF' }}>
+                  <Text style={{ color: '#374151', fontWeight: '600', fontSize: 12 }}>{t}</Text>
+                </View>
+              ))}
+            </View>
           </View>
         </Card>
       </ScrollView>

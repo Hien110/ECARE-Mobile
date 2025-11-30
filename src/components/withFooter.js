@@ -10,10 +10,15 @@ const withFooter = (ScreenComp, activeKey) => (props) => {
   const [role, setRole] = React.useState(null);
 
   React.useEffect(() => {
+    let mounted = true;
     userService.getUser().then(user => {
+      if (!mounted) return;
       console.log('user in withFooter', user.data.role);
       setRole(user.data.role || 'supporter');
     });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
 
@@ -32,7 +37,10 @@ const withFooter = (ScreenComp, activeKey) => (props) => {
       centerKey={centerKey}  // Truyền centerKey vào AppLayout
       TABS={TABS}            // Truyền TABS vào AppLayout
     >
-      <ScreenComp {...props} />
+      <ScreenComp {...props}
+      role={role}
+      userRole={role}
+      currentRole={role} />
     </AppLayout>
   );
 };

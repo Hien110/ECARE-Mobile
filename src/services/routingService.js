@@ -6,14 +6,14 @@
 class RoutingService {
   constructor() {
     // Using public OSRM demo server - for production, consider self-hosting
-    this.baseUrl = 'https://router.project-osrm.org/route/v1/driving'
-    this.timeout = 5000 // 5 seconds timeout
+    this.baseUrl = 'https://router.project-osrm.org/route/v1/driving';
+    this.timeout = 20000; // 20 seconds timeout
   }
 
   /**
    * Calculate real-world distance and duration between two coordinates
    * @param {number} startLat - Starting latitude
-   * @param {number} startLon - Starting longitude  
+   * @param {number} startLon - Starting longitude
    * @param {number} endLat - Ending latitude
    * @param {number} endLon - Ending longitude
    * @returns {Promise<{distance: number, duration: number, success: boolean}>}
@@ -76,14 +76,17 @@ class RoutingService {
    * Used when OSRM API is unavailable
    */
   calculateAirDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371 // Radius of the Earth in kilometers
-    const dLat = (lat2 - lat1) * Math.PI / 180
-    const dLon = (lon2 - lon1) * Math.PI / 180
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2)
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
-    return R * c // Distance in km
+    const R = 6371; // Radius of the Earth in kilometers
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c; // Distance in km
   }
 
   /**
@@ -92,24 +95,39 @@ class RoutingService {
    */
   async calculateDistanceWithFallback(startLat, startLon, endLat, endLon) {
     // Try OSRM only
-    const osrmResult = await this.calculateRoute(startLat, startLon, endLat, endLon)
-    
+    const osrmResult = await this.calculateRoute(
+      startLat,
+      startLon,
+      endLat,
+      endLon,
+    );
+    console.log(
+      'startLat',
+      startLat,
+      'startLon',
+      startLon,
+      'endLat',
+      endLat,
+      'endLon',
+      endLon,
+    );
+
     if (osrmResult.success) {
       return {
         distance: osrmResult.distance,
         duration: osrmResult.duration,
         method: 'osrm',
-        success: true
-      }
+        success: true,
+      };
     }
-    
+
     // No fallback - return null if OSRM fails
     return {
       distance: null,
       duration: null,
       method: 'failed',
-      success: false
-    }
+      success: false,
+    };
   }
 
   /**
@@ -120,34 +138,67 @@ class RoutingService {
    * @returns {Promise<Array>} Array of distance results
    */
   async calculateMultipleDistances(startLat, startLon, destinations) {
-    const results = []
-    
+    const results = [];
+
     // Process destinations in batches to avoid overwhelming the API
-    const batchSize = 5
+    const batchSize = 5;
     for (let i = 0; i < destinations.length; i += batchSize) {
-      const batch = destinations.slice(i, i + batchSize)
-      
+      const batch = destinations.slice(i, i + batchSize);
+
       const batchPromises = batch.map(async (dest, index) => {
-        const result = await this.calculateDistanceWithFallback(
-          startLat, startLon, dest.lat, dest.lon
-        )
-        return {
-          index: i + index,
-          ...result
+        // Trích xuất tọa độ từ profile
+        const lat = dest.lat;
+        const lon = dest.lon;
+
+        // Kiểm tra xem lat và lon có hợp lệ không
+        if (!lat || !lon) {
+          console.error(`Invalid coordinates for destination ${index + 1}`);
+          return {
+            index: i + index,
+            success: false,
+            error: 'Invalid coordinates',
+            distance: null,
+            duration: null,
+          };
         }
-      })
-      
-      const batchResults = await Promise.all(batchPromises)
-      results.push(...batchResults)
-      
+
+        try {
+          const result = await this.calculateDistanceWithFallback(
+            startLat,
+            startLon,
+            lat,
+            lon,
+          );
+          return {
+            index: i + index,
+            ...result,
+          };
+        } catch (error) {
+          console.error(
+            `Error calculating distance for destination ${index + 1}:`,
+            error,
+          );
+          return {
+            index: i + index,
+            success: false,
+            error: error.message,
+            distance: null,
+            duration: null,
+          };
+        }
+      });
+
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+
       // Small delay between batches to be respectful to the API
       if (i + batchSize < destinations.length) {
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
-    
-    return results
+
+    return results;
   }
 }
 
-export default new RoutingService()
+export default new RoutingService();

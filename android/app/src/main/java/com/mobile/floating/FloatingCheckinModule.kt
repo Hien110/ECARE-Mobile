@@ -12,12 +12,23 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.*
+import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext), ActivityEventListener {
 
     companion object {
         private const val REQ_OVERLAY = 2025
+        private const val TAG = "FloatingCheckinModule"
+        private var moduleInstance: FloatingCheckinModule? = null
+
+        /**
+         * Gọi từ Service để emit event sang React Native
+         * @param choice: "phys_unwell" khi vuốt xuống
+         */
+        fun sendEmergencyEvent(choice: String) {
+            moduleInstance?.emitEmergencyEvent(choice)
+        }
     }
 
     private var pendingToken: String? = null
@@ -30,6 +41,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
     init {
         reactContext.addActivityEventListener(this)
+        moduleInstance = this
     }
 
     override fun getName() = "FloatingCheckin"
@@ -56,6 +68,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
                 it.service.className == FloatingCheckinService::class.qualifiedName
             }
         } catch (e: Exception) {
+            Log.w(TAG, "isServiceRunning error: ${e.message}")
             false
         }
     }
@@ -73,7 +86,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun requestOverlayPermission(promise: Promise) {
-        Log.d("FloatingCheckinModule", "🔒 requestOverlayPermission() called")
+        Log.d(TAG, "🔒 requestOverlayPermission() called")
 
         // Nếu service đang chạy hoặc đã có quyền → không cần popup
         if (isServiceRunning(reactContext) || hasOverlayPermission(reactContext.currentActivity)) {
@@ -89,14 +102,17 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
         }
 
         if (overlayFlowActive) {
-            Log.d("FloatingCheckinModule", "⚠️ Overlay flow already active -> skip")
+            Log.d(TAG, "⚠️ Overlay flow already active -> skip")
             promise.resolve(true)
             return
         }
 
         val dialog = AlertDialog.Builder(act)
             .setTitle("Cho phép hiển thị trên ứng dụng khác")
-            .setMessage("E-Care cần quyền này để hiển thị nút Deadman Switch nổi. Bấm “Cho phép” để mở cài đặt.")
+            .setMessage(
+                "E-Care cần quyền này để hiển thị màn hình kiểm tra an toàn nổi. " +
+                        "Bấm “Cho phép” để mở phần cài đặt hệ thống."
+            )
             .setCancelable(false)
             .setNegativeButton("Hủy") { d, _ ->
                 d.dismiss()
@@ -113,6 +129,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
                         Uri.parse("package:${act.packageName}")
                     )
                     act.startActivityForResult(intent, REQ_OVERLAY)
+                    // Ở flow này chỉ là xin quyền trước, nên resolve luôn cho JS
                     promise.resolve(true)
                 } catch (e: Exception) {
                     overlayFlowActive = false
@@ -131,7 +148,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun start(token: String, baseUrl: String, promise: Promise) {
-        Log.d("FloatingCheckinModule", "🚀 start() token=$token baseUrl=$baseUrl")
+        Log.d(TAG, "🚀 start() token=$token baseUrl=$baseUrl")
         try {
             val act = reactContext.currentActivity
 
@@ -157,7 +174,7 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
 
             // 4) Nếu flow xin quyền đang diễn ra → không mở lại popup
             if (overlayFlowActive) {
-                Log.d("FloatingCheckinModule", "⚠️ Overlay flow active → skip reopening dialog")
+                Log.d(TAG, "⚠️ Overlay flow active → skip reopening dialog")
                 pendingToken = token
                 pendingBaseUrl = baseUrl
                 pendingPromise = promise
@@ -167,7 +184,10 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
             // 5) Mở popup xin quyền
             val dialog = AlertDialog.Builder(act)
                 .setTitle("Cho phép hiển thị trên ứng dụng khác")
-                .setMessage("E-Care cần quyền này để hiển thị nút Deadman Switch nổi. Cấp quyền để tiếp tục.")
+                .setMessage(
+                    "E-Care cần quyền này để hiển thị màn hình kiểm tra an toàn nổi. " +
+                            "Cấp quyền để tiếp tục."
+                )
                 .setCancelable(false)
                 .setNegativeButton("Hủy") { d, _ ->
                     d.dismiss()
@@ -213,6 +233,10 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
     fun stop(promise: Promise) {
         try {
             dismissActiveDialog()
+            overlayFlowActive = false
+            pendingPromise = null
+            pendingToken = null
+            pendingBaseUrl = null
             reactContext.stopService(Intent(reactContext, FloatingCheckinService::class.java))
             promise.resolve(true)
         } catch (e: Exception) {
@@ -269,5 +293,29 @@ class FloatingCheckinModule(private val reactContext: ReactApplicationContext) :
             putExtra(FloatingCheckinService.EXTRA_BASEURL, baseUrl)
         }
         ContextCompat.startForegroundService(reactContext, intent)
+    }
+
+    // ==============================================================
+    // ================= SEND EVENT TO REACT NATIVE =================
+    // ==============================================================
+
+    /**
+     * Emit event "onDeadmanSwipe" sang JavaScript
+     */
+    private fun emitEmergencyEvent(choice: String) {
+        try {
+            val params = Arguments.createMap().apply {
+                putString("choice", choice)
+                putDouble("timestamp", System.currentTimeMillis().toDouble())
+            }
+            
+            reactContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("onDeadmanSwipe", params)
+            
+            Log.d(TAG, "✅ Event emitted: onDeadmanSwipe with choice=$choice")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to emit event: ${e.message}")
+        }
     }
 }
