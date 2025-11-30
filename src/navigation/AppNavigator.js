@@ -1,10 +1,11 @@
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import NotificationService from '../services/NotificationService';
 import socketService from '../services/socketService';
 import CallService from '../services/CallService';
+import userService from '../services/userService';
 
 import ElderHomeScreen from '../screens/Site/ElderHomeScreen';
 import RegistersScreen from '../screens/Auth/RegistersScreen';
@@ -78,7 +79,7 @@ import withFooter from '../components/withFooter';
 const Stack = createStackNavigator();
 
 // Component wrapper để sử dụng hooks INSIDE NavigationContainer
-const NavigationContent = () => {
+const NavigationContent = ({ initialRouteName }) => {
   const navigation = useNavigation();
   const appState = useRef(AppState.currentState);
   
@@ -220,7 +221,7 @@ const NavigationContent = () => {
   }, [navigation]);
   
   return (
-    <Stack.Navigator initialRouteName="Login">
+    <Stack.Navigator initialRouteName={initialRouteName || 'Login'}>
       <Stack.Screen
         name="Login"
         component={LoginScreen}
@@ -592,6 +593,57 @@ const NavigationContent = () => {
 export const navigationRef = React.createRef();
 
 const AppNavigator = () => {
+  const [booted, setBooted] = useState(false);
+  const [initialRoute, setInitialRoute] = useState('Login');
+
+  useEffect(() => {
+    const routeByRole = (role) => {
+      switch ((role || '').toLowerCase()) {
+        case 'doctor':
+          return 'DoctorHome';
+        case 'supporter':
+          return 'SupporterHome';
+        case 'family':
+        case 'family_member':
+          return 'FamilyMemberHome';
+        case 'elderly':
+        default:
+          return 'ElderHome';
+      }
+    };
+
+    const decideInitialRoute = async () => {
+      try {
+        const token = await userService.getToken();
+        if (!token) {
+          setInitialRoute('Login');
+          setBooted(true);
+          return;
+        }
+        const me = await userService.getUser();
+        let role = me?.data?.role || me?.data?.userRole || me?.data?.user?.role;
+        if (!role) {
+          try {
+            const info = await userService.getUserInfo();
+            role = info?.data?.role || info?.data?.user?.role;
+            if (role && info?.data) {
+              await userService.setUser(info.data);
+            }
+          } catch (err) {
+            // ignore
+          }
+        }
+        setInitialRoute(role ? routeByRole(role) : 'Login');
+      } catch (e) {
+        setInitialRoute('Login');
+      } finally {
+        setBooted(true);
+      }
+    };
+
+    decideInitialRoute();
+  }, []);
+
   useEffect(() => {
     // Khởi tạo notification service khi app mount
     const initNotifications = async () => {
@@ -606,9 +658,13 @@ const AppNavigator = () => {
     return () => clearTimeout(timer);
   }, []);
 
+  if (!booted) {
+    return null;
+  }
+
   return (
     <NavigationContainer ref={navigationRef}>
-      <NavigationContent />
+      <NavigationContent initialRouteName={initialRoute} />
     </NavigationContainer>
   );
 };
