@@ -94,23 +94,15 @@ const AddressPickerScreen = ({ navigation }) => {
     try {
       setLoadingCoordinates(true);
 
-      // For Đà Nẵng addresses, we'll use approximate coordinates based on commune
-      // This is more reliable than external geocoding APIs
-
-      let baseCoordinates = { latitude: 0, longitude: 0 };
-
-      // Adjust coordinates slightly based on commune selection
-      const selectedCommuneObj = communes.find(c => c.code === selectedCommune);
-      if (selectedCommuneObj) {
-        const offset = parseInt(selectedCommuneObj.code) % 100;
-        baseCoordinates.latitude += offset * 0.001 - 0.05;
-        baseCoordinates.longitude += offset * 0.0015 - 0.075;
-      }
+      // Default center of Da Nang city as fallback
+      const DA_NANG_CENTER = { latitude: 16.0544, longitude: 108.2022 };
+      let coordinates = null;
+      let isApproximate = false;
 
       try {
         const encodedAddress = encodeURIComponent(fullAddress);
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
         const response = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1&countrycodes=vn`,
@@ -128,26 +120,54 @@ const AddressPickerScreen = ({ navigation }) => {
           const data = await response.json();
           if (data && Array.isArray(data) && data.length > 0) {
             const { lat, lon } = data[0];
-            baseCoordinates = {
+            coordinates = {
               latitude: parseFloat(lat),
               longitude: parseFloat(lon),
             };
-            console.log('Using geocoded coordinates:', baseCoordinates);
+            console.log('✓ Using exact geocoded coordinates:', coordinates);
           }
         }
       } catch (geoError) {
-        console.log(
-          'Geocoding failed, using base coordinates:',
-          geoError.message,
-        );
+        console.log('Geocoding API failed:', geoError.message);
       }
 
-      setAddressCoordinates(baseCoordinates);
-      Alert.alert('Thành công', 'Đã lấy được tọa độ địa chỉ!');
-      return baseCoordinates;
+      // If geocoding failed, use Da Nang center with commune offset
+      if (!coordinates) {
+        isApproximate = true;
+        const selectedCommuneObj = communes.find(c => c.code === selectedCommune);
+        
+        if (selectedCommuneObj) {
+          // Use commune code to create small variations around Da Nang center
+          const offset = parseInt(selectedCommuneObj.code) % 100;
+          coordinates = {
+            latitude: DA_NANG_CENTER.latitude + (offset * 0.002 - 0.05),
+            longitude: DA_NANG_CENTER.longitude + (offset * 0.003 - 0.075),
+          };
+          console.log('⚠ Using approximate coordinates for commune:', selectedCommuneObj.name);
+        } else {
+          // Use exact center of Da Nang if no commune selected
+          coordinates = DA_NANG_CENTER;
+          console.log('⚠ Using Da Nang city center coordinates');
+        }
+      }
+
+      setAddressCoordinates(coordinates);
+
+      // Show appropriate message based on accuracy
+      if (isApproximate) {
+        Alert.alert(
+          'Thông báo',
+          'Không thể lấy tọa độ chính xác từ địa chỉ. Hệ thống sử dụng tọa độ ước tính dựa trên khu vực Đà Nẵng.\n\nBạn có thể tiếp tục lưu địa chỉ.',
+          [{ text: 'Đã hiểu', style: 'default' }]
+        );
+      } else {
+        Alert.alert('Thành công', 'Đã lấy được tọa độ chính xác của địa chỉ!');
+      }
+
+      return coordinates;
     } catch (error) {
       console.error('Get coordinates error:', error);
-      Alert.alert('Lỗi', 'Có lỗi xảy ra khi lấy tọa độ.');
+      Alert.alert('Lỗi', 'Có lỗi xảy ra khi lấy tọa độ. Vui lòng thử lại.');
       return null;
     } finally {
       setLoadingCoordinates(false);
@@ -274,11 +294,49 @@ const AddressPickerScreen = ({ navigation }) => {
 
       let coordinates = addressCoordinates;
 
+      // If no coordinates yet, try to get them automatically
       if (!coordinates) {
         const fullAddressForGeocoding = `${fullAddress}, Việt Nam`;
         coordinates = await getCoordinatesFromAddress(fullAddressForGeocoding);
+        
+        // If still no coordinates after geocoding, ask user
+        if (!coordinates) {
+          Alert.alert(
+            'Không thể lấy tọa độ',
+            'Không thể xác định tọa độ của địa chỉ này. Bạn có muốn lưu địa chỉ mà không có thông tin vị trí không?',
+            [
+              {
+                text: 'Hủy',
+                style: 'cancel',
+                onPress: () => setSaving(false),
+              },
+              {
+                text: 'Lưu không có tọa độ',
+                onPress: async () => {
+                  try {
+                    const result = await userService.updateCurrentAddress(updateData);
+                    if (result.success) {
+                      Alert.alert('Thành công', 'Địa chỉ đã được lưu (không có tọa độ)!', [
+                        { text: 'OK', onPress: () => navigation?.goBack() },
+                      ]);
+                    } else {
+                      Alert.alert('Lỗi', result.message || 'Có lỗi xảy ra khi lưu địa chỉ');
+                    }
+                  } catch (error) {
+                    console.error('Save address error:', error);
+                    Alert.alert('Lỗi', 'Có lỗi xảy ra. Vui lòng thử lại.');
+                  } finally {
+                    setSaving(false);
+                  }
+                },
+              },
+            ],
+          );
+          return; // Exit early, waiting for user choice
+        }
       }
 
+      // Add coordinates to update data if available
       if (coordinates) {
         updateData.currentLocation = coordinates;
       }
@@ -286,7 +344,11 @@ const AddressPickerScreen = ({ navigation }) => {
       const result = await userService.updateCurrentAddress(updateData);
 
       if (result.success) {
-        Alert.alert('Thành công', 'Địa chỉ đã được lưu thành công!', [
+        const message = coordinates 
+          ? 'Địa chỉ và vị trí đã được lưu thành công!'
+          : 'Địa chỉ đã được lưu thành công!';
+        
+        Alert.alert('Thành công', message, [
           {
             text: 'OK',
             onPress: () => navigation?.goBack(),
