@@ -20,6 +20,8 @@ import relationshipService from '../../services/relationshipService';
 import socketService from '../../services/socketService';
 import sosService from '../../services/sosService';
 import userService from '../../services/userService';
+import conversationService from '../../services/conversationService';
+import CallService from '../../services/CallService';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { enableFloating, disableFloating } from '../../utils/floatingCheckinHelper';
@@ -44,6 +46,136 @@ export default function HomeScreen() {
   
   // 🆕 Track SOS sending state
   const [isSendingSOS, setIsSendingSOS] = useState(false);
+
+  // emergency handler
+  
+  // emergency
+  const handleEmergency = useCallback(async () => {
+    // Kiểm tra user đã login chưa
+    if (!user?._id) {
+      Alert.alert('Lỗi', 'Bạn cần đăng nhập để sử dụng tính năng này!');
+      return;
+    }
+
+    // 🆕 Kiểm tra xem đang có SOS đang gửi không
+    if (isSendingSOS) {
+      Alert.alert(
+        '⚠️ Đang xử lý',
+        'Đang có cuộc gọi SOS đang được xử lý. Vui lòng đợi hoàn tất.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    try {
+      setIsSendingSOS(true); // 🆕 Set state đang gửi SOS
+      
+      // Kiểm tra token CHI TIẾT
+      const token = await AsyncStorage.getItem('ecare_token');
+
+      if (!token) {
+        Alert.alert(
+          'Lỗi',
+          'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!',
+        );
+        nav.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      }
+
+      notify('Đang gửi cảnh báo khẩn cấp...', 'info');
+
+      // Lấy vị trí hiện tại
+      let location;
+      try {
+        const coords = await getCurrentLocation();
+        const address = await reverseGeocode(
+          coords.latitude,
+          coords.longitude,
+        );
+
+        location = {
+          coordinates: {
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          },
+          address: address,
+        };
+      } catch (locationError) {
+        console.warn(
+          '⚠️ Could not get location, using fallback:',
+          locationError,
+        );
+
+        // Fallback: Sử dụng vị trí mẫu nếu không lấy được vị trí thực
+        location = {
+          coordinates: {
+            latitude: 10.762622,
+            longitude: 106.660172,
+          },
+          address: 'Không xác định được vị trí (Vui lòng bật GPS)',
+        };
+      }
+
+      // Lấy danh sách family members
+      const familyRes = await userService.getFamilyMembersByElderlyId({
+        elderlyId: user._id,
+      });
+      if (!familyRes.success) {
+        setIsSendingSOS(false); // 🆕 Reset state khi có lỗi
+        Alert.alert('Lỗi', 'Không thể lấy danh sách thành viên gia đình');
+        return;
+      }
+
+      // Loại bỏ chính người gửi khỏi danh sách recipients
+      const recipients = familyRes.data
+        .map(member => member._id)
+        .filter(memberId => memberId !== user._id);
+
+      if (recipients.length === 0) {
+        setIsSendingSOS(false);
+        Alert.alert(
+          'Lỗi',
+          'Không có thành viên gia đình nào để gửi cảnh báo',
+        );
+        return;
+      }
+
+      // Tạo SOS notification
+      const message = `${
+        user?.fullName || 'Người dùng'
+      } cần trợ giúp ngay lập tức!`;
+
+      const result = await sosService.createSOS(
+        recipients,
+        message,
+        location,
+      );
+
+      notify('Đã gửi cảnh báo đến tất cả thành viên!', 'success');
+      
+      // 🆕 Note: isSendingSOS sẽ được clear bởi listener sos_call_no_answer hoặc khi cuộc gọi kết thúc
+    } catch (error) {
+      console.error('❌ Error sending emergency notification:', error);
+      console.error('❌ Error details:', error?.response?.data);
+      
+      setIsSendingSOS(false); // 🆕 Reset state khi có lỗi
+      
+      // 🆕 Xử lý error code ACTIVE_SOS_EXISTS
+      const errorCode = error?.response?.data?.code;
+      const errorMsg = error?.response?.data?.message;
+      
+      if (errorCode === 'ACTIVE_SOS_EXISTS') {
+        Alert.alert(
+          '⚠️ SOS đang xử lý',
+          errorMsg || 'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        const defaultMsg = errorMsg || 'Gửi cảnh báo thất bại. Vui lòng thử lại.';
+        Alert.alert('Lỗi', defaultMsg);
+      }
+    }
+  }, [notify, user, nav, getCurrentLocation, reverseGeocode, isSendingSOS]);
 
   // helper: notify
   const notify = useCallback((msg, type = 'info') => {
@@ -163,6 +295,68 @@ export default function HomeScreen() {
     },
     [loadPendingRequests, loadFamilyRelationships, notify],
   );
+
+  // Xử lý video call đến thành viên gia đình
+  const handleVideoCallToMember = useCallback(async (member) => {
+    try {
+      // Kiểm tra socket đã kết nối chưa
+      if (!socketService.isConnected) {
+        notify('Không thể thực hiện cuộc gọi. Vui lòng kiểm tra kết nối.', 'error');
+        return;
+      }
+
+      // Kiểm tra có user hiện tại không
+      if (!user) {
+        notify('Không thể lấy thông tin người dùng', 'error');
+        return;
+      }
+
+      // Lấy conversation giữa 2 người
+      const convResult = await conversationService.getConversationByParticipants(
+        user._id,
+        member._id
+      );
+
+      if (!convResult.success) {
+        notify('Không tìm thấy cuộc trò chuyện với thành viên này', 'error');
+        return;
+      }
+
+      const conversationId = convResult.data._id;
+
+      // Tạo cuộc gọi mới
+      const call = CallService.createCall({
+        conversationId,
+        otherParticipant: member,
+        callType: 'video'
+      });
+
+      console.log('📞 Initiating video call to member:', call);
+
+      // Emit socket event để gọi
+      socketService.requestVideoCall({
+        callId: call.callId,
+        conversationId,
+        callerId: user._id,
+        callerName: user.fullName,
+        callerAvatar: user.avatar,
+        calleeId: member._id,
+        callType: 'video'
+      });
+
+      // Navigate đến VideoCallScreen
+      nav.navigate('VideoCall', {
+        callId: call.callId,
+        conversationId,
+        otherParticipant: member,
+        isIncoming: false, // Người gọi
+      });
+
+    } catch (error) {
+      console.error('❌ Error initiating video call:', error);
+      notify('Không thể thực hiện cuộc gọi. Vui lòng thử lại.', 'error');
+    }
+  }, [user, nav, notify]);
 
   // boot user
   useEffect(() => {
@@ -296,6 +490,11 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!user?._id) return;
 
+    const nativeModule = NativeModules.FloatingCheckin;
+    if (!nativeModule) {
+      console.warn('[FloatingCheckin] Native module not found, skip listener');
+      return;
+    }
     const eventEmitter = new NativeEventEmitter(NativeModules.FloatingCheckin);
     
     const subscription = eventEmitter.addListener('onDeadmanSwipe', (event) => {
@@ -455,132 +654,11 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // emergency
-  const handleEmergency = useCallback(async () => {
-    // Kiểm tra user đã login chưa
-    if (!user?._id) {
-      Alert.alert('Lỗi', 'Bạn cần đăng nhập để sử dụng tính năng này!');
-      return;
-    }
-
-    // 🆕 Kiểm tra xem đang có SOS đang gửi không
-    if (isSendingSOS) {
-      Alert.alert(
-        '⚠️ Đang xử lý',
-        'Đang có cuộc gọi SOS đang được xử lý. Vui lòng đợi hoàn tất.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    try {
-      setIsSendingSOS(true); // 🆕 Set state đang gửi SOS
-      
-      // Kiểm tra token CHI TIẾT
-      const token = await AsyncStorage.getItem('ecare_token');
-
-      if (!token) {
-        Alert.alert(
-          'Lỗi',
-          'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!',
-        );
-        nav.reset({ index: 0, routes: [{ name: 'Login' }] });
-        return;
-      }
-
-      notify('Đang gửi cảnh báo khẩn cấp...', 'info');
-
-      // Lấy vị trí hiện tại
-      let location;
-      try {
-        const coords = await getCurrentLocation();
-        const address = await reverseGeocode(
-          coords.latitude,
-          coords.longitude,
-        );
-
-        location = {
-          coordinates: {
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-          },
-          address: address,
-        };
-      } catch (locationError) {
-        console.warn(
-          '⚠️ Could not get location, using fallback:',
-          locationError,
-        );
-
-        // Fallback: Sử dụng vị trí mẫu nếu không lấy được vị trí thực
-        location = {
-          coordinates: {
-            latitude: 10.762622,
-            longitude: 106.660172,
-          },
-          address: 'Không xác định được vị trí (Vui lòng bật GPS)',
-        };
-      }
-
-      // Lấy danh sách family members
-      const familyRes = await userService.getFamilyMembersByElderlyId({
-        elderlyId: user._id,
-      });
-      if (!familyRes.success) {
-        Alert.alert('Lỗi', 'Không thể lấy danh sách thành viên gia đình');
-        return;
-      }
-
-      // Loại bỏ chính người gửi khỏi danh sách recipients
-      const recipients = familyRes.data
-        .map(member => member._id)
-        .filter(memberId => memberId !== user._id);
-
-      if (recipients.length === 0) {
-        Alert.alert(
-          'Lỗi',
-          'Không có thành viên gia đình nào để gửi cảnh báo',
-        );
-        return;
-      }
-
-      // Tạo SOS notification
-      const message = `${
-        user?.fullName || 'Người dùng'
-      } cần trợ giúp ngay lập tức!`;
-
-      const result = await sosService.createSOS(
-        recipients,
-        message,
-        location,
-      );
-
-      notify('Đã gửi cảnh báo đến tất cả thành viên!', 'success');
-      
-      // 🆕 Note: isSendingSOS sẽ được clear bởi listener sos_call_no_answer hoặc khi cuộc gọi kết thúc
-    } catch (error) {
-      console.error('❌ Error sending emergency notification:', error);
-      console.error('❌ Error details:', error?.response?.data);
-      
-      setIsSendingSOS(false); // 🆕 Reset state khi có lỗi
-      
-      // 🆕 Xử lý error code ACTIVE_SOS_EXISTS
-      const errorCode = error?.response?.data?.code;
-      const errorMsg = error?.response?.data?.message;
-      
-      if (errorCode === 'ACTIVE_SOS_EXISTS') {
-        Alert.alert(
-          '⚠️ SOS đang xử lý',
-          errorMsg || 'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        const defaultMsg = errorMsg || 'Gửi cảnh báo thất bại. Vui lòng thử lại.';
-        Alert.alert('Lỗi', defaultMsg);
-      }
-    }
-  }, [notify, user, nav, getCurrentLocation, reverseGeocode, isSendingSOS]);
-
+  const bookAppointment = () => {
+    nav.navigate('IntroductionBookingDoctor', {
+      elderlyId: user?._id || null,
+    });
+  };
 
   const findSupport = () => {
     nav.navigate('ServiceSelectionScreen', {
@@ -589,28 +667,6 @@ export default function HomeScreen() {
     });
   };
   const chatSupport = () => nav.navigate('ChatWithAI');
-
-  const callFamily = who => {
-    const contacts = {
-      son: 'Con trai Minh Tuấn',
-      daughter: 'Con gái Thu Hằng',
-    };
-    notify(`Đang gọi cho ${contacts[who]}...\n📞 Kết nối cuộc gọi`, 'success');
-  };
-  const callDoctor = () =>
-    notify('Đang gọi Bác sĩ Lan...\n📞 Kết nối phòng khám', 'success');
-
-  // logout
-  const onLogout = useCallback(async () => {
-    try {
-      await disableFloating();
-      socketService.disconnect();
-      await userService.logout?.();
-      await AsyncStorage.multiRemove(['ecare_token', 'ecare_user']);
-    } finally {
-      nav.reset({ index: 0, routes: [{ name: 'Login' }] });
-    }
-  }, [nav]);
 
   if (booting) {
     return (
@@ -708,13 +764,13 @@ export default function HomeScreen() {
         {/* Quick actions – 2 cột, nút lớn */}
         <Section title="Tác vụ nhanh" icon="" color="#2563eb">
           <View style={styles.quickGrid}>
-            {/* <BigAction
+            <BigAction
               tint="#F59E0B"
               icon="🧑🏻‍⚕️"
               title="Hẹn bác sĩ"
               desc="Khám trực tiếp/Video"
               onPress={bookAppointment}
-            /> */}
+            />
             <BigAction
               tint="#4F46E5"
               icon="💬"
@@ -795,7 +851,7 @@ export default function HomeScreen() {
                       (m.role === 'doctor' ? 'Bác sĩ' : 'Thành viên')
                     }
                     title={m.fullName}
-                    onPress={() => notify(`Đang gọi cho ${m.fullName}...`, 'success')}
+                    onPress={() => handleVideoCallToMember(m)}
                     online={false}
                   />
                 ))}
@@ -808,7 +864,7 @@ export default function HomeScreen() {
                     width: '100%',
                   }}
                 >
-                  Nhấn vào tên của thành viên để gọi
+                  Nhấn vào tên của thành viên để gọi video
                 </Text>
               </View>
             )}

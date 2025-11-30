@@ -53,7 +53,8 @@ class FloatingCheckinService : Service() {
     // Deadman windows
     private val DEADMAN_WINDOWS = arrayOf("07:00", "15:00", "19:00")
     private var tzId: String = "Asia/Ho_Chi_Minh"
-    private var lastCheckinAt: Long? = null // epoch millis (server/local)
+    // ✅ Ưu tiên coi đây là giá trị lấy từ SERVER (ElderlyProfile.deadmanState.lastCheckinAt)
+    private var lastCheckinAt: Long? = null // epoch millis (server-based, có thể sync giữa nhiều device)
 
     // Watcher tick
     private val watchHandler = Handler(Looper.getMainLooper())
@@ -99,18 +100,35 @@ class FloatingCheckinService : Service() {
         baseUrl = intent?.getStringExtra(EXTRA_BASEURL)
         Log.d(TAG, "➡️ onStartCommand token=$token baseUrl=$baseUrl")
 
+        // Kiểm tra quyền overlay
         if (!Settings.canDrawOverlays(this)) {
             Log.e(TAG, "❌ Missing overlay permission")
-            Toast.makeText(this, "Bật quyền 'Hiển thị trên ứng dụng khác'", Toast.LENGTH_LONG)
-                .show()
+            Toast.makeText(
+                this,
+                "Bật quyền 'Hiển thị trên ứng dụng khác'",
+                Toast.LENGTH_LONG
+            ).show()
             stopSelf()
             return START_NOT_STICKY
         }
 
+        // Khởi tạo WindowManager
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
 
+        // Bắt đầu watcher
         startWatching()
-        tickOnceImmediate()
+
+        // 🔁 Delay một chút sau khi Activity resume để tránh crash khi vừa bật quyền overlay
+        if (Settings.canDrawOverlays(this)) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    tickOnceImmediate()
+                } catch (e: Exception) {
+                    Log.e(TAG, "tickOnceImmediate error: ${e.message}")
+                }
+            }, 200)
+        }
+
         return START_STICKY
     }
 
@@ -347,13 +365,21 @@ class FloatingCheckinService : Service() {
     /** Ẩn màn hình cảnh báo */
     private fun hideAlertPanel() {
         val wmLocal = wm
-        overlayView?.let {
+
+        overlayView?.let { view ->
             try {
-                wmLocal?.removeView(it)
-            } catch (_: Exception) {
+                // Dùng removeViewImmediate() để tránh crash khi overlay chưa attach / Activity đang destroy
+                wmLocal?.removeViewImmediate(view)
+                Log.d(TAG, "🧹 Overlay removed safely")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ removeView error: ${e.message}")
             }
         }
+
+        // Reset biến
         overlayView = null
+
+        // Dừng auto hide và feedback
         cancelAutoHide()
         stopAlertFeedback()
     }
@@ -365,13 +391,13 @@ class FloatingCheckinService : Service() {
     /** Người dùng vuốt chọn */
     private fun onSwipeChoice(choice: String) {
         Log.d(TAG, "👆 Swipe choice: $choice — sending")
-        
+
         // 🆕 Nếu vuốt xuống (phys_unwell) → xử lý đặc biệt
         if (choice == "phys_unwell") {
             Thread {
-                // 1. Gửi checkin để đánh dấu đã vuốt
+                // 1. Gửi checkin để đánh dấu đã vuốt (cập nhật lastCheckinAt trên SERVER)
                 val okCheckin = sendCheckin(choice)
-                
+
                 Handler(Looper.getMainLooper()).post {
                     if (okCheckin) {
                         Toast.makeText(
@@ -379,19 +405,20 @@ class FloatingCheckinService : Service() {
                             "🚨 Đang gửi cảnh báo khẩn cấp...",
                             Toast.LENGTH_SHORT
                         ).show()
-                        
-                        // 2. Lưu timestamp để không hiện lại trong cùng khung giờ
+
+                        // 2. Lưu timestamp local + cập nhật lastCheckinAt trên THIẾT BỊ NÀY
+                        //    (thiết bị khác sẽ sync qua fetchStatusSafe() từ server)
                         setLocalCheckinNow()
-                        
+
                         // 3. Ẩn panel (dừng chuông + rung)
                         hideAlertPanel()
-                        
+
                         // 4. Emit event sang React Native để gọi handleEmergency
                         try {
                             FloatingCheckinModule.sendEmergencyEvent(choice)
                             Log.d(TAG, "✅ Emitted emergency event to React Native")
                         } catch (e: Exception) {
-                            Log.e(TAG, "❌ Failed to emit emergency event: ${e.message}")
+                            Log.e(TAG, "❌ Failed to emit event: ${e.message}")
                         }
                     } else {
                         Toast.makeText(
@@ -404,10 +431,12 @@ class FloatingCheckinService : Service() {
             }.start()
             return // Kết thúc xử lý cho phys_unwell
         }
-        
+
         // Xử lý cho các choice khác (safe, etc.)
         Thread {
+            // 1. Gửi checkin để cập nhật lastCheckinAt trên SERVER
             val okCheckin = sendCheckin(choice)
+            // 2. Gửi choice notify (optional)
             val okNotify = sendChoiceNotify(choice)
 
             Handler(Looper.getMainLooper()).post {
@@ -420,7 +449,8 @@ class FloatingCheckinService : Service() {
                         },
                         Toast.LENGTH_SHORT
                     ).show()
-                    // Vuốt xong → đánh dấu đã check-in cho KHUNG GIỜ HIỆN TẠI
+                    // Vuốt xong → đánh dấu đã check-in cho KHUNG GIỜ HIỆN TẠI trên THIẾT BỊ NÀY
+                    // Thiết bị khác sẽ đọc cùng lastCheckinAt từ server
                     setLocalCheckinNow()
                     hideAlertPanel()
                 } else {
@@ -636,14 +666,20 @@ class FloatingCheckinService : Service() {
             TAG, """
             [VISIBILITY]
             visible=$visible
-            lastCheckinAt=$lastCheckinAt (local/server)
+            lastCheckinAt=$lastCheckinAt (server-based/local copy)
             server_zone=$tzId
             local_lastCheckinMs=${getLocalLastCheckinMs()}
         """.trimIndent()
         )
 
         if (visible) {
-            showAlertPanel()
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    showAlertPanel()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Overlay show error: ${e.message}")
+                }
+            }, 150)
         } else {
             hideAlertPanel()
         }
@@ -673,6 +709,7 @@ class FloatingCheckinService : Service() {
                 val cfg = data.optJSONObject("deadmanConfig")
                 val newTz = cfg?.optString("timezone", tzId) ?: tzId
 
+                // ✅ Lấy lastCheckinAt từ SERVER để mọi device cùng xài chung
                 if (serverMs != null) {
                     lastCheckinAt = serverMs
                     saveLocalState(serverMs, newTz)
@@ -682,26 +719,31 @@ class FloatingCheckinService : Service() {
             conn.disconnect()
         } catch (e: Exception) {
             Log.w(TAG, "fetchStatusSafe error: ${e.message}")
+            // Offline → fallback dùng state local của CHÍNH THIẾT BỊ NÀY
             restoreLocalState()
         }
     }
 
     /**
-     * Logic hiển thị mới:
+     * Logic hiển thị (multi-device, server-based):
      *
-     * 1) Nếu CHƯA TỪNG check-in (lastCheckinAt == null và local prefs cũng không có):
-     *      → LUÔN HIỂN THỊ (miễn có token + baseUrl), bất kể giờ là mấy.
+     * 1) Nếu CHƯA TỪNG check-in (lastCheckinAt == null):
+     *      → LUÔN HIỂN THỊ trên mọi thiết bị (miễn có token + baseUrl).
      *
      * 2) Nếu ĐÃ có ít nhất 1 lần check-in:
-     *      - Luôn xét các mốc 07:00 / 15:00 / 19:00 của NGÀY HIỆN TẠI.
+     *      - Mỗi THIẾT BỊ sẽ đọc cùng một lastCheckinAt từ SERVER
+     *        (ElderlyProfile.deadmanState.lastCheckinAt).
+     *      - Xét các mốc 07:00 / 15:00 / 19:00 của NGÀY HIỆN TẠI.
      *      - Lấy mốc gần nhất mà now >= mốc đó (activeStart).
      *      - Nếu:
-     *          + lastCheckinAt < activeStart → HIỂN THỊ (chưa vuốt cho khung giờ này).
-     *          + lastCheckinAt >= activeStart → KHÔNG HIỂN THỊ (đã vuốt cho khung giờ này).
+     *          + lastCheckinAt < activeStart → HIỂN THỊ (chưa vuốt trong KHUNG GIỜ HIỆN TẠI).
+     *          + lastCheckinAt >= activeStart → KHÔNG HIỂN THỊ (đã vuốt ở ÍT NHẤT 1 THIẾT BỊ;
+     *              các thiết bị khác cũng thấy ẩn vì xài chung lastCheckinAt).
      *
-     *  => Như vậy:
-     *      - Nếu chưa từng vuốt lần nào → panel luôn bật.
-     *      - Vuốt xong 7h vẫn hiện lại 15h, 19h, và sáng hôm sau 7h lại hiện.
+     *  ✅ Quan trọng:
+     *      - Trong shouldShowNow() KHÔNG dùng getLocalLastCheckinMs() nữa,
+     *        để tránh mỗi máy tự suy đoán khác nhau.
+     *      - Đồng bộ dựa trên giá trị lastCheckinAt từ server → nhiều máy / nhiều wifi vẫn đúng.
      */
     private fun shouldShowNow(): Boolean {
         if (token.isNullOrEmpty() || baseUrl.isNullOrEmpty()) {
@@ -709,14 +751,14 @@ class FloatingCheckinService : Service() {
             return false
         }
 
-        // 1) Ưu tiên kiểm tra trạng thái "chưa từng check-in"
-        val lastMs = lastCheckinAt ?: getLocalLastCheckinMs()
+        // 1) Ưu tiên kiểm tra trạng thái "chưa từng check-in" dựa trên SERVER
+        val lastMs = lastCheckinAt
         if (lastMs == null) {
-            Log.d(TAG, "REASON: chưa từng check-in → luôn hiển thị panel")
+            Log.d(TAG, "REASON: chưa từng check-in → luôn hiển thị panel trên mọi thiết bị")
             return true
         }
 
-        // 2) Đã có ít nhất một lần check-in → dùng logic khung giờ
+        // 2) Đã có ít nhất một lần check-in → dùng logic khung giờ dựa trên server
         val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Asia/Ho_Chi_Minh") }
         val now = ZonedDateTime.now(zone)
 
@@ -745,14 +787,17 @@ class FloatingCheckinService : Service() {
         return if (last.isBefore(activeStart)) {
             Log.d(
                 TAG, """
-                REASON: lastCheckinAt=$last < activeStart=$activeStart → hiển thị cho khung giờ mới
+                REASON: lastCheckinAt=$last < activeStart=$activeStart
+                → CHƯA check-in cho khung giờ hiện tại → HIỂN THỊ trên mọi thiết bị
             """.trimIndent()
             )
             true
         } else {
             Log.d(
                 TAG, """
-                REASON: lastCheckinAt=$last >= activeStart=$activeStart → đã check-in cho khung giờ này, không hiển thị
+                REASON: lastCheckinAt=$last >= activeStart=$activeStart
+                → ĐÃ check-in ở ÍT NHẤT 1 thiết bị cho khung giờ này
+                → TẤT CẢ thiết bị khác cũng ẩn panel
             """.trimIndent()
             )
             false
@@ -789,7 +834,8 @@ class FloatingCheckinService : Service() {
             .takeIf { it > 0 } else null
     }
 
-    /** Ghi thời điểm check-in (khi vuốt) → dùng để tính đã vuốt cho khung giờ hiện tại */
+    /** Ghi thời điểm check-in (khi vuốt) → dùng để panel tắt ngay trên THIẾT BỊ NÀY,
+     *  sau đó server sẽ lưu lastCheckinAt và các device khác sync qua fetchStatusSafe(). */
     private fun setLocalCheckinNow() {
         val zone = runCatching { ZoneId.of(tzId) }.getOrElse { ZoneId.of("Asia/Ho_Chi_Minh") }
         val nowMs = Instant.now().toEpochMilli()

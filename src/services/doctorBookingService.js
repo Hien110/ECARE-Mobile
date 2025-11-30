@@ -305,6 +305,121 @@ export const doctorBookingService = {
       };
     }
   },
+  getBookingsByElderlyId: async (elderlyId, params = {}) => {
+    const TAG = '[doctorBookingService][getBookingsByElderlyId]';
+
+    if (!elderlyId) {
+      return {
+        success: false,
+        data: [],
+        message: 'Thiếu elderlyId',
+      };
+    }
+
+    try {
+      console.log(
+        TAG,
+        'CALL API with elderlyId =',
+        elderlyId,
+        'params =',
+        params,
+      );
+
+      const res = await api.get(`/doctor-booking/by-elderly/${elderlyId}`, {
+        params,
+        timeout: 12000,
+      });
+
+      console.log(
+        TAG,
+        'RAW_RESPONSE =',
+        res?.status,
+        JSON.stringify(res?.data, null, 2),
+      );
+
+      const payload = res?.data || {};
+
+      // success = true trừ khi backend explicitly trả success: false
+      const success =
+        payload?.success === true ||
+        (payload?.success === undefined && res?.status === 200);
+
+      // Chuẩn hoá list giống getMyBookings
+      const list =
+        (Array.isArray(payload?.data) && payload.data) ||
+        (Array.isArray(payload?.bookings) && payload.bookings) ||
+        (Array.isArray(payload?.items) && payload.items) ||
+        [];
+
+      console.log(TAG, 'PARSED_BOOKINGS_COUNT =', list.length);
+
+      return {
+        success,
+        data: list,
+        message: payload?.message || '',
+      };
+    } catch (err) {
+      console.log(
+        TAG,
+        'ERROR =',
+        err?.message,
+        '| STATUS =',
+        err?.response?.status,
+        '| DATA =',
+        err?.response?.data,
+      );
+
+      return {
+        success: false,
+        data: [],
+        message:
+          err?.response?.data?.message ||
+          'Không lấy được lịch tư vấn bác sĩ theo người cao tuổi. Vui lòng thử lại.',
+      };
+    }
+  },
+  cancelBooking: async (bookingId, payload = {}) => {
+  const TAG = '[doctorBookingService][cancelBooking]';
+  try {
+    console.log(TAG, 'REQUEST bookingId =', bookingId, 'payload =', payload);
+
+    if (!bookingId) {
+      return {
+        success: false,
+        data: null,
+        message: 'Thiếu bookingId khi gọi cancelBooking',
+      };
+    }
+
+    const res = await api.post(
+      `/doctor-booking/registrations/${bookingId}/cancel`,
+      payload,
+    );
+
+    console.log(TAG, 'RAW_RESPONSE =', res?.data);
+
+    const body = res?.data || {};
+    const success =
+      body?.success === true ||
+      (body?.success === undefined && res?.status === 200);
+
+    return {
+      success,
+      data: body?.data || body?.booking || body?.registration || null,
+      message: body?.message || '',
+    };
+  } catch (err) {
+    console.log(TAG, 'ERROR =', err?.message || err);
+
+    return {
+      success: false,
+      data: null,
+      message:
+        err?.response?.data?.message ||
+        'Không thể hủy lịch tư vấn bác sĩ. Vui lòng thử lại.',
+    };
+  }
+},
 };
 
 export default doctorBookingService;

@@ -200,6 +200,7 @@ export default function LoginScreen() {
                 keyboardType="phone-pad"
                 autoCapitalize="none"
                 value={phoneNumber}
+                placeholderTextColor="#475569"
                 onChangeText={setPhoneNumber}
                 returnKeyType="next"
               />
@@ -211,6 +212,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={[styles.input, { paddingRight: 44 }]}
                   placeholder="••••••"
+                  placeholderTextColor="#475569"
                   secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}

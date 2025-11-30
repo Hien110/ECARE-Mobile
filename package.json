@@ -39,7 +39,7 @@
     "react-native-image-picker": "^8.2.1",
     "react-native-image-resizer": "^1.4.5",
     "react-native-linear-gradient": "^2.8.3",
-    "react-native-maps": "^1.26.6",
+    "react-native-maps": "^1.26.18",
     "react-native-modal": "^14.0.0-rc.1",
     "react-native-nitro-modules": "^0.31.1",
     "react-native-nitro-sound": "^0.2.9",

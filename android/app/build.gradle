@@ -26,8 +26,8 @@ android {
     applicationId "com.mobile"
     minSdkVersion rootProject.ext.minSdkVersion
     targetSdkVersion rootProject.ext.targetSdkVersion
-    versionCode 1
-    versionName "1.0"
+    versionCode 2
+    versionName "2.0"
   }
 
   signingConfigs {
@@ -39,17 +39,30 @@ android {
     }
   }
 
-buildTypes {
-    debug { 
-        signingConfig signingConfigs.debug 
+android {
+    signingConfigs {
+        release {
+            storeFile file("my-release-key.jks")
+            storePassword "123123"
+            keyAlias "my-key-alias"
+            keyPassword "123123"
+        }
     }
-    release {
-        signingConfig signingConfigs.debug
-        minifyEnabled true
-        shrinkResources true  // Bật shrink tài nguyên
-        proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
     }
 }
+
 
 
   applicationVariants.all { variant ->

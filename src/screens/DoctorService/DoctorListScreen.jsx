@@ -1,4 +1,4 @@
-// src/screens/doctorBooking/DoctorListScreen.jsx 
+// src/screens/doctorBooking/DoctorListScreen.jsx
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -31,7 +31,8 @@ const DoctorListScreen = () => {
     availableDoctors,
   } = route.params || {};
 
-  // Nếu màn trước đã truyền sẵn availableDoctors thì dùng luôn
+  // Nếu màn trước truyền sẵn availableDoctors thì dùng làm dữ liệu tạm,
+  // sau đó vẫn CALL API để lấy danh sách bác sĩ đầy đủ theo rule mới.
   const [doctors, setDoctors] = useState(
     Array.isArray(availableDoctors) ? availableDoctors : [],
   );
@@ -47,24 +48,30 @@ const DoctorListScreen = () => {
     console.log(TAG, 'route.params =', route.params);
   }, [route.params]);
 
+  /**
+   * ✅ fetchDoctors:
+   * - Gọi API backend lấy TẤT CẢ user role='doctor' (phía server xử lý).
+   * - Backend nhận: healthPackageId, durationDays, startDate
+   *   và TRẢ VỀ chỉ những bác sĩ KHÔNG có booking trùng trong khoảng
+   *   [startDate, endDate = startDate + durationDays - 1].
+   * → Bác sĩ đã được đặt trong khoảng này sẽ KHÔNG xuất hiện trong list.
+   */
   const fetchDoctors = useCallback(async () => {
-    // Nếu đã có availableDoctors từ màn trước thì bỏ qua fetch
-    if (Array.isArray(availableDoctors) && availableDoctors.length > 0) {
-      console.log(TAG, 'Dùng sẵn availableDoctors từ route, không gọi API');
-      return;
-    }
-
     try {
-      if (!healthPackage?._id || !durationDays || !startDate) {
+      if (!durationDays || !startDate) {
         console.log(
           '[DoctorListScreen][fetchDoctors] thiếu params',
-          { healthPackageId: healthPackage?._id, durationDays, startDate },
+          {
+            healthPackageId: healthPackage?._id,
+            durationDays,
+            startDate,
+          },
         );
         return;
       }
 
       console.log('[DoctorListScreen][fetchDoctors] CALL API với', {
-        healthPackageId: healthPackage._id,
+        healthPackageId: healthPackage?._id,
         durationDays,
         startDate,
       });
@@ -73,7 +80,7 @@ const DoctorListScreen = () => {
       setError('');
 
       const res = await doctorBookingService.getAvailableDoctors({
-        healthPackageId: healthPackage._id,
+        healthPackageId: healthPackage?._id, // backend có thể dùng hoặc bỏ qua nếu muốn
         durationDays,
         startDate,
       });
@@ -82,6 +89,8 @@ const DoctorListScreen = () => {
 
       let list = [];
       if (res?.success) {
+        // Backend nên trả về tất cả bác sĩ role='doctor'
+        // đã ĐƯỢC LỌC: chỉ còn bác sĩ không bị trùng lịch (tức là "chưa bị đặt" trong khoảng).
         if (Array.isArray(res.data)) {
           list = res.data;
         } else if (Array.isArray(res.data?.doctors)) {
@@ -96,7 +105,7 @@ const DoctorListScreen = () => {
         setDoctors([]);
         setError(
           res?.message ||
-            'Hiện tại chưa có bác sĩ nào trong gói sức khỏe này.',
+            'Hiện tại chưa có bác sĩ nào phù hợp trong khoảng thời gian này.',
         );
       }
     } catch (err) {
@@ -106,12 +115,14 @@ const DoctorListScreen = () => {
         err?.response?.status,
         err?.response?.data,
       );
-      setError('Hiện tại chưa có bác sĩ nào trong gói sức khỏe này.');
+      setError(
+        'Hiện tại chưa có bác sĩ nào phù hợp trong khoảng thời gian này.',
+      );
       setDoctors([]);
     } finally {
       setLoading(false);
     }
-  }, [availableDoctors, healthPackage, durationDays, startDate]);
+  }, [healthPackage, durationDays, startDate]);
 
   useEffect(() => {
     fetchDoctors();
@@ -128,6 +139,7 @@ const DoctorListScreen = () => {
       doctor._id ||
       doctor?.doctor?._id ||
       doctor?.doctorProfile?._id;
+    const doctorName = getDoctorName(doctor);
 
     console.log(TAG, 'Navigate DoctorDetail với:', {
       elderly,
@@ -138,13 +150,14 @@ const DoctorListScreen = () => {
       doctorId,
     });
 
-    navigation.navigate('DoctorDetail', {
-      elderly,       // ✅ giữ người được khám
-      family,        // ✅ truyền thêm người đăng ký
+    navigation.navigate('ProfileDoctorScreen', {
+      elderly, // người được khám
+      family, // người đăng ký
       healthPackage,
       durationDays,
       startDate,
       doctorId,
+      doctorName,
     });
   };
 
@@ -164,8 +177,8 @@ const DoctorListScreen = () => {
     });
 
     navigation.navigate('PaymentServiceScreen', {
-      elderly,       // ✅ pass nguyên object người được khám
-      family,        // ✅ pass nguyên object người đăng ký
+      elderly, // ✅ pass nguyên object người được khám
+      family, // ✅ pass nguyên object người đăng ký
       healthPackage,
       durationDays,
       startDate,
@@ -182,10 +195,7 @@ const DoctorListScreen = () => {
   };
 
   const getSpecialization = d => {
-    const raw =
-      d?.specializations ??
-      d?.doctorProfile?.specializations ??
-      '';
+    const raw = d?.specializations ?? d?.doctorProfile?.specializations ?? '';
 
     if (Array.isArray(raw)) {
       return raw.join(', ');
@@ -197,9 +207,7 @@ const DoctorListScreen = () => {
   };
 
   const getHospitalLine = d =>
-    d?.hospitalName ||
-    d?.doctorProfile?.hospitalName ||
-    '';
+    d?.hospitalName || d?.doctorProfile?.hospitalName || '';
 
   const getExperienceText = d => {
     const exp = d?.experience ?? d?.doctorProfile?.experience;
@@ -236,17 +244,11 @@ const DoctorListScreen = () => {
 
     list.sort((a, b) => {
       if (sortBy === 'experience') {
-        const ea =
-          a?.experience ??
-          a?.doctorProfile?.experience ??
-          0;
-        const eb =
-          b?.experience ??
-          b?.doctorProfile?.experience ??
-          0;
+        const ea = a?.experience ?? a?.doctorProfile?.experience ?? 0;
+        const eb = b?.experience ?? b?.doctorProfile?.experience ?? 0;
         return eb - ea; // exp cao trước
       }
-      // rating
+      // sort theo rating
       const ra = getRating(a).average ?? 0;
       const rb = getRating(b).average ?? 0;
       return rb - ra;
@@ -289,9 +291,7 @@ const DoctorListScreen = () => {
               </Text>
             )}
 
-            {!!expText && (
-              <Text style={styles.experience}>{expText}</Text>
-            )}
+            {!!expText && <Text style={styles.experience}>{expText}</Text>}
 
             <View style={styles.ratingBadge}>
               <Icon name="star" size={12} color="#FBBF24" />
