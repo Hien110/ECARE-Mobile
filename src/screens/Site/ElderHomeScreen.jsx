@@ -438,6 +438,13 @@ export default function HomeScreen() {
       // 🆕 Clear isSendingSOS state vì đã có người nhận
       setIsSendingSOS(false);
 
+      try {
+        console.log('🧹 Disabling Deadman floating overlay because SOS call was answered');
+        disableFloating();
+      } catch (err) {
+        console.log('⚠️ Error disabling Deadman floating overlay:', err);
+      }
+
       // Tự động navigate đến VideoCall
       nav.navigate('VideoCall', {
         callId,
