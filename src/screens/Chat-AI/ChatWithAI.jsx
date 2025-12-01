@@ -480,7 +480,7 @@ const ChatWithAI = ({ navigation, route }) => {
         console.error('Transcription error:', e);
         addMessage(
           'assistant',
-          'Cháu chưa nghe rõ. Bà nói lại giúp cháu nhé.',
+          'Cháu chưa nghe rõ. Bác nói lại giúp cháu nhé.',
         );
       } finally {
         setUploading(false);

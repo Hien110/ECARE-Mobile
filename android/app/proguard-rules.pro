@@ -9,9 +9,20 @@
 
 # Add any project specific keep options here:
 
-# Keep Google Play Services
+# Firebase
+-keep class com.google.firebase.** { *; }
 -keep class com.google.android.gms.** { *; }
+-dontwarn com.google.firebase.**
 -dontwarn com.google.android.gms.**
+
+# Firebase Messaging
+-keep class com.google.firebase.messaging.** { *; }
+-keep class com.google.firebase.iid.** { *; }
+-dontwarn com.google.firebase.messaging.**
+
+# React Native Firebase
+-keep class io.invertase.firebase.** { *; }
+-dontwarn io.invertase.firebase.**
 
 # Keep Fused Location Provider
 -keep class com.google.android.gms.location.** { *; }
