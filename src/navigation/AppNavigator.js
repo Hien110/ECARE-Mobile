@@ -18,6 +18,8 @@ import ProfileScreen from '../screens/Profile/ProfileScreen.jsx';
 import SuccessScreen from '../screens/Site/SuccessScreen';
 import PersonalInfoScreen from '../screens/Profile/PersonalInfoScreen.jsx';
 import FamilyMemberHomeScreen from '../screens/Site/FamilyHomeScreen.jsx';
+import FamilyDetailScreen from '../screens/Connect-family/FamilyDetailScreen.jsx';
+import SupportStaffDetailScreen from '../screens/Staff/SupportStaffDetailScreen.jsx';
 import SupporterHomeScreen from '../screens/Site/SupporterHomeScreen';
 import DefaultScreen from '../screens/Error/DefaultScreen';
 import ChangePhonenumberScreen from '../screens/Auth/ChangePhonenumberScreen.jsx';
@@ -331,6 +333,24 @@ const NavigationContent = ({ initialRouteName }) => {
           name="FamilyList_Family"
           component={withFooter(FamilyList_FamilyScreen, 'me')}
           options={{ headerShown: false }}
+        />
+        {/* Chi tiết người nhà */}
+        <Stack.Screen
+          name="FamilyDetail"
+          component={withFooter(FamilyDetailScreen, 'me')}
+          options={{
+            headerShown: true,
+            title: 'Chi tiết người nhà',
+          }}
+        />
+        {/* Chi tiết nhân viên hỗ trợ */}
+        <Stack.Screen
+          name="SupportStaffDetail"
+          component={withFooter(SupportStaffDetailScreen, 'me')}
+          options={{
+            headerShown: true,
+            title: 'Chi tiết nhân viên hỗ trợ',
+          }}
         />
         <Stack.Screen
           name="MessagesList"
