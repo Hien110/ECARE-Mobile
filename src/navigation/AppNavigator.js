@@ -620,6 +620,17 @@ const AppNavigator = () => {
           setBooted(true);
           return;
         }
+        
+        // ✅ Có token → Tự động kết nối socket trước khi navigate
+        try {
+          console.log('🔌 Auto connecting socket on app start with existing token...');
+          await socketService.connect();
+          console.log('✅ Socket auto-connected successfully on app start');
+        } catch (socketError) {
+          console.error('❌ Socket auto-connect failed on app start:', socketError);
+          // Không block navigation nếu socket connect thất bại
+        }
+        
         const me = await userService.getUser();
         let role = me?.data?.role || me?.data?.userRole || me?.data?.user?.role;
         if (!role) {
