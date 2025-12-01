@@ -11,10 +11,11 @@ import {
   useWindowDimensions,
   Platform,
 } from 'react-native';
-import { userService } from '../../services/userService';
 import { useNavigation } from '@react-navigation/native';
-
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { userService } from '../../services/userService';
+import { doctorBookingService } from '../../services/doctorBookingService';
+import supporterSchedulingService from '../../services/supporterSchedulingService';
 
 /** ========= THEME ========= */
 const C = {
@@ -84,9 +85,9 @@ export default function EnhancedHealthAppRN() {
   function Card({ children, style }) {
     return <View style={[styles.card, style]}>{children}</View>;
   }
-  function ContactTile({ contact }) {
+  function ContactTile({ contact, onPress }) {
     return (
-      <View style={styles.contactTile}>
+      <Pressable style={styles.contactTile} onPress={onPress}>
         <View style={{ position: 'relative' }}>
           <View
             style={[styles.tileIconCircle, { backgroundColor: contact.color }]}
@@ -109,7 +110,7 @@ export default function EnhancedHealthAppRN() {
         <Text style={styles.contactSub} numberOfLines={1}>
           {contact.subtitle}
         </Text>
-      </View>
+      </Pressable>
     );
   }
 
@@ -118,25 +119,128 @@ export default function EnhancedHealthAppRN() {
   const [activeTimeframe, setActiveTimeframe] = useState('today');
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [elderlies, setElderlies] = useState([]);
+  const [selectedElderlyId, setSelectedElderlyId] = useState(null);
+  const [familyContacts, setFamilyContacts] = useState([]);
+  const [supportStaffContacts, setSupportStaffContacts] = useState([]);
 
   useEffect(() => {
     setActiveFeature(null);
     let mounted = true;
+
+    const pickElderlyId = item =>
+      item?.elderlyId || item?.userId || item?.elderly?._id || item?._id || null;
+
+    const toContact = (entity = {}, { type = 'family' } = {}) => {
+      const id = entity?._id || entity?.userId || entity?.user?._id || Math.random().toString(36).slice(2);
+      const fullName =
+        entity?.fullName || entity?.name || entity?.user?.fullName || entity?.user?.name || 'Ẩn danh';
+      const subtitle = type === 'doctor' ? 'Bác sĩ' : type === 'supporter' ? 'Supporter' : (entity?.relationship || '');
+      const color = type === 'doctor' ? C.blue : type === 'supporter' ? C.orange : C.purple;
+      const icon = type === 'doctor' ? '🩺' : type === 'supporter' ? '💁‍♀️' : '📞';
+      return {
+        id: `${type}-${id}`,
+        type,
+        name: fullName,
+        subtitle,
+        color,
+        icon,
+        status: 'offline',
+      };
+    };
+
     (async () => {
       try {
-        const res = await userService.getUser();
-        const user =
-          res?.data?.data ??
-          res?.data?.user ??
-          res?.user ??
-          res?.data ??
-          res ??
-          null;
+        // Current user
+        const resUser = await userService.getUser();
+        const user = resUser?.data?.data || resUser?.data || resUser || null;
         if (mounted && user) setMe(user);
+
+        // Elderlies this account can act for
+        const resElders = await doctorBookingService.getElderlies();
+        const elderList = Array.isArray(resElders?.data) ? resElders.data : [];
+        if (mounted) setElderlies(elderList);
+
+        const eId = pickElderlyId(elderList?.[0]);
+        if (mounted) setSelectedElderlyId(eId);
+
+        if (eId) {
+          // Family: lấy theo familyId, trả về elderly + relationship
+          try {
+            const myId = user?._id || user?.id;
+            const relRes = myId
+              ? await userService.getRelationshipsByFamilyId(myId, { status: 'accepted' })
+              : null;
+            const relRaw = Array.isArray(relRes?.data) ? relRes.data : [];
+            const famContacts = relRaw
+              .filter(item => item?.elderly)
+              .map(item =>
+                toContact(
+                  {
+                    _id: item.elderly?._id,
+                    fullName: item.elderly?.fullName,
+                    relationship: item.relationship,
+                  },
+                  { type: 'family' },
+                ),
+              );
+            if (mounted) setFamilyContacts(famContacts);
+          } catch (_) {
+            if (mounted) setFamilyContacts([]);
+          }
+
+          // Doctors via bookings
+          let doctorContacts = [];
+          try {
+            const bRes = await doctorBookingService.getBookingsByElderlyId(eId);
+            const bookings = Array.isArray(bRes?.data) ? bRes.data : [];
+            const map = new Map();
+            bookings.forEach(bk => {
+              const d = bk?.doctor || bk?.doctorProfile || {};
+              const dUser = d?.user || d?.userInfo || {};
+              const id = dUser?._id || d?.userId || d?._id;
+              if (!id) return;
+              if (!map.has(id)) {
+                map.set(id, toContact({ _id: id, fullName: dUser?.fullName || d?.fullName }, { type: 'doctor' }));
+              }
+            });
+            doctorContacts = Array.from(map.values());
+          } catch (_) {
+            doctorContacts = [];
+          }
+
+          // Supporters via schedulings
+          let supporterContacts = [];
+          try {
+            const sRes = await supporterSchedulingService.getSchedulingsByUserId(eId);
+            const scheds = Array.isArray(sRes?.data) ? sRes.data : [];
+            const map = new Map();
+            scheds.forEach(s => {
+              const sup = s?.supporter || s?.supporterProfile || {};
+              const sUser = sup?.user || sup?.userInfo || {};
+              const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
+              if (!id) return;
+              if (!map.has(id)) {
+                map.set(id, toContact({ _id: id, fullName: sUser?.fullName || sup?.fullName }, { type: 'supporter' }));
+              }
+            });
+            supporterContacts = Array.from(map.values());
+          } catch (_) {
+            supporterContacts = [];
+          }
+
+          if (mounted) setSupportStaffContacts([...doctorContacts, ...supporterContacts]);
+        } else {
+          if (mounted) {
+            setFamilyContacts([]);
+            setSupportStaffContacts([]);
+          }
+        }
       } finally {
         mounted && setLoading(false);
       }
     })();
+
     return () => {
       mounted = false;
     };
@@ -162,13 +266,6 @@ export default function EnhancedHealthAppRN() {
         navTo: 'FamilyListFunctionScreen',
         message: 'Chức năng đặt lịch hỗ trợ',
       },
-      // {
-      //   id: 'diary',
-      //   icon: '❤️',
-      //   label: 'Nhật ký sức khỏe',
-      //   color: C.background,
-      //   desc: 'Ghi chép tình trạng',
-      // },
       {
         id: 'chat',
         icon: '💬',
@@ -188,46 +285,8 @@ export default function EnhancedHealthAppRN() {
     [],
   );
 
-  const contacts = useMemo(
-    () => [
-      {
-        id: 'mom',
-        type: 'family',
-        name: 'Mẹ',
-        subtitle: 'Minh Tuyền',
-        color: C.purple,
-        icon: '📞',
-        status: 'online',
-      },
-      {
-        id: 'dad',
-        type: 'family',
-        name: 'Ba',
-        subtitle: 'Thu Hằng',
-        color: C.orange,
-        icon: '📞',
-        status: 'offline',
-      },
-      {
-        id: 'doc1',
-        type: 'doctor',
-        name: 'Bác sĩ',
-        subtitle: 'Bá Lân',
-        color: C.indigo,
-        icon: '🩺',
-        status: 'online',
-      },
-    ],
-    [],
-  );
-  const familyContacts = useMemo(
-    () => contacts.filter(c => c.type === 'family'),
-    [contacts],
-  );
-  const doctorContacts = useMemo(
-    () => contacts.filter(c => c.type === 'doctor'),
-    [contacts],
-  );
+  const familyCount = familyContacts.length;
+  const staffCount = supportStaffContacts.length;
 
   const activities = useMemo(
     () => [
@@ -409,7 +468,7 @@ export default function EnhancedHealthAppRN() {
             >
               <View style={styles.countPill}>
                 <Text style={styles.countPillText}>
-                  {familyContacts.length}
+                  {familyCount}
                 </Text>
               </View>
               <TouchableOpacity
@@ -424,7 +483,17 @@ export default function EnhancedHealthAppRN() {
           {familyContacts.length ? (
             <View style={styles.contactsGrid}>
               {familyContacts.map(c => (
-                <ContactTile key={c.id} contact={c} />
+                <ContactTile
+                  key={c.id}
+                  contact={c}
+                  onPress={() =>
+                    nav.navigate('FamilyDetail', {
+                      elderlyId: c.id?.replace(/^family-/, ''),
+                      name: c.name,
+                      relationship: c.subtitle,
+                    })
+                  }
+                />
               ))}
             </View>
           ) : (
@@ -443,22 +512,33 @@ export default function EnhancedHealthAppRN() {
                   🩺
                 </Text>
               </View>
-              <Text style={styles.sectionTitle}>Bác sĩ</Text>
+              <Text style={styles.sectionTitle}>Nhân viên hỗ trợ</Text>
             </View>
             <View style={styles.countPill}>
-              <Text style={styles.countPillText}>{doctorContacts.length}</Text>
+              <Text style={styles.countPillText}>{staffCount}</Text>
             </View>
           </View>
 
-          {doctorContacts.length ? (
+          {supportStaffContacts.length ? (
             <View style={styles.contactsGrid}>
-              {doctorContacts.map(c => (
-                <ContactTile key={c.id} contact={c} />
+              {supportStaffContacts.map(c => (
+                <ContactTile
+                  key={c.id}
+                  contact={c}
+                  onPress={() => {
+                    const rawId = (c.id || '').replace(/^doctor-|^supporter-/, '');
+                    nav.navigate('SupportStaffDetail', {
+                      staffId: rawId,
+                      name: c.name,
+                      type: c.type, // 'doctor' | 'supporter'
+                    });
+                  }}
+                />
               ))}
             </View>
           ) : (
             <Text style={styles.emptyText}>
-              Chưa có bác sĩ nào được liên kết
+              Chưa có nhân viên hỗ trợ nào được liên kết
             </Text>
           )}
 
