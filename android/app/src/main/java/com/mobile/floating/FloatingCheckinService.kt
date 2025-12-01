@@ -70,10 +70,16 @@ class FloatingCheckinService : Service() {
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
 
-    // Hẹn giờ dừng chuông + rung sau 1 phút
+    // Chu kỳ chuông + rung: mỗi 60s, reo 15s
     private val alertFeedbackHandler = Handler(Looper.getMainLooper())
-    private var stopFeedbackRunnable: Runnable? = null
-    private val feedbackDurationMs = 60_000L
+
+    // Runnable dừng 1 nhịp reo + rung
+    private var pulseStopRunnable: Runnable? = null
+    // Runnable bắt đầu lại nhịp tiếp theo sau 45s nghỉ
+    private var pulseStartRunnable: Runnable? = null
+
+    private val feedbackPulseMs = 15_000L      // reo 15 giây
+    private val feedbackIntervalMs = 60_000L   // mỗi 60 giây 1 lần
 
     override fun onCreate() {
         super.onCreate()
@@ -470,10 +476,13 @@ class FloatingCheckinService : Service() {
 
     private fun startAlertFeedback() {
         try {
-            // Hủy hẹn cũ nếu có
-            stopFeedbackRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
-            stopFeedbackRunnable = null
+            // Hủy mọi runnable cũ nếu còn
+            pulseStopRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+            pulseStartRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+            pulseStopRunnable = null
+            pulseStartRunnable = null
 
+            // 🔔 BẮT ĐẦU 1 NHỊP REO + RUNG (15s)
             vibrator?.let { vib ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     val effect = VibrationEffect.createWaveform(
@@ -494,21 +503,46 @@ class FloatingCheckinService : Service() {
             }
             ringtone?.play()
 
-            // Hẹn dừng chuông + rung sau 1 phút
-            stopFeedbackRunnable = Runnable {
-                stopAlertFeedback()
+            // Sau 15s thì dừng nhịp hiện tại, rồi nếu panel vẫn đang hiển thị
+            // thì hẹn 45s sau reo lại (tổng chu kỳ 60s).
+            pulseStopRunnable = Runnable {
+                try {
+                    vibrator?.cancel()
+                } catch (_: Exception) {
+                }
+                try {
+                    ringtone?.stop()
+                } catch (_: Exception) {
+                }
+
+                // Nếu overlay vẫn còn hiển thị thì 45s nữa reo lại
+                if (overlayView != null) {
+                    pulseStartRunnable = Runnable {
+                        startAlertFeedback()
+                    }
+                    alertFeedbackHandler.postDelayed(
+                        pulseStartRunnable!!,
+                        feedbackIntervalMs - feedbackPulseMs // 60s - 15s = 45s nghỉ
+                    )
+                } else {
+                    pulseStartRunnable = null
+                }
             }
-            alertFeedbackHandler.postDelayed(stopFeedbackRunnable!!, feedbackDurationMs)
+
+            alertFeedbackHandler.postDelayed(pulseStopRunnable!!, feedbackPulseMs)
         } catch (e: Exception) {
             Log.w(TAG, "startAlertFeedback error: ${e.message}")
         }
     }
 
     private fun stopAlertFeedback() {
-        // Hủy hẹn dừng nếu còn
-        stopFeedbackRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
-        stopFeedbackRunnable = null
+        // Hủy mọi chu kỳ reo + nghỉ
+        pulseStopRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+        pulseStartRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+        pulseStopRunnable = null
+        pulseStartRunnable = null
 
+        // Tắt rung + chuông ngay lập tức
         try {
             vibrator?.cancel()
         } catch (_: Exception) {
