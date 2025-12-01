@@ -26,7 +26,7 @@ export const roleTabs = {
     { key: 'patients', label: 'Bệnh nhân', icon: 'people' },
     { key: 'calendar',     label: 'Lịch',      icon: 'calendar' },
     { key: 'DoctorHome',     label: 'Trang chủ', icon: 'home', center: true },
-    { key: 'me',       label: 'Cá nhân',   icon: 'person' },
+    { key: 'insights', label: 'Báo cáo',   icon: 'analytics' },
     { key: 'messages', label: 'Tin nhắn',  icon: 'chatbubble' },
   ],
 };
