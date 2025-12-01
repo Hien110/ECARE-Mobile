@@ -281,6 +281,94 @@ const getPaymentMethodLabel = item => {
   return 'Tiền mặt';
 };
 
+const isValidDateValue = v => {
+  if (!v) return false;
+  const d = new Date(v);
+  return !Number.isNaN(d.getTime());
+};
+
+const getConsultationDate = item => {
+  // gom các field có thể chứa ngày tư vấn
+  const candidates = {
+    // thường thấy ở consultation
+    consultationScheduledAt: item?.consultation?.scheduledAt,
+    consultationScheduledDate: item?.consultation?.scheduledDate,
+    consultationDate: item?.consultation?.date,
+    consultationStartTime: item?.consultation?.startTime,
+    consultationSlotStart: item?.consultation?.slotStart,
+
+    // đôi khi backend gộp thẳng vào booking
+    bookingScheduledDate: item?.scheduledDate,
+    bookingScheduledAt: item?.scheduledAt,
+
+    // trong packageInfo (nếu coi startDate là ngày bắt đầu gói)
+    packageStartDate: item?.packageInfo?.startDate,
+
+    // cuối cùng mới tới ngày tạo booking
+    registeredAt: item?.registeredAt,
+    createdAt: item?.createdAt,
+  };
+
+  // log toàn bộ raw field để bạn xem trong console
+  console.log(`${TAG}[getConsultationDate] raw fields for booking`, {
+    id: item?._id,
+    code: item?.code,
+    ...candidates,
+  });
+
+  // ưu tiên: bất cứ field nào KHÁC registeredAt/createdAt nhưng hợp lệ
+  const priorityOrder = [
+    'consultationScheduledAt',
+    'consultationScheduledDate',
+    'consultationDate',
+    'consultationStartTime',
+    'consultationSlotStart',
+    'bookingScheduledAt',
+    'bookingScheduledDate',
+    'packageStartDate',
+  ];
+
+  for (const key of priorityOrder) {
+    const v = candidates[key];
+    if (isValidDateValue(v)) {
+      console.log(
+        `${TAG}[getConsultationDate] CHOSEN (priority)`,
+        key,
+        '=>',
+        v,
+        'formatted =',
+        formatDateOnlyVN(v),
+      );
+      return v;
+    }
+  }
+
+  // nếu không có gì khác → fallback registeredAt / createdAt
+  if (isValidDateValue(candidates.registeredAt)) {
+    console.log(
+      `${TAG}[getConsultationDate] FALLBACK registeredAt =>`,
+      candidates.registeredAt,
+      'formatted =',
+      formatDateOnlyVN(candidates.registeredAt),
+    );
+    return candidates.registeredAt;
+  }
+  if (isValidDateValue(candidates.createdAt)) {
+    console.log(
+      `${TAG}[getConsultationDate] FALLBACK createdAt =>`,
+      candidates.createdAt,
+      'formatted =',
+      formatDateOnlyVN(candidates.createdAt),
+    );
+    return candidates.createdAt;
+  }
+
+  console.log(`${TAG}[getConsultationDate] NO VALID DATE FOUND`, {
+    id: item?._id,
+  });
+  return null;
+};
+
 // =================== MAIN SCREEN ===================
 const DoctorBookingHistoryScreen = () => {
   const navigation = useNavigation();
@@ -596,10 +684,7 @@ const DoctorBookingHistoryScreen = () => {
   // ---- RENDER CARD ----
   const renderBookingItem = ({ item }) => {
     const { bookScheme, payScheme } = getStatusLabelAndStyle(item);
-    const startDate =
-      item.packageInfo?.startDate ||
-      item.scheduledDate ||
-      item.registeredAt;
+    const startDate = getConsultationDate(item);
 
     const methodLabel = getPaymentMethodLabel(item);
     const elderlyName = getElderlyName(item);
@@ -625,12 +710,14 @@ const DoctorBookingHistoryScreen = () => {
     });
 
     return (
-      <TouchableOpacity
+       <TouchableOpacity
         activeOpacity={0.85}
         style={styles.card}
         onPress={() =>
           navigation.navigate('DoctorConsultationDetailScreen', {
             bookingId: item._id,
+            elderlyId,           
+            initialBooking: item 
           })
         }
       >

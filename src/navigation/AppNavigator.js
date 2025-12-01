@@ -73,6 +73,7 @@ import DoctorListScreen from '../screens/DoctorService/DoctorListScreen.jsx';
 import PaymentServiceScreen from '../screens/DoctorService/PaymentServiceScreen.jsx';
 import DoctorBookingHistoryScreen from '../screens/DoctorService/DoctorBookingHistoryScreen.jsx';
 import DoctorConsultationDetailScreen from '../screens/DoctorService/DoctorConsultationDetailScreen.jsx';
+import DoctorMyBookingListScreen from '../screens/DoctorService/DoctorMyBookingListScreen.jsx';
 // HOC footer
 import withFooter from '../components/withFooter';
 
@@ -583,6 +584,11 @@ const NavigationContent = ({ initialRouteName }) => {
         <Stack.Screen
           name="DoctorConsultationDetailScreen"
           component={withFooter(DoctorConsultationDetailScreen, 'planFamily')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="DoctorMyBookingListScreen"
+          component={withFooter(DoctorMyBookingListScreen, 'DoctorHome')}
           options={{ headerShown: false }}
         />
       </Stack.Navigator>

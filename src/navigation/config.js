@@ -47,7 +47,7 @@ export const routeMap = {
   dashboard: 'FamilyDashboard',
   alerts: 'ALERTS',
   tasks: 'SupporterIntro',
-  patients: 'DOCTOR_PATIENTS',
+  patients: 'DoctorMyBookingListScreen',
   insights: 'DOCTOR_INSIGHTS',
   calendar: 'ProfileGate',
   doctor: 'DoctorBookingHistoryScreen'
