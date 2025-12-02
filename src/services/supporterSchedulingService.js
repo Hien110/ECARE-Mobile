@@ -105,6 +105,26 @@ const supporterSchedulingService = {
       throw error;
     }
   },
+  getSupporterDetail: async supporterId => {
+      try {
+        const response = await api.get(
+          `/supporter-schedulings/supporter-detail/${supporterId}`,
+        );
+        return {
+          success: !!response.data?.success,
+          data: response.data?.data,
+          message:
+            response.data?.message || 'Lấy chi tiết người hỗ trợ thành công',
+        };
+      } catch (error) {
+        console.error('getSupporterDetail error:', error);
+        return {
+          success: false,
+          data: null,
+          message: error.response?.data?.message || error.message,
+        };
+      }
+  },
 };
 
 export default supporterSchedulingService;
