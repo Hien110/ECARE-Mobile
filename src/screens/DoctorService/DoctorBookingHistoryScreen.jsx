@@ -197,7 +197,6 @@ const formatDateOnlyVN = iso => {
 };
 
 // ==== DURATION HELPERS ====
-// Trả về chuỗi "30 ngày", "90 ngày" dựa trên durationDays / packageInfo
 const getDurationLabel = item => {
   try {
     let days =
@@ -251,7 +250,6 @@ const normalizePaymentStatusKey = raw => {
 };
 
 const getPaymentMethodRaw = item => {
-  // ưu tiên field đã merge sẵn từ backend
   return (
     item.paymentMethod ||
     item.payment?.method ||
@@ -288,35 +286,25 @@ const isValidDateValue = v => {
 };
 
 const getConsultationDate = item => {
-  // gom các field có thể chứa ngày tư vấn
   const candidates = {
-    // thường thấy ở consultation
     consultationScheduledAt: item?.consultation?.scheduledAt,
     consultationScheduledDate: item?.consultation?.scheduledDate,
     consultationDate: item?.consultation?.date,
     consultationStartTime: item?.consultation?.startTime,
     consultationSlotStart: item?.consultation?.slotStart,
-
-    // đôi khi backend gộp thẳng vào booking
     bookingScheduledDate: item?.scheduledDate,
     bookingScheduledAt: item?.scheduledAt,
-
-    // trong packageInfo (nếu coi startDate là ngày bắt đầu gói)
     packageStartDate: item?.packageInfo?.startDate,
-
-    // cuối cùng mới tới ngày tạo booking
     registeredAt: item?.registeredAt,
     createdAt: item?.createdAt,
   };
 
-  // log toàn bộ raw field để bạn xem trong console
   console.log(`${TAG}[getConsultationDate] raw fields for booking`, {
     id: item?._id,
     code: item?.code,
     ...candidates,
   });
 
-  // ưu tiên: bất cứ field nào KHÁC registeredAt/createdAt nhưng hợp lệ
   const priorityOrder = [
     'consultationScheduledAt',
     'consultationScheduledDate',
@@ -343,7 +331,6 @@ const getConsultationDate = item => {
     }
   }
 
-  // nếu không có gì khác → fallback registeredAt / createdAt
   if (isValidDateValue(candidates.registeredAt)) {
     console.log(
       `${TAG}[getConsultationDate] FALLBACK registeredAt =>`,
@@ -380,6 +367,23 @@ const DoctorBookingHistoryScreen = () => {
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('doctor');
   const [elderlyId, setElderlyId] = useState(null);
+  const [userRole, setUserRole] = useState(null); // ➕ role hiện tại
+
+  const normalizedRole = (userRole || '').toLowerCase();
+  const showTabs = normalizedRole === 'family';
+
+  useEffect(() => {
+    console.log(
+      TAG,
+      '[roleDebug]',
+      'userRole =',
+      userRole,
+      'normalizedRole =',
+      normalizedRole,
+      'showTabs =',
+      showTabs,
+    );
+  }, [userRole, normalizedRole, showTabs]);
 
   // ---- FORMAT HELPERS (bookings) ----
   const getBookingCode = item => {
@@ -402,7 +406,6 @@ const DoctorBookingHistoryScreen = () => {
     item.doctor?.fullName || item.doctor?.name || 'Bác sĩ';
 
   const getStatusLabelAndStyle = item => {
-    // ---- booking status ----
     const rawStatus =
       item.status ||
       item.consultation?.status ||
@@ -412,7 +415,6 @@ const DoctorBookingHistoryScreen = () => {
     const statusKey = String(rawStatus || 'pending').toLowerCase();
     const bookScheme = statusColors[statusKey] || statusColors.default;
 
-    // ---- payment status (raw) ----
     const rawPayStatus =
       item.paymentStatus ||
       item.payment?.status ||
@@ -423,9 +425,6 @@ const DoctorBookingHistoryScreen = () => {
     let payScheme =
       paymentStatusColors[payKey] || paymentStatusColors.default;
 
-    // ---- override: booking bị hủy nhưng đã thanh toán online ----
-    // Yêu cầu: nếu trước đó đã thanh toán online rồi mới hủy
-    // thì chip thanh toán vẫn phải là "Đã thanh toán"
     const methodRaw = String(getPaymentMethodRaw(item) || '').toLowerCase();
     const isOnlineMethod = ['qr', 'online', 'bank_transfer', 'bank-transfer'].includes(
       methodRaw,
@@ -436,7 +435,6 @@ const DoctorBookingHistoryScreen = () => {
     );
 
     if (statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw)) {
-      // ép về trạng thái "Đã thanh toán"
       payScheme = paymentStatusColors.completed;
     }
 
@@ -454,13 +452,24 @@ const DoctorBookingHistoryScreen = () => {
     return { bookScheme, payScheme };
   };
 
-  // ===== 1. Resolve elderlyId =====
+  // ===== 1. Resolve elderlyId + role =====
   useEffect(() => {
     let cancelled = false;
 
     const resolveElderlyId = async () => {
       try {
         console.log(TAG, '[resolveElderlyId] route.params =', route?.params);
+
+        const userRes = await userService.getUser();
+        if (cancelled) return;
+
+        console.log(TAG, '[resolveElderlyId] userService =', userRes);
+
+        const role = (userRes?.data?.role || '').toLowerCase();
+        if (!cancelled) {
+          setUserRole(role);
+        }
+
         const fromRoute = route?.params?.elderlyId;
         if (fromRoute) {
           console.log(
@@ -472,12 +481,7 @@ const DoctorBookingHistoryScreen = () => {
           return;
         }
 
-        const userRes = await userService.getUser();
-        console.log(TAG, '[resolveElderlyId] userService =', userRes);
-        if (cancelled) return;
-
         if (userRes?.success && userRes?.data?._id) {
-          const role = (userRes.data.role || '').toLowerCase();
           if (role === 'elderly') {
             console.log(
               TAG,
@@ -488,9 +492,9 @@ const DoctorBookingHistoryScreen = () => {
           } else {
             console.log(
               TAG,
-              '[resolveElderlyId] role is',
+              '[resolveElderlyId] role =',
               role,
-              '→ không xác định được elderlyId',
+              '→ không truyền elderlyId từ route, không xác định được elderlyId',
             );
             setError(
               'Không xác định được người cao tuổi để xem lịch tư vấn bác sĩ.',
@@ -569,13 +573,11 @@ const DoctorBookingHistoryScreen = () => {
     [elderlyId],
   );
 
-  // Gọi khi elderlyId đã có (lần đầu)
   useEffect(() => {
     if (!elderlyId) return;
     fetchBookings({ showLoading: true });
   }, [elderlyId, fetchBookings]);
 
-  // GỌI LẠI MỖI KHI MÀN ĐƯỢC FOCUS
   useFocusEffect(
     useCallback(() => {
       console.log(TAG, '[focus] screen focused → refetch bookings');
@@ -710,18 +712,17 @@ const DoctorBookingHistoryScreen = () => {
     });
 
     return (
-       <TouchableOpacity
+      <TouchableOpacity
         activeOpacity={0.85}
         style={styles.card}
         onPress={() =>
           navigation.navigate('DoctorConsultationDetailScreen', {
             bookingId: item._id,
-            elderlyId,           
-            initialBooking: item 
+            elderlyId,
+            initialBooking: item,
           })
         }
       >
-        {/* Mã lịch + trạng thái booking */}
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle} numberOfLines={1}>
             {getBookingCode(item)}
@@ -729,7 +730,6 @@ const DoctorBookingHistoryScreen = () => {
           <Chip scheme={bookScheme} text={bookScheme.label} />
         </View>
 
-        {/* Người cao tuổi */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>NGƯỜI CAO TUỔI</Text>
           <View style={styles.row}>
@@ -745,7 +745,6 @@ const DoctorBookingHistoryScreen = () => {
           </View>
         </View>
 
-        {/* Bác sĩ phụ trách */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>BÁC SĨ PHỤ TRÁCH</Text>
           <View style={styles.row}>
@@ -763,7 +762,6 @@ const DoctorBookingHistoryScreen = () => {
           </View>
         </View>
 
-        {/* Thời gian + thanh toán */}
         <View
           style={[
             styles.section,
@@ -790,7 +788,7 @@ const DoctorBookingHistoryScreen = () => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header />
-        {renderTabs()}
+        {showTabs && renderTabs()}
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>
@@ -805,7 +803,7 @@ const DoctorBookingHistoryScreen = () => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header />
-        {renderTabs()}
+        {showTabs && renderTabs()}
         <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity
@@ -822,7 +820,7 @@ const DoctorBookingHistoryScreen = () => {
   return (
     <SafeAreaView style={styles.screen}>
       <Header />
-      {renderTabs()}
+      {showTabs && renderTabs()}
 
       {bookings.length ? (
         <FlatList
@@ -873,7 +871,6 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
 
-  // Header
   headerWrap: {
     backgroundColor: HEADER_COLOR,
     paddingHorizontal: wp('4%'),
@@ -927,7 +924,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Tabs
   tabRow: {
     flexDirection: 'row',
     marginTop: 10,
@@ -967,7 +963,6 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
 
-  // Card
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
@@ -1050,7 +1045,6 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
 
-  // States
   center: {
     flex: 1,
     padding: 24,
