@@ -539,6 +539,25 @@ export const userService = {
       return shapeAxiosError(error);
     }
   },
+
+  // Lấy tất cả mối quan hệ theo familyId (tập trung elderly + relationship)
+  getRelationshipsByFamilyId: async (familyId, { status } = {}) => {
+    try {
+      const token = await userService.getToken();
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      const response = await api.get(`/relationships/family/${familyId}${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return {
+        success: true,
+        status: response.status,
+        data: response.data?.data,
+        message: response.data?.message,
+      };
+    } catch (error) {
+      return shapeAxiosError(error);
+    }
+  },
 };
 
 export default userService;
