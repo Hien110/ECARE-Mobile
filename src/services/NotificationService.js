@@ -9,6 +9,7 @@ import DeadmanNotificationService from './DeadmanNotificationService';
 
 class NotificationService {
   navigationRef = null;
+  _lastDeadmanReminderAt = 0;
 
   /**
    * Khởi tạo Firebase Messaging
@@ -206,6 +207,17 @@ class NotificationService {
     } catch {}
     return null;
   }
+  
+  _shouldSkipDeadmanReminder() {
+    const now = Date.now();
+    // Nếu trong vòng 10 giây vừa show rồi thì bỏ qua lần sau
+    if (this._lastDeadmanReminderAt && now - this._lastDeadmanReminderAt < 10_000) {
+      console.log('[NotificationService] Skip duplicate deadman_reminder');
+      return true;
+    }
+    this._lastDeadmanReminderAt = now;
+    return false;
+  }
 
   async shouldDisplayNotification(data) {
     // 1) Bắt buộc đã đăng nhập
@@ -374,13 +386,16 @@ class NotificationService {
         return;
       } 
       else if (data?.type === 'deadman_reminder') {
+        // 🆕 Chống duplicate
+        if (this._shouldSkipDeadmanReminder()) {
+          return;
+        }
         await this.showForegroundBanner(notification, data);
         Alert.alert(
           notification?.title || 'Nhắc kiểm tra an toàn',
-          notification?.body || 'Bác có muốn xác nhận “Tôi ổn hôm nay” không ạ?',
+          notification?.body || 'Bác được nhắc kiểm tra an toàn hôm nay.',
           [
             { text: 'Để sau', style: 'cancel' },
-            { text: 'Tôi ổn hôm nay', onPress: () => this.postDeadmanCheckin() },
           ],
           { cancelable: true }
         );
@@ -463,13 +478,15 @@ class NotificationService {
         }, 1000);
       }
       else if (data?.type === 'deadman_reminder') {
+        if (this._shouldSkipDeadmanReminder()) {
+          return;
+        }
         setTimeout(() => {
           Alert.alert(
             'Nhắc kiểm tra an toàn',
-            'Bác muốn xác nhận “Tôi ổn hôm nay” không ạ?',
+            'Bác được nhắc kiểm tra an toàn hôm nay.',
             [
               { text: 'Để sau', style: 'cancel' },
-              { text: 'Tôi ổn hôm nay', onPress: () => this.postDeadmanCheckin() },
             ],
             { cancelable: true }
           );
@@ -564,13 +581,15 @@ class NotificationService {
             }, 2000);
           }
           else if (data?.type === 'deadman_reminder') {
+            if (this._shouldSkipDeadmanReminder()) {
+              return;
+            }
             setTimeout(() => {
               Alert.alert(
                 'Nhắc kiểm tra an toàn',
-                'Bác muốn xác nhận “Tôi ổn hôm nay” không ạ?',
+                'Bác được nhắc kiểm tra an toàn hôm nay.',
                 [
                   { text: 'Để sau', style: 'cancel' },
-                  { text: 'Tôi ổn hôm nay', onPress: () => this.postDeadmanCheckin() },
                 ],
                 { cancelable: true }
               );
