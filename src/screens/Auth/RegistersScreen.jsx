@@ -1,4 +1,4 @@
-// src/screens/Auth/RegistersScreen.jsx
+
 import { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -19,7 +19,7 @@ import { launchCamera } from 'react-native-image-picker';
 import { userService } from '../../services/userService';
 import logo from '../../assets/logoBrand.png';
 
-// ===== Button =====
+
 const Btn = ({ title, onPress, disabled }) => (
   <TouchableOpacity
     onPress={disabled ? undefined : onPress}
@@ -36,7 +36,7 @@ const Btn = ({ title, onPress, disabled }) => (
   </TouchableOpacity>
 );
 
-// ===== Toggle (support disabled) =====
+
 const Toggle = ({ active, label, onPress, disabled }) => (
   <TouchableOpacity
     onPress={disabled ? undefined : onPress}
@@ -59,7 +59,7 @@ const Toggle = ({ active, label, onPress, disabled }) => (
   </TouchableOpacity>
 );
 
-// Phone VN đơn giản
+
 const isValidPhone = (p) => /^\s*(\+?84|0)\d{9}\s*$/.test(String(p || ''));
 
 export default function RegistersScreen() {
@@ -74,14 +74,14 @@ export default function RegistersScreen() {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState(false);
 
-  // Thông tin CCCD (đến từ backend)
+  
   const [identityCard, setIdentityCard] = useState('');
   const [fullName, setFullName] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState(''); // readonly
-  const [gender, setGender] = useState('male');        // readonly (nam/nữ)
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [gender, setGender] = useState('male');        
   const [address, setAddress] = useState('');
 
-  // Ảnh data URL + mime
+  
   const [frontImage, setFrontImage] = useState(null);
   const [backImage, setBackImage] = useState(null);
   const [frontMime, setFrontMime] = useState('image/jpeg');
@@ -91,14 +91,14 @@ export default function RegistersScreen() {
   const [loading, setLoading] = useState(false);
   const [phoneError, setPhoneError] = useState('');
 
-  // ===== Countdown OTP =====
+  
   useEffect(() => {
     if (step !== 2.1 || countdown <= 0) return;
     const timer = setInterval(() => setCountdown((p) => (p > 0 ? p - 1 : 0)), 1000);
     return () => clearInterval(timer);
   }, [step, countdown]);
 
-  // ===== Cleanup session khi thoát flow =====
+
   useEffect(() => {
     return () => {
       cleanupOnExit();
@@ -118,7 +118,7 @@ export default function RegistersScreen() {
     setStep(newStep);
   };
 
-  // ===== OTP =====
+  
   const handleSendOTP = async () => {
     if (!isValidPhone(phoneNumber)) {
       setPhoneError('Số điện thoại không hợp lệ');
@@ -162,7 +162,7 @@ export default function RegistersScreen() {
     }
   };
 
-  // ===== Quyền camera (Android) =====
+ 
   const requestCameraPermissions = async () => {
     if (Platform.OS !== 'android') return true;
     try {
@@ -220,7 +220,7 @@ export default function RegistersScreen() {
     }
   };
 
-  // ===== Upload 2 ảnh để backend trích xuất =====
+ 
   const handleExtractFromImages = async () => {
     if (!frontImage || !backImage) {
       Alert.alert('Thiếu ảnh', 'Vui lòng chụp đủ 2 mặt CCCD.');
@@ -242,21 +242,33 @@ export default function RegistersScreen() {
         setIdentityCard(res.data.identityCard || '');
         setFullName(res.data.fullName || '');
         setDateOfBirth(res.data.dateOfBirth || '');
-        setGender(res.data.gender || 'male'); // nếu backend trả 'other' thì UI không cho chọn 'Khác'
+        setGender(res.data.gender || 'male'); 
         setAddress(res.data.address || '');
         setStep(4);
       } else {
-        Alert.alert('Lỗi', res?.message || 'Không thể gửi thông tin CCCD');
+        const msg = res?.message || 'Không thể gửi thông tin CCCD';
+        if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+          Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+          setStep(2.1);
+        } else {
+          Alert.alert('Lỗi', msg);
+        }
       }
     } catch (err) {
       console.error('handleExtractFromImages error:', err);
-      Alert.alert('Lỗi', err?.message || 'Không thể trích xuất');
+      const msg = err?.message || 'Không thể trích xuất';
+      if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+        Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+        setStep(2.1);
+      } else {
+        Alert.alert('Lỗi', msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // ===== Hoàn tất đăng ký =====
+  
   const handleComplete = async () => {
     if (!password || password.length < 6) {
       Alert.alert('Mật khẩu không hợp lệ', 'Mật khẩu phải có ít nhất 6 ký tự');
@@ -269,19 +281,31 @@ export default function RegistersScreen() {
       const res = await userService.completeProfile({
         phoneNumber: phoneNumber.trim(),
         password,
-        fullName,     // cho phép chỉnh
-        gender,       // readonly nhưng vẫn gửi
-        dateOfBirth,  // readonly
-        address,      // cho phép chỉnh
+        fullName,     
+        gender,     
+        dateOfBirth,  
+        address,    
       });
       if (res.success) {
         Alert.alert('Đăng Ký Thành Công');
         nav.navigate('Login');
       } else {
-        Alert.alert('Lỗi', res.message || 'Hoàn tất không thành công');
+        const msg = res?.message || 'Hoàn tất không thành công';
+        if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+          Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+          setStep(2.1);
+        } else {
+          Alert.alert('Lỗi', msg);
+        }
       }
     } catch (e) {
-      Alert.alert('Lỗi', e?.message || 'Hoàn tất không thành công');
+      const msg = e?.message || 'Hoàn tất không thành công';
+      if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+        Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+        setStep(2.1);
+      } else {
+        Alert.alert('Lỗi', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -289,7 +313,7 @@ export default function RegistersScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, padding: 16 }}>
-      {/* STEP 1: chọn vai trò */}
+ 
       {step === 1 && (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
           <View style={{ marginTop: 25 }}>
@@ -322,7 +346,7 @@ export default function RegistersScreen() {
         </View>
       )}
 
-      {/* STEP 2: nhập sđt */}
+     
       {step === 2 && (
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(1)}>
@@ -351,7 +375,7 @@ export default function RegistersScreen() {
         </View>
       )}
 
-      {/* STEP 2.1: OTP */}
+   
       {step === 2.1 && (
         <View style={{ flex: 1, paddingTop: 80, alignItems: 'center' }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(2)}>
@@ -412,7 +436,7 @@ export default function RegistersScreen() {
         </View>
       )}
 
-      {/* STEP 3: Chụp CCCD 2 mặt */}
+     
       {step === 3 && (
         <View style={{ marginTop: 20 }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(2.1)}>
@@ -439,7 +463,7 @@ export default function RegistersScreen() {
         </View>
       )}
 
-      {/* STEP 4: hiển thị info + chỉnh/readonly */}
+    
       {step === 4 && (
         <View style={{ marginTop: 20 }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(3)}>
@@ -454,10 +478,10 @@ export default function RegistersScreen() {
             Thông tin nhận diện từ CCCD (có trường không cho chỉnh)
           </Text>
 
-          {/* Cho phép chỉnh */}
+         
           <TextInput placeholder="Họ và tên" value={fullName} onChangeText={setFullName} style={styles.input} />
 
-          {/* Không cho chỉnh ngày sinh */}
+         
           <TextInput
             placeholder="Ngày sinh (dd/mm/yyyy)"
             value={dateOfBirth}
@@ -466,16 +490,16 @@ export default function RegistersScreen() {
             style={styles.readonly}
           />
 
-          {/* Không cho chỉnh giới tính – chỉ hiển thị 2 lựa chọn Nam/Nữ, bỏ Khác */}
+       
           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
             <Toggle label="Nam" active={gender === 'male'} disabled onPress={() => {}} />
             <Toggle label="Nữ" active={gender === 'female'} disabled onPress={() => {}} />
           </View>
 
-          {/* Số CCCD readonly */}
+          
           <TextInput placeholder="Số CCCD" editable={false} value={identityCard} style={styles.readonly} />
 
-          {/* Cho phép chỉnh địa chỉ */}
+        
           <TextInput
             placeholder="Địa chỉ thường trú"
             value={address}
@@ -499,7 +523,7 @@ export default function RegistersScreen() {
   );
 }
 
-/* ===== Styles ===== */
+
 const styles = {
   backBtn: { position: 'absolute', top: 20, left: 20, zIndex: 20 },
   input: { borderWidth: 1, borderColor: '#ccc', padding: 12, borderRadius: 8, marginTop: 12, color: '#000' },
