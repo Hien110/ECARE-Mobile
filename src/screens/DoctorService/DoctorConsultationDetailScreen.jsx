@@ -318,8 +318,10 @@ function resolveCreatorInfo(booking) {
 
 const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const bookingId = route?.params?.bookingId;
+  const elderlyIdFromRoute = route?.params?.elderlyId || null;
+  const initialBooking = route?.params?.initialBooking || null;
 
-  const [booking, setBooking] = useState(null);
+  const [booking, setBooking] = useState(initialBooking || null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -330,6 +332,9 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
 
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+
+  // ==== trạng thái update status tư vấn (doctor) ====
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   // ==== rating state ====
   const [ratings, setRatings] = useState([]);
@@ -403,6 +408,48 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   }, [bookingId]);
 
   /**
+   * Resolve conversation (chat) từ một booking đã có doctor + elderly
+   */
+  const resolveConversation = useCallback(async found => {
+    if (!found?.doctor) {
+      setConversation(null);
+      return;
+    }
+
+    try {
+      const doctorId =
+        found.doctor?._id || found.doctor?.user?._id || found.doctor?.doctorId;
+      const elderlyId =
+        found.beneficiary?._id ||
+        found.beneficiary?.user?._id ||
+        found.elderly?._id ||
+        found.elderly?.user?._id;
+
+      if (!doctorId || !elderlyId) {
+        setConversation(null);
+        return;
+      }
+
+      const convRes =
+        await conversationService.getConversationByParticipants(
+          doctorId,
+          elderlyId,
+        );
+      if (convRes?.success && convRes.data) {
+        setConversation(convRes.data);
+      } else {
+        setConversation(null);
+      }
+    } catch (e) {
+      console.log(
+        `${TAG}[resolveConversation][ERROR]`,
+        e?.message || e,
+      );
+      setConversation(null);
+    }
+  }, []);
+
+  /**
    * Lấy chi tiết booking
    */
   const loadDetails = useCallback(async () => {
@@ -412,48 +459,34 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       return;
     }
 
-    console.log(`${TAG}[loadDetails] START bookingId =`, bookingId);
+    console.log(
+      `${TAG}[loadDetails] START bookingId =`,
+      bookingId,
+      'elderlyIdFromRoute =',
+      elderlyIdFromRoute,
+    );
 
     try {
       setLoading(true);
 
-      const detailRes =
-        (await doctorBookingService.getRegistrationDetail?.(bookingId)) || {};
-      console.log(`${TAG}[loadDetails] registration detail res =`, detailRes);
+      // ===== 1. Call API chi tiết theo id =====
+      let detailRes = {};
+      if (doctorBookingService.getRegistrationDetail) {
+        detailRes =
+          (await doctorBookingService.getRegistrationDetail(bookingId)) || {};
+      }
+      console.log(
+        `${TAG}[loadDetails] registration detail res =`,
+        detailRes,
+      );
 
-      if (detailRes.success && detailRes.data) {
+      if (detailRes?.success && detailRes.data) {
         console.log(
           `${TAG}[loadDetails] registration detail data.status =`,
           detailRes.data.status,
         );
         setBooking(detailRes.data);
-
-        const found = detailRes.data;
-        if (found.doctor && (found.beneficiary || found.elderly)) {
-          try {
-            const convRes =
-              await conversationService.getConversationByParticipants(
-                found.doctor?._id || found.doctor?.user?._id,
-                found.beneficiary?._id ||
-                  found.beneficiary?.user?._id ||
-                  found.elderly?._id ||
-                  found.elderly?.user?._id,
-              );
-            if (convRes?.success && convRes.data) {
-              setConversation(convRes.data);
-            } else {
-              setConversation(null);
-            }
-          } catch (e) {
-            console.log(
-              `${TAG}[loadDetails][conversation][ERROR]`,
-              e?.message || e,
-            );
-            setConversation(null);
-          }
-        } else {
-          setConversation(null);
-        }
+        await resolveConversation(detailRes.data);
 
         console.log(
           `${TAG}[loadDetails] END with booking.status =`,
@@ -462,43 +495,67 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         return;
       }
 
-      // Fallback
+      // ===== 2. Fallback: nếu có elderlyId (đang xem lịch theo người cao tuổi) =====
+      if (elderlyIdFromRoute) {
+        console.log(
+          `${TAG}[loadDetails][FALLBACK_BY_ELDERLY] dùng getBookingsByElderlyId`,
+          { elderlyIdFromRoute },
+        );
+        try {
+          const listRes =
+            (await doctorBookingService.getBookingsByElderlyId?.(
+              elderlyIdFromRoute,
+            )) || {};
+          console.log(
+            `${TAG}[loadDetails][FALLBACK_BY_ELDERLY] raw =`,
+            listRes,
+          );
+
+          if (listRes?.success && Array.isArray(listRes.data)) {
+            const found = listRes.data.find(
+              b => String(b._id) === String(bookingId),
+            );
+            console.log(
+              `${TAG}[loadDetails][FALLBACK_BY_ELDERLY] found =`,
+              found?._id,
+              'status =',
+              found?.status,
+            );
+            if (found) {
+              setBooking(found);
+              await resolveConversation(found);
+              return;
+            }
+          }
+        } catch (err) {
+          console.log(
+            `${TAG}[loadDetails][FALLBACK_BY_ELDERLY][ERROR]`,
+            err?.message || err,
+          );
+        }
+      }
+
+      // ===== 3. Fallback cuối: dùng getMyBookings (cũ) =====
       console.log(
-        `${TAG}[loadDetails][FALLBACK] dùng getMyBookings vì không lấy được detail theo id`,
+        `${TAG}[loadDetails][FALLBACK_MY_BOOKINGS] dùng getMyBookings vì không lấy được detail theo id`,
       );
 
       const res = await doctorBookingService.getMyBookings?.();
-      console.log(`${TAG}[loadDetails] raw res =`, res);
+      console.log(`${TAG}[loadDetails][FALLBACK_MY_BOOKINGS] raw res =`, res);
 
       if (res?.success && Array.isArray(res.data)) {
-        const found = res.data.find(b => String(b._id) === String(bookingId));
+        const found = res.data.find(
+          b => String(b._id) === String(bookingId),
+        );
         console.log(
-          `${TAG}[loadDetails] found booking (fallback).status =`,
+          `${TAG}[loadDetails][FALLBACK_MY_BOOKINGS] found booking status =`,
           found?.status,
         );
 
         if (found) {
           setBooking(found);
-
           if (found.status && found.status !== 'pending') {
-            try {
-              const convRes =
-                await conversationService.getConversationByParticipants(
-                  found.doctor?._id,
-                  found.elderly?._id,
-                );
-              if (convRes?.success && convRes.data) {
-                setConversation(convRes.data);
-              } else {
-                setConversation(null);
-              }
-            } catch (e) {
-              console.log(
-                `${TAG}[loadDetails][conversation][ERROR][fallback]`,
-                e?.message || e,
-              );
-              setConversation(null);
-            }
+            await resolveConversation(found);
           } else {
             setConversation(null);
           }
@@ -507,20 +564,23 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             `${TAG}[loadDetails][WARN] Không tìm thấy booking trong danh sách getMyBookings`,
           );
           setBooking(null);
+          setConversation(null);
         }
       } else {
         console.log(
           `${TAG}[loadDetails][WARN] getMyBookings không trả về mảng data`,
         );
         setBooking(null);
+        setConversation(null);
       }
     } catch (e) {
       console.log(`${TAG}[loadDetails][ERROR]`, e?.message || e);
       setBooking(null);
+      setConversation(null);
     } finally {
       setLoading(false);
     }
-  }, [bookingId]);
+  }, [bookingId, elderlyIdFromRoute, resolveConversation]);
 
   useEffect(() => {
     console.log(`${TAG}[useEffect] route.params =`, route?.params);
@@ -539,12 +599,13 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const statusKey = String(booking?.status || 'pending').toLowerCase();
   const statusScheme = statusColors[statusKey] || statusColors.default;
 
+  const isDoctorRole = (userRole || '').toLowerCase() === 'doctor';
+
   // raw payment status từ backend
   const paymentStatusRaw =
     booking?.payment?.status || booking?.paymentStatus || 'unpaid';
   let paymentKey = String(paymentStatusRaw || 'unpaid').toLowerCase();
 
-  // chuẩn hoá một số biến thể như "success", "successful"
   if (['success', 'successful'].includes(paymentKey)) {
     paymentKey = 'completed';
   }
@@ -557,8 +618,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     booking?.payment?.method || booking?.paymentMethod || 'cash';
   const paymentMethodLower = String(paymentMethodRaw || '').toLowerCase();
 
-  // override: nếu booking đã huỷ nhưng từng thanh toán online rồi
-  // → luôn hiển thị "Đã thanh toán"
   const isOnlineMethod = ['qr', 'online', 'bank_transfer', 'bank-transfer'].includes(
     paymentMethodLower,
   );
@@ -566,7 +625,8 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     String(paymentStatusRaw || '').toLowerCase(),
   );
 
-  const showRefundNotice = statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw);
+  const showRefundNotice =
+    statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw);
 
   if (statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw)) {
     paymentKey = 'completed';
@@ -581,6 +641,126 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const canCancel =
     ['pending', 'confirmed'].includes(statusKey) &&
     ['elderly', 'family'].includes((userRole || '').toLowerCase());
+
+  // ====== HÀM UPDATE TRẠNG THÁI TƯ VẤN (DOCTOR) ======
+  const updateConsultationStatus = async nextStatus => {
+  console.log(
+    `${TAG}[updateConsultationStatus] START`,
+    {
+      nextStatus,
+      bookingId: booking?._id,
+      bookingStatus: booking?.status,
+      consultationId: booking?.consultation?._id,
+      consultationStatus: booking?.consultation?.status,
+    },
+  );
+
+  if (!booking?._id) {
+    console.log(
+      `${TAG}[updateConsultationStatus] MISSING booking._id → KHÔNG GỌI API`,
+    );
+    return;
+  }
+
+  try {
+    setUpdatingStatus(true);
+
+    console.log(
+      `${TAG}[updateConsultationStatus] CALL API doctorBookingService.updateConsultationStatus`,
+      {
+        bookingId: booking._id,
+        nextStatus,
+      },
+    );
+
+    const res =
+      (await doctorBookingService.updateConsultationStatus?.(
+        booking._id,
+        nextStatus,
+      )) || {};
+
+    console.log(`${TAG}[updateConsultationStatus] RAW_RES =`, res);
+
+    if (res?.success) {
+      const serverData =
+        res.data && typeof res.data === 'object' ? res.data : {};
+
+      console.log(
+        `${TAG}[updateConsultationStatus] SUCCESS, serverData =`,
+        {
+          status: serverData.status,
+          consultationStatus: serverData.consultation?.status,
+          data: serverData,
+        },
+      );
+
+      setBooking(prev => {
+        const base = prev || {};
+        const merged = {
+          ...base,
+          ...serverData,
+          status: serverData.status || nextStatus,
+          consultation: {
+            ...(base?.consultation || {}),
+            ...(serverData.consultation || {}),
+            status:
+              serverData.consultation?.status ||
+              serverData.status ||
+              nextStatus,
+          },
+        };
+
+        console.log(
+          `${TAG}[updateConsultationStatus] AFTER_SET booking =`,
+          {
+            bookingId: merged?._id,
+            bookingStatus: merged?.status,
+            consultationId: merged?.consultation?._id,
+            consultationStatus: merged?.consultation?.status,
+          },
+        );
+
+        return merged;
+      });
+
+      const msg =
+        nextStatus === 'in_progress'
+          ? 'Đã chuyển sang trạng thái đang tiến hành.'
+          : 'Đã đánh dấu hoàn thành công việc.';
+      showToast(msg);
+    } else {
+      console.log(
+        `${TAG}[updateConsultationStatus] FAIL res.success != true`,
+        {
+          message: res?.message,
+          res,
+        },
+      );
+
+      showToast(
+        res?.message ||
+          'Cập nhật trạng thái thất bại, vui lòng thử lại.',
+        'error',
+      );
+    }
+  } catch (e) {
+    console.log(
+      `${TAG}[updateConsultationStatus][ERROR]`,
+      {
+        message: e?.message,
+        responseStatus: e?.response?.status,
+        responseData: e?.response?.data,
+      },
+    );
+    showToast(
+      'Cập nhật trạng thái thất bại, vui lòng thử lại.',
+      'error',
+    );
+  } finally {
+    console.log(`${TAG}[updateConsultationStatus] END (finally)`);
+    setUpdatingStatus(false);
+  }
+};
 
   const onCancelBooking = async () => {
     if (!bookingId) return;
@@ -636,13 +816,25 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       ? `${booking.price.toLocaleString('vi-VN')} đ`
       : '';
 
-  const dateRaw =
-    booking?.consultationDate ||
+  const dateIso =
+    booking?.consultation?.scheduledDate ||
     booking?.scheduledDate ||
-    booking?.packageInfo?.startDate ||
+    booking?.consultationDate ||
     booking?.startDate ||
+    booking?.packageInfo?.startDate ||
     booking?.createdAt;
-  const dateLabel = formatDateLongVN(dateRaw);
+
+  console.log('[DETAIL][DATE_SYNC]', {
+    consultationScheduled: booking?.consultation?.scheduledDate,
+    scheduledDate: booking?.scheduledDate,
+    consultationDate: booking?.consultationDate,
+    startDate: booking?.startDate,
+    packageStart: booking?.packageInfo?.startDate,
+    createdAt: booking?.createdAt,
+    chosen: dateIso,
+  });
+
+  const dateLabel = formatDateLongVN(dateIso);
 
   const timeRaw =
     booking?.consultationTime ||
@@ -718,7 +910,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       let result;
 
       if (editingRating) {
-        // update
         result = await ratingService.updateRatingById(
           editingRating._id,
           rating,
@@ -728,7 +919,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         const fromUserId = currentUser._id;
         const toUserId = booking.doctor._id || booking.doctor.user._id;
 
-        // ⚠️ dùng cùng serviceType như màn Hỗ trợ để đúng với backend hiện tại
         result = await ratingService.createRating(
           fromUserId,
           toUserId,
@@ -929,7 +1119,9 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               <View style={styles.refundNotice}>
                 <Text style={styles.refundNoticeText}>
                   Tiền sẽ được hoàn trả lại trong vòng{' '}
-                  <Text style={styles.refundNoticeTextBold}>12h–24h.</Text>
+                  <Text style={styles.refundNoticeTextBold}>
+                    12h–24h.
+                  </Text>
                 </Text>
               </View>
             )}
@@ -999,14 +1191,69 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             </View>
           )}
 
+          {/* Buttons cho NON-DOCTOR: chỉ 1 nút chat như cũ */}
           {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
-            conversation && (
+            conversation &&
+            !isDoctorRole && (
               <TouchableOpacity
                 style={[styles.primaryBtn, { marginTop: 20 }]}
                 onPress={goToChat}
               >
                 <Text style={styles.primaryBtnText}>Nhắn tin với bác sĩ</Text>
               </TouchableOpacity>
+            )}
+
+          {/* Buttons cho DOCTOR: Liên hệ + Tiến hành / Đã hoàn thành */}
+          {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
+            conversation &&
+            isDoctorRole && (
+              <View style={{ marginTop: 20 }}>
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={goToChat}
+                  disabled={updatingStatus}
+                >
+                  <Text style={styles.primaryBtnText}>Liên hệ</Text>
+                </TouchableOpacity>
+
+                {statusKey === 'confirmed' && (
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryBtn,
+                      { marginTop: 12, backgroundColor: '#0EA5E9' },
+                    ]}
+                    onPress={() => updateConsultationStatus('in_progress')}
+                    disabled={updatingStatus}
+                  >
+                    {updatingStatus ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryBtnText}>
+                        Tiến hành làm việc
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {statusKey === 'in_progress' && (
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryBtn,
+                      { marginTop: 12, backgroundColor: '#16A34A' },
+                    ]}
+                    onPress={() => updateConsultationStatus('completed')}
+                    disabled={updatingStatus}
+                  >
+                    {updatingStatus ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryBtnText}>
+                        Đã hoàn thành công việc
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
 
           {canCancel && (
@@ -1189,6 +1436,8 @@ DoctorConsultationDetailScreen.propTypes = {
   route: PropTypes.shape({
     params: PropTypes.shape({
       bookingId: PropTypes.string,
+      elderlyId: PropTypes.string,
+      initialBooking: PropTypes.object,
     }),
   }).isRequired,
   navigation: PropTypes.shape({
@@ -1499,6 +1748,20 @@ const styles = StyleSheet.create({
   },
   reviewSubmitText: {
     color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  refundNotice: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#EFF6FF',
+  },
+  refundNoticeText: {
+    fontSize: 13,
+    color: '#1D4ED8',
+  },
+  refundNoticeTextBold: {
     fontWeight: '700',
   },
 });
