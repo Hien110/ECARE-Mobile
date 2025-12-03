@@ -267,13 +267,6 @@ export default function EnhancedHealthAppRN() {
         message: 'Chức năng đặt lịch hỗ trợ',
       },
       {
-        id: 'chat',
-        icon: '💬',
-        label: 'Trò chuyện E-care',
-        color: C.background,
-        desc: 'Tư vấn trực tuyến 24/7',
-      },
-      {
         id: 'connection',
         icon: '📶',
         label: 'Kết nối người thân',
