@@ -658,7 +658,7 @@ const SupportFinderScreen = ({ navigation, route }) => {
         <TouchableOpacity
           style={styles.btnPrimary}
           onPress={() =>
-            navigation.navigate('SupporterProfile', {
+            navigation.navigate('ProfileSupporterScreen', {
               supporter: p,
               user: effectiveUser || user,
             })
