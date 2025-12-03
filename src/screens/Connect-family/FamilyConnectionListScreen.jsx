@@ -21,19 +21,52 @@ const FamilyConnectionListScreen = () => {
                 setLoading(true);
                 const result = await relationshipService.getAcceptedRelationships();
                 if (result.success) {
-                    // Transform API data to match component structure
-                    const transformedData = result.data.map((relationship, index) => ({
+                const transformedData = result.data.map((relationship) => {
+                    const relStr = (relationship.relationship || '').toString().toLowerCase();
+
+                    // Mặc định vẫn dùng requestedBy (con gái, em, v.v.)
+                    let targetUser = relationship.requestedBy;
+
+                    // Nếu là quan hệ BÁC SĨ thì ưu tiên user có role = 'doctor'
+                    if (relStr === 'bác sĩ' || relStr === 'doctor') {
+                        if (relationship.elderly?.role === 'doctor') {
+                            targetUser = relationship.elderly;
+                        } else if (relationship.family?.role === 'doctor') {
+                            targetUser = relationship.family;
+                        } else if (relationship.requestedBy?.role === 'doctor') {
+                            targetUser = relationship.requestedBy;
+                        }
+                    }
+
+                    const fullName = targetUser?.fullName || 'Chưa cập nhật tên';
+                    const phone = targetUser?.phoneNumber || 'N/A';
+                    const avatar = targetUser?.avatar || 'https://via.placeholder.com/100';
+
+                    console.log(
+                        '[FamilyConnectionList] item',
+                        relationship._id,
+                        'rel =', relationship.relationship,
+                        'elderly =', relationship.elderly?._id, relationship.elderly?.role,
+                        'family =', relationship.family?._id, relationship.family?.role,
+                        'requestedBy =', relationship.requestedBy?._id, relationship.requestedBy?.role,
+                        'targetUser =', targetUser?._id, 'name =', fullName,
+                    );
+
+                    return {
                         id: relationship._id,
-                        name: relationship.requestedBy?.fullName || 'Unknown',
+                        name: fullName,
                         relationship: relationship.relationship,
-                        phone: relationship.requestedBy?.phoneNumber || 'N/A',
-                        avatar: relationship.requestedBy?.avatar || 'https://via.placeholder.com/100',
+                        phone,
+                        avatar,
                         isAccepted: true,
-                    }));
-                    setConnectedMembers(transformedData);
-                } else {
-                    setError(result.message);
-                }
+                    };
+                });
+
+                setConnectedMembers(transformedData);
+            } else {
+                setError(result.message);
+            }
+
             } catch (error) {
                 setError('Không thể tải danh sách thành viên');
                 console.error('Error fetching connected members:', error);
@@ -143,18 +176,49 @@ const FamilyConnectionListScreen = () => {
                                 try {
                                     const result = await relationshipService.getAcceptedRelationships();
                                     if (result.success) {
-                                        const transformedData = result.data.map((relationship, index) => ({
+                                    const transformedData = result.data.map((relationship) => {
+                                        const relStr = (relationship.relationship || '').toString().toLowerCase();
+
+                                        let targetUser = relationship.requestedBy;
+
+                                        if (relStr === 'bác sĩ' || relStr === 'doctor') {
+                                            if (relationship.elderly?.role === 'doctor') {
+                                                targetUser = relationship.elderly;
+                                            } else if (relationship.family?.role === 'doctor') {
+                                                targetUser = relationship.family;
+                                            } else if (relationship.requestedBy?.role === 'doctor') {
+                                                targetUser = relationship.requestedBy;
+                                            }
+                                        }
+
+                                        const fullName = targetUser?.fullName || 'Chưa cập nhật tên';
+                                        const phone = targetUser?.phoneNumber || 'N/A';
+                                        const avatar = targetUser?.avatar || 'https://via.placeholder.com/100';
+
+                                        console.log(
+                                            '[FamilyConnectionList][RETRY] item',
+                                            relationship._id,
+                                            'rel =', relationship.relationship,
+                                            'elderly =', relationship.elderly?._id, relationship.elderly?.role,
+                                            'family =', relationship.family?._id, relationship.family?.role,
+                                            'requestedBy =', relationship.requestedBy?._id, relationship.requestedBy?.role,
+                                            'targetUser =', targetUser?._id, 'name =', fullName,
+                                        );
+
+                                        return {
                                             id: relationship._id,
-                                            name: relationship.requestedBy?.fullName || 'Unknown',
+                                            name: fullName,
                                             relationship: relationship.relationship,
-                                            phone: relationship.requestedBy?.phoneNumber || 'N/A',
-                                            avatar: relationship.requestedBy?.avatar || 'https://via.placeholder.com/100',
+                                            phone,
+                                            avatar,
                                             isAccepted: true,
-                                        }));
-                                        setConnectedMembers(transformedData);
-                                    } else {
-                                        setError(result.message);
-                                    }
+                                        };
+                                    });
+
+                                    setConnectedMembers(transformedData);
+                                } else {
+                                    setError(result.message);
+                                }
                                 } catch (error) {
                                     setError('Không thể tải danh sách thành viên');
                                 } finally {

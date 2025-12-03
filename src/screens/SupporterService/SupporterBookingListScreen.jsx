@@ -233,25 +233,74 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [userId, setUserId] = useState(null);
+  const [userRole, setUserRole] = useState(null); // ➕ thêm role
+
+  const normalizedRole = (userRole || '').toLowerCase();
+  const showTabBar = normalizedRole === 'family';
+
+  useEffect(() => {
+    console.log(
+      '[SupporterBookingListScreen][roleDebug]',
+      'userRole =',
+      userRole,
+      'normalizedRole =',
+      normalizedRole,
+      'showTabBar =',
+      showTabBar,
+    );
+  }, [userRole, normalizedRole, showTabBar]);
 
   // ===== Lấy userId =====
   useEffect(() => {
     let cancelled = false;
 
     const getUserId = async () => {
-      const idFromRoute = route?.params?.userId;
-      if (idFromRoute) {
-        if (!cancelled) setUserId(idFromRoute);
-        return;
-      }
+      try {
+        const idFromRoute = route?.params?.userId;
+        if (idFromRoute) {
+          if (!cancelled) {
+            console.log(
+              '[SupporterBookingListScreen][getUserId] dùng userId từ route =',
+              idFromRoute,
+            );
+            setUserId(idFromRoute);
+          }
+        }
 
-      const userResponse = await userService.getUser();
-      if (cancelled) return;
+        const userResponse = await userService.getUser();
+        if (cancelled) return;
 
-      if (userResponse?.success && userResponse?.data?._id) {
-        setUserId(userResponse.data._id);
-      } else {
-        setError('Không thể lấy thông tin người dùng. Vui lòng đăng nhập lại.');
+        console.log(
+          '[SupporterBookingListScreen][getUserId] userResponse =',
+          userResponse,
+        );
+
+        const role = userResponse?.data?.role || null;
+        if (!cancelled) {
+          setUserRole(role);
+        }
+
+        if (!idFromRoute) {
+          if (userResponse?.success && userResponse?.data?._id) {
+            console.log(
+              '[SupporterBookingListScreen][getUserId] setUserId từ userService =',
+              userResponse.data._id,
+            );
+            setUserId(userResponse.data._id);
+          } else {
+            setError(
+              'Không thể lấy thông tin người dùng. Vui lòng đăng nhập lại.',
+            );
+          }
+        }
+      } catch (e) {
+        console.log(
+          '[SupporterBookingListScreen][getUserId][ERROR] =',
+          e?.message || e,
+        );
+        if (!cancelled) {
+          setError('Không thể lấy thông tin người dùng. Vui lòng đăng nhập lại.');
+        }
       }
     };
 
@@ -264,21 +313,43 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
 
   // ===== Hàm tải bookings =====
   const fetchBookings = async () => {
-    if (!userId) return;
+    if (!userId) {
+      console.log(
+        '[SupporterBookingListScreen][fetchBookings] Không có userId → skip',
+      );
+      return;
+    }
     try {
       setError(null);
       setLoading(true);
+      console.log(
+        '[SupporterBookingListScreen][fetchBookings] CALL API với userId =',
+        userId,
+      );
+
       const response = await supporterSchedulingService.getSchedulingsByUserId(
         userId,
       );
+      console.log(
+        '[SupporterBookingListScreen][fetchBookings] RAW_RESPONSE =',
+        response,
+      );
+
       if (response?.success) {
-        console.log(response.data);
+        console.log(
+          '[SupporterBookingListScreen][fetchBookings] DATA_LEN =',
+          Array.isArray(response.data) ? response.data.length : 'N/A',
+        );
         setBookings(Array.isArray(response.data) ? response.data.reverse() : []);
       } else {
         setError('Không thể tải danh sách đặt lịch.');
         setBookings([]);
       }
     } catch (err) {
+      console.log(
+        '[SupporterBookingListScreen][fetchBookings][ERROR] =',
+        err?.message || err,
+      );
       setError('Không thể tải danh sách đặt lịch.');
       setBookings([]);
     } finally {
@@ -303,17 +374,23 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
 
   // ===== Handler chuyển tab =====
   const handlePressSupporterTab = () => {
+    console.log(
+      '[SupporterBookingListScreen][handlePressSupporterTab] hiện đang ở tab hỗ trợ',
+    );
     // Đang ở màn này rồi → có thể refresh nhẹ nếu bạn muốn
     // onRefresh();
   };
 
   const handlePressDoctorTab = () => {
-    console.log('[SupporterBookingListScreen][handlePressDoctorTab] userId =', userId);
+    console.log(
+      '[SupporterBookingListScreen][handlePressDoctorTab] userId =',
+      userId,
+    );
 
     // userId ở màn này CHÍNH LÀ elderlyId (được truyền từ withFooter)
     if (!userId) {
       console.log(
-        '[SupporterBookingListScreen][handlePressDoctorTab] Không có userId/elderlyId, không thể chuyển tab tư vấn.'
+        '[SupporterBookingListScreen][handlePressDoctorTab] Không có userId/elderlyId, không thể chuyển tab tư vấn.',
       );
       return;
     }
@@ -357,7 +434,7 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
         item.monthSessionsPerDay.length
       ) {
         const sessionsText = item.monthSessionsPerDay
-          .map((slot) => scheduleTimeShortMap[slot] || slot)
+          .map(slot => scheduleTimeShortMap[slot] || slot)
           .join(', ');
         subTimeText = `Buổi trong ngày: ${sessionsText}`;
       } else {
@@ -463,10 +540,12 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header navigation={navigation} onRefresh={onRefresh} />
-        <BookingTabBar
-          onPressSupporter={handlePressSupporterTab}
-          onPressDoctor={handlePressDoctorTab}
-        />
+        {showTabBar && (
+          <BookingTabBar
+            onPressSupporter={handlePressSupporterTab}
+            onPressDoctor={handlePressDoctorTab}
+          />
+        )}
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingText}>Đang tải danh sách đặt lịch…</Text>
@@ -479,10 +558,12 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header navigation={navigation} onRefresh={onRefresh} />
-        <BookingTabBar
-          onPressSupporter={handlePressSupporterTab}
-          onPressDoctor={handlePressDoctorTab}
-        />
+        {showTabBar && (
+          <BookingTabBar
+            onPressSupporter={handlePressSupporterTab}
+            onPressDoctor={handlePressDoctorTab}
+          />
+        )}
         <View style={styles.center}>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity onPress={fetchBookings} style={styles.retryBtn}>
@@ -497,10 +578,12 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     return (
       <SafeAreaView style={styles.screen}>
         <Header navigation={navigation} onRefresh={onRefresh} />
-        <BookingTabBar
-          onPressSupporter={handlePressSupporterTab}
-          onPressDoctor={handlePressDoctorTab}
-        />
+        {showTabBar && (
+          <BookingTabBar
+            onPressSupporter={handlePressSupporterTab}
+            onPressDoctor={handlePressDoctorTab}
+          />
+        )}
         <View style={styles.center}>
           <Text style={styles.emptyTitle}>Chưa có đặt lịch nào</Text>
           <Text style={styles.emptySub}>
@@ -518,10 +601,12 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   return (
     <SafeAreaView style={styles.screen}>
       <Header navigation={navigation} onRefresh={onRefresh} />
-      <BookingTabBar
-        onPressSupporter={handlePressSupporterTab}
-        onPressDoctor={handlePressDoctorTab}
-      />
+      {showTabBar && (
+        <BookingTabBar
+          onPressSupporter={handlePressSupporterTab}
+          onPressDoctor={handlePressDoctorTab}
+        />
+      )}
 
       <FlatList
         data={bookings}
@@ -708,7 +793,6 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '700' },
 
-  // Thông báo khi dịch vụ đã hoàn thành
   completedNotice: {
     marginTop: 12,
     flexDirection: 'row',
