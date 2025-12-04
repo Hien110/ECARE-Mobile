@@ -842,19 +842,39 @@ export default function HomeScreen() {
               </View>
             ) : (
               <View style={styles.familyRow}>
-                {familyPreview.map(m => (
+                {familyPreview.map(m => {
+                const rel = (m.relationship || '').toLowerCase();
+                const role = (m.role || '').toLowerCase();
+
+                const isDoctor =
+                  role === 'doctor' ||
+                  rel === 'doctor' ||
+                  rel === 'bác sĩ';   // 👈 thêm trường hợp tiếng Việt
+
+                const subText = isDoctor
+                  ? `Bác sĩ của ${user?.fullName || 'người cao tuổi'}`
+                  : (m.relationship || 'Thành viên');
+
+                console.log('[REL RENDER] item =', {
+                  fullName: m.fullName,
+                  id: m._id,
+                  isDoctor,
+                  relationship: m.relationship,
+                  role: m.role,
+                  subText,
+                });
+
+                return (
                   <ConnectedCard
                     key={m._id}
-                    icon={m.role === 'doctor' ? '👩‍⚕️' : '👤'}
-                    sub={
-                      m.relationship ||
-                      (m.role === 'doctor' ? 'Bác sĩ' : 'Thành viên')
-                    }
+                    icon={isDoctor ? '👩‍⚕️' : '👤'}
+                    sub={subText}
                     title={m.fullName}
                     onPress={() => handleVideoCallToMember(m)}
                     online={false}
                   />
-                ))}
+                );
+              })}
                 <Text
                   style={{
                     marginTop: 6,
