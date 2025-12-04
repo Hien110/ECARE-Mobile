@@ -397,10 +397,16 @@ const ProfileScreen = ({ navigation }) => {
             value={formatDate(user?.dateOfBirth)}
           />
           <InfoRow
-            icon="male-female-outline"
-            label="Giới tính"
-            value={user?.gender}
-          />
+          icon="male-female-outline"
+          label="Giới tính"
+          value={
+            user?.gender === 'male'
+              ? 'Nam'
+              : user?.gender === 'female'
+              ? 'Nữ'
+              : 'Khác'
+          }
+        />
           <InfoRow
             icon="home-outline"
             label="Quê quán"
