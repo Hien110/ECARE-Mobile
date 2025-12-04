@@ -82,10 +82,10 @@ export default function RegistersScreen() {
   const [address, setAddress] = useState('');
 
   
-  const [frontImage, setFrontImage] = useState(null);
-  const [backImage, setBackImage] = useState(null);
-  const [frontMime, setFrontMime] = useState('image/jpeg');
-  const [backMime, setBackMime] = useState('image/jpeg');
+  const [frontPreview, setFrontPreview] = useState(null);
+  const [backPreview, setBackPreview] = useState(null);
+  const [frontFile, setFrontFile] = useState(null);
+  const [backFile, setBackFile] = useState(null);
 
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -185,7 +185,7 @@ export default function RegistersScreen() {
     }
   };
 
-  // ===== Chụp ảnh (base64) =====
+  // ===== Chụp ảnh (file uri + preview base64) =====
   const captureSide = async (side) => {
     const hasPerm = await requestCameraPermissions();
     if (!hasPerm) return null;
@@ -202,27 +202,28 @@ export default function RegistersScreen() {
     if (result?.didCancel || result?.errorCode) return null;
 
     const asset = result?.assets?.[0];
-    if (!asset?.base64 || !asset?.type) {
+    if (!asset?.uri || !asset?.type) {
       Alert.alert('Lỗi', 'Không nhận được dữ liệu ảnh');
       return null;
     }
 
     const mime = asset.type || 'image/jpeg';
-    const dataUrl = `data:${mime};base64,${asset.base64}`;
+    const nameGuess = asset.fileName || `${side}.jpg`;
+    const preview = asset.base64 ? `data:${mime};base64,${asset.base64}` : null;
 
     if (side === 'front') {
-      setFrontImage(dataUrl);
-      setFrontMime(mime);
+      setFrontPreview(preview);
+      setFrontFile({ uri: asset.uri, type: mime, name: nameGuess });
     }
     if (side === 'back') {
-      setBackImage(dataUrl);
-      setBackMime(mime);
+      setBackPreview(preview);
+      setBackFile({ uri: asset.uri, type: mime, name: nameGuess });
     }
   };
 
  
   const handleExtractFromImages = async () => {
-    if (!frontImage || !backImage) {
+    if (!frontFile || !backFile) {
       Alert.alert('Thiếu ảnh', 'Vui lòng chụp đủ 2 mặt CCCD.');
       return;
     }
@@ -232,10 +233,8 @@ export default function RegistersScreen() {
       setLoading(true);
       const res = await userService.uploadCCCD({
         phoneNumber: phoneNumber.trim(),
-        frontImageBase64: frontImage,
-        backImageBase64: backImage,
-        frontMime,
-        backMime,
+        frontFile,
+        backFile,
       });
 
       if (res?.success && res?.data) {
@@ -247,7 +246,10 @@ export default function RegistersScreen() {
         setStep(4);
       } else {
         const msg = res?.message || 'Không thể gửi thông tin CCCD';
-        if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+        if (res?.nextStep === 'enterPhone') {
+          Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+          setStep(2); // quay lại bước nhập số điện thoại
+        } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
           Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
           setStep(2.1);
         } else {
@@ -257,7 +259,10 @@ export default function RegistersScreen() {
     } catch (err) {
       console.error('handleExtractFromImages error:', err);
       const msg = err?.message || 'Không thể trích xuất';
-      if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+      if (err?.response?.data?.nextStep === 'enterPhone') {
+        Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+        setStep(2);
+      } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
         Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
         setStep(2.1);
       } else {
@@ -291,7 +296,10 @@ export default function RegistersScreen() {
         nav.navigate('Login');
       } else {
         const msg = res?.message || 'Hoàn tất không thành công';
-        if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+        if (res?.nextStep === 'enterPhone') {
+          Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+          setStep(2);
+        } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
           Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
           setStep(2.1);
         } else {
@@ -300,7 +308,10 @@ export default function RegistersScreen() {
       }
     } catch (e) {
       const msg = e?.message || 'Hoàn tất không thành công';
-      if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+      if (e?.response?.data?.nextStep === 'enterPhone') {
+        Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+        setStep(2);
+      } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
         Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
         setStep(2.1);
       } else {
@@ -319,7 +330,7 @@ export default function RegistersScreen() {
           <View style={{ marginTop: 25 }}>
             <Image source={logo} style={{ width: 200, height: 100, resizeMode: 'contain' }} />
           </View>
-          <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
+          <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' , color: '#000'  }}>
             E-CARE{'\n'}Chào mừng bạn!
           </Text>
           <Text style={{ fontSize: 14, color: '#666', marginBottom: 24, textAlign: 'center' }}>
@@ -337,7 +348,7 @@ export default function RegistersScreen() {
           </TouchableOpacity>
 
           <Btn title="TIẾP TỤC" onPress={() => setStep(2)} />
-          <Text style={{ marginTop: 16 }}>
+          <Text style={{ marginTop: 16 , color: '#000'}}>
             Bạn đã có tài khoản{' '}
             <Text onPress={() => nav.navigate('Login')} style={{ color: '#2563eb', fontWeight: '700' }}>
               Đăng Nhập ngay
@@ -366,7 +377,7 @@ export default function RegistersScreen() {
           {phoneError ? <Text style={styles.error}>{phoneError}</Text> : null}
 
           <Btn title="Đăng ký" onPress={handleSendOTP} disabled={loading} />
-          <Text style={{ fontSize: 14, textAlign: 'center', marginTop: 16 }}>
+          <Text style={{ fontSize: 14, textAlign: 'center', marginTop: 16 ,color: '#000' }}>
             Bạn đã có tài khoản{' '}
             <Text onPress={() => nav.navigate('Login')} style={{ color: '#2563eb', fontWeight: '700' }}>
               Đăng Nhập ngay
@@ -449,16 +460,16 @@ export default function RegistersScreen() {
 
           <Text style={{ color: '#000' }}>Chụp mặt trước CCCD</Text>
           <Btn title="Chụp mặt trước" onPress={() => captureSide('front')} />
-          {frontImage ? <Image source={{ uri: frontImage }} style={styles.cccdImg} /> : null}
+          {frontPreview ? <Image source={{ uri: frontPreview }} style={styles.cccdImg} /> : null}
 
           <Text style={{ marginTop: 12, color: '#000' }}>Chụp mặt sau CCCD</Text>
           <Btn title="Chụp mặt sau" onPress={() => captureSide('back')} />
-          {backImage ? <Image source={{ uri: backImage }} style={styles.cccdImg} /> : null}
+          {backPreview ? <Image source={{ uri: backPreview }} style={styles.cccdImg} /> : null}
 
           <Btn
             title="Trích xuất & gửi"
             onPress={handleExtractFromImages}
-            disabled={!(frontImage && backImage) || loading}
+            disabled={!(frontFile && backFile) || loading}
           />
         </View>
       )}
@@ -547,6 +558,7 @@ const styles = {
     padding: 16,
     marginBottom: 16,
   }),
+
   roleTitle: { fontSize: 18, fontWeight: '600', color: '#007bff', marginBottom: 4 },
   roleDesc: { fontSize: 14, color: '#666' },
   cccdImg: { width: '100%', height: 180, marginTop: 8, borderRadius: 8 },
