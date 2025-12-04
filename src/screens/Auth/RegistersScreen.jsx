@@ -78,7 +78,7 @@ export default function RegistersScreen() {
   const [identityCard, setIdentityCard] = useState('');
   const [fullName, setFullName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [gender, setGender] = useState('male');        
+  const [gender, setGender] = useState('Khác');        
   const [address, setAddress] = useState('');
 
   
@@ -241,7 +241,8 @@ export default function RegistersScreen() {
         setIdentityCard(res.data.identityCard || '');
         setFullName(res.data.fullName || '');
         setDateOfBirth(res.data.dateOfBirth || '');
-        setGender(res.data.gender || 'male'); 
+        // Backend/model expects 'Nam' | 'Nữ' | 'Khác'
+        setGender(res.data.gender || 'Khác'); 
         setAddress(res.data.address || '');
         setStep(4);
       } else {
@@ -485,8 +486,8 @@ export default function RegistersScreen() {
             <Image source={logo} style={{ width: 80, height: 80, resizeMode: 'contain' }} />
           </View>
 
-          <Text style={{ fontWeight: '600', marginBottom: 8 }}>
-            Thông tin nhận diện từ CCCD (có trường không cho chỉnh)
+          <Text style={{ fontWeight: '600', marginBottom: 8 , color: '#000' }}>
+            Thông tin nhận diện từ CCCD 
           </Text>
 
          
@@ -503,8 +504,11 @@ export default function RegistersScreen() {
 
        
           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Toggle label="Nam" active={gender === 'male'} disabled onPress={() => {}} />
-            <Toggle label="Nữ" active={gender === 'female'} disabled onPress={() => {}} />
+            {gender === 'Nam' ? (
+              <Toggle label="Nam" active disabled onPress={() => {}} />
+            ) : gender === 'Nữ' ? (
+              <Toggle label="Nữ" active disabled onPress={() => {}} />
+            ) : null}
           </View>
 
           
