@@ -30,6 +30,43 @@ const BORDER = '#E6EDFF';
 
 const HEADER_H = 80;
 
+const PasswordField = ({
+  label,
+  value,
+  onChangeText,
+  secure,
+  onToggle,
+  placeholder,
+  iconName = 'lock-closed-outline',
+}) => (
+  <>
+    <Text style={styles.label}>{label}</Text>
+    <View style={styles.inputRow}>
+      <Ionicons
+        name={iconName}
+        size={18}
+        color="#8EA5FF"
+        style={styles.leftIcon}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder={placeholder}
+        placeholderTextColor="#9AA4B2"
+        secureTextEntry={!secure}
+        value={value}
+        onChangeText={onChangeText}
+        autoCapitalize="none"
+      />
+      <TouchableOpacity
+        style={styles.eyeBtn}
+        onPress={onToggle}
+        activeOpacity={0.8}
+      >
+        <Ionicons name={secure ? 'eye' : 'eye-off'} size={20} color="#7C8DB5" />
+      </TouchableOpacity>
+    </View>
+  </>
+);
 const ChangePasswordScreen = ({ navigation }) => {
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -42,8 +79,8 @@ const ChangePasswordScreen = ({ navigation }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
-  const onRefresh = useCallback(async () => {
-    // Reset all
+
+  const onRefresh = useCallback(() => {
     setOldPassword('');
     setNewPassword('');
     setConfirmPassword('');
@@ -53,7 +90,6 @@ const ChangePasswordScreen = ({ navigation }) => {
     setError('');
   }, []);
 
-  // Lấy role để điều hướng về đúng Home
   useEffect(() => {
     (async () => {
       try {
@@ -90,6 +126,7 @@ const ChangePasswordScreen = ({ navigation }) => {
 
   const handleChangePassword = async () => {
     if (!validate()) return;
+
     setLoading(true);
     try {
       const res = await userService.changePassword({
@@ -115,51 +152,8 @@ const ChangePasswordScreen = ({ navigation }) => {
     }
   };
 
-  const PasswordField = ({
-    label,
-    value,
-    onChangeText,
-    secure,
-    onToggle,
-    placeholder,
-    iconName = 'lock-closed-outline',
-  }) => (
-    <>
-      <Text style={styles.label}>{label}</Text>
-      <View style={styles.inputRow}>
-        <Ionicons
-          name={iconName}
-          size={18}
-          color="#8EA5FF"
-          style={styles.leftIcon}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder={placeholder}
-          placeholderTextColor="#9AA4B2"
-          secureTextEntry={!secure}
-          value={value}
-          onChangeText={onChangeText}
-          autoCapitalize="none"
-        />
-        <TouchableOpacity
-          style={styles.eyeBtn}
-          onPress={onToggle}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name={secure ? 'eye' : 'eye-off'}
-            size={20}
-            color="#7C8DB5"
-          />
-        </TouchableOpacity>
-      </View>
-    </>
-  );
-
   return (
     <SafeAreaView style={styles.screen}>
-      {/* Header giống list booking */}
       <View style={styles.headerWrap}>
         <View style={styles.headerRow}>
           {navigation.canGoBack() ? (
@@ -176,9 +170,7 @@ const ChangePasswordScreen = ({ navigation }) => {
 
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Thay đổi mật khẩu</Text>
-            <Text style={styles.headerSubtitle}>
-              Bảo vệ tài khoản của bạn
-            </Text>
+            <Text style={styles.headerSubtitle}>Bảo vệ tài khoản của bạn</Text>
           </View>
 
           <TouchableOpacity
@@ -201,7 +193,6 @@ const ChangePasswordScreen = ({ navigation }) => {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Hướng dẫn ngắn */}
           <View style={styles.hintBox}>
             <Ionicons
               name="shield-checkmark-outline"
@@ -216,13 +207,12 @@ const ChangePasswordScreen = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Fields */}
           <PasswordField
             label="Mật khẩu cũ"
             value={oldPassword}
             onChangeText={setOldPassword}
             secure={showOld}
-            onToggle={() => setShowOld(v => !v)}
+            onToggle={() => setShowOld(!showOld)}
             placeholder="Nhập mật khẩu cũ"
             iconName="key-outline"
           />
@@ -231,7 +221,7 @@ const ChangePasswordScreen = ({ navigation }) => {
             value={newPassword}
             onChangeText={setNewPassword}
             secure={showNew}
-            onToggle={() => setShowNew(v => !v)}
+            onToggle={() => setShowNew(!showNew)}
             placeholder="Nhập mật khẩu mới"
           />
           <PasswordField
@@ -239,20 +229,22 @@ const ChangePasswordScreen = ({ navigation }) => {
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secure={showConfirm}
-            onToggle={() => setShowConfirm(v => !v)}
+            onToggle={() => setShowConfirm(!showConfirm)}
             placeholder="Nhập lại mật khẩu mới"
             iconName="repeat-outline"
           />
 
-          {/* Lỗi */}
           {error ? (
             <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+              <Ionicons
+                name="alert-circle-outline"
+                size={18}
+                color="#B91C1C"
+              />
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
-          {/* Button */}
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleChangePassword}
@@ -279,7 +271,6 @@ export default ChangePasswordScreen;
 const styles = StyleSheet.create({
   screen: { flex: 1 },
 
-  /* Header */
   headerWrap: {
     backgroundColor: HEADER_COLOR,
     paddingHorizontal: wp('4%'),
@@ -297,11 +288,13 @@ const styles = StyleSheet.create({
       android: { elevation: 8 },
     }),
   },
+
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+
   iconBtn: {
     width: 40,
     height: 40,
@@ -311,6 +304,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconBtnPlaceholder: { width: 40, height: 40 },
+
   headerCenter: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
   headerTitle: {
     color: '#FFFFFF',
@@ -324,7 +318,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* Content */
   container: {
     paddingHorizontal: 16,
     paddingTop: 14,
@@ -346,6 +339,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 4,
   },
+
   leftIcon: {
     position: 'absolute',
     left: 12,
@@ -353,6 +347,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 1,
   },
+
   input: {
     borderWidth: 1,
     borderColor: BORDER,
@@ -373,6 +368,7 @@ const styles = StyleSheet.create({
       android: { elevation: 1 },
     }),
   },
+
   eyeBtn: {
     position: 'absolute',
     right: 12,
@@ -391,6 +387,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F7FF',
     marginBottom: 8,
   },
+
   hintTitle: { fontWeight: '700', color: TEXT, marginBottom: 2 },
   hintText: { color: SUB, fontSize: 13, marginTop: 2 },
 
@@ -424,6 +421,8 @@ const styles = StyleSheet.create({
       android: { elevation: 2 },
     }),
   },
+
   buttonDisabled: { backgroundColor: '#94A3B8' },
+
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
