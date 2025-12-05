@@ -70,10 +70,20 @@ class FloatingCheckinService : Service() {
     private var ringtone: Ringtone? = null
     private var vibrator: Vibrator? = null
 
-    // Hẹn giờ dừng chuông + rung sau 1 phút
+    // Chu kỳ chuông + rung: mỗi 60s, reo 15s
     private val alertFeedbackHandler = Handler(Looper.getMainLooper())
-    private var stopFeedbackRunnable: Runnable? = null
-    private val feedbackDurationMs = 60_000L
+
+    // Runnable dừng 1 nhịp reo + rung
+    private var pulseStopRunnable: Runnable? = null
+    // Runnable bắt đầu lại nhịp tiếp theo sau 45s nghỉ
+    private var pulseStartRunnable: Runnable? = null
+
+    private val feedbackPulseMs = 15_000L      // reo 15 giây
+    private val feedbackIntervalMs = 60_000L   // mỗi 60 giây 1 lần
+
+    // 🆕 Cờ chặn spam vuốt / xử lý song song, tránh quá tải & kẹt trạng thái
+    @Volatile
+    private var isHandlingSwipe: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -291,17 +301,27 @@ class FloatingCheckinService : Service() {
         root.setOnTouchListener(object : View.OnTouchListener {
             var startY = 0f
             var originalTranslationY = 0f
+            var hasMoved = false
 
             override fun onTouch(v: View, event: MotionEvent): Boolean {
+                if (isHandlingSwipe) {
+                    // Đang xử lý 1 swipe trước đó (gửi API, ẩn panel, ...) → bỏ qua swipe mới
+                    return true
+                }
+
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         startY = event.rawY
                         originalTranslationY = gestureArea.translationY
+                        hasMoved = false
                         return true
                     }
 
                     MotionEvent.ACTION_MOVE -> {
                         val dy = event.rawY - startY
+                        if (kotlin.math.abs(dy) > dp(4)) {
+                            hasMoved = true
+                        }
                         val maxOffset = dp(80).toFloat()
                         val newTrans = (originalTranslationY + dy).coerceIn(-maxOffset, maxOffset)
                         // chỉ di chuyển nút, không di chuyển nền
@@ -311,7 +331,16 @@ class FloatingCheckinService : Service() {
 
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         val dy = event.rawY - startY
-                        val threshold = dp(40).toFloat()
+                        val threshold = dp(24).toFloat() // 🆕 giảm ngưỡng để vuốt nhẹ cũng ăn
+
+                        if (!hasMoved) {
+                            // Chạm nhẹ, không vuốt → trả nút về vị trí cũ
+                            gestureArea.animate()
+                                .translationY(originalTranslationY)
+                                .setDuration(120)
+                                .start()
+                            return true
+                        }
 
                         when {
                             dy < -threshold -> {
@@ -382,6 +411,9 @@ class FloatingCheckinService : Service() {
         // Dừng auto hide và feedback
         cancelAutoHide()
         stopAlertFeedback()
+
+        // Cho phép vuốt lại lần sau
+        isHandlingSwipe = false
     }
 
     // ============================================================
@@ -390,42 +422,57 @@ class FloatingCheckinService : Service() {
 
     /** Người dùng vuốt chọn */
     private fun onSwipeChoice(choice: String) {
+        if (isHandlingSwipe) {
+            Log.d(TAG, "⏳ Swipe ignored: already handling previous swipe")
+            return
+        }
+        isHandlingSwipe = true
         Log.d(TAG, "👆 Swipe choice: $choice — sending")
 
         // 🆕 Nếu vuốt xuống (phys_unwell) → xử lý đặc biệt
         if (choice == "phys_unwell") {
             Thread {
-                // 1. Gửi checkin để đánh dấu đã vuốt (cập nhật lastCheckinAt trên SERVER)
-                val okCheckin = sendCheckin(choice)
-
-                Handler(Looper.getMainLooper()).post {
-                    if (okCheckin) {
-                        Toast.makeText(
-                            this,
-                            "🚨 Đang gửi cảnh báo khẩn cấp...",
-                            Toast.LENGTH_SHORT
-                        ).show()
-
-                        // 2. Lưu timestamp local + cập nhật lastCheckinAt trên THIẾT BỊ NÀY
-                        //    (thiết bị khác sẽ sync qua fetchStatusSafe() từ server)
-                        setLocalCheckinNow()
-
-                        // 3. Ẩn panel (dừng chuông + rung)
-                        hideAlertPanel()
-
-                        // 4. Emit event sang React Native để gọi handleEmergency
+                var okCheckin = false
+                try {
+                    // 1. Gửi checkin để đánh dấu đã vuốt (cập nhật lastCheckinAt trên SERVER)
+                    okCheckin = sendCheckin(choice)
+                } finally {
+                    Handler(Looper.getMainLooper()).post {
                         try {
-                            FloatingCheckinModule.sendEmergencyEvent(choice)
-                            Log.d(TAG, "✅ Emitted emergency event to React Native")
+                            if (okCheckin) {
+                                Toast.makeText(
+                                    this,
+                                    "🚨 Đang gửi cảnh báo khẩn cấp...",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+
+                                // 2. Lưu timestamp local + cập nhật lastCheckinAt trên THIẾT BỊ NÀY
+                                //    (thiết bị khác sẽ sync qua fetchStatusSafe() từ server)
+                                setLocalCheckinNow()
+
+                                // 3. Ẩn panel (dừng chuông + rung)
+                                hideAlertPanel()
+
+                                // 4. Emit event sang React Native để gọi handleEmergency
+                                try {
+                                    FloatingCheckinModule.sendEmergencyEvent(choice)
+                                    Log.d(TAG, "✅ Emitted emergency event to React Native")
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "❌ Failed to emit event: ${e.message}")
+                                }
+                            } else {
+                                Toast.makeText(
+                                    this,
+                                    "❌ Gửi thất bại. Thử lại sau.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                // Cho phép vuốt lại nếu thất bại
+                                isHandlingSwipe = false
+                            }
                         } catch (e: Exception) {
-                            Log.e(TAG, "❌ Failed to emit event: ${e.message}")
+                            Log.e(TAG, "UI error after phys_unwell swipe: ${e.message}")
+                            isHandlingSwipe = false
                         }
-                    } else {
-                        Toast.makeText(
-                            this,
-                            "❌ Gửi thất bại. Thử lại sau.",
-                            Toast.LENGTH_SHORT
-                        ).show()
                     }
                 }
             }.start()
@@ -434,31 +481,42 @@ class FloatingCheckinService : Service() {
 
         // Xử lý cho các choice khác (safe, etc.)
         Thread {
-            // 1. Gửi checkin để cập nhật lastCheckinAt trên SERVER
-            val okCheckin = sendCheckin(choice)
-            // 2. Gửi choice notify (optional)
-            val okNotify = sendChoiceNotify(choice)
-
-            Handler(Looper.getMainLooper()).post {
-                if (okCheckin) {
-                    Toast.makeText(
-                        this,
-                        when (choice) {
-                            "safe" -> "✅ Đã xác nhận: Hôm nay an toàn"
-                            else -> "💬 Đã báo"
-                        },
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    // Vuốt xong → đánh dấu đã check-in cho KHUNG GIỜ HIỆN TẠI trên THIẾT BỊ NÀY
-                    // Thiết bị khác sẽ đọc cùng lastCheckinAt từ server
-                    setLocalCheckinNow()
-                    hideAlertPanel()
-                } else {
-                    Toast.makeText(
-                        this,
-                        "❌ Gửi thất bại. Thử lại sau.",
-                        Toast.LENGTH_SHORT
-                    ).show()
+            var okCheckin = false
+            var okNotify = false
+            try {
+                // 1. Gửi checkin để cập nhật lastCheckinAt trên SERVER
+                okCheckin = sendCheckin(choice)
+                // 2. Gửi choice notify (optional)
+                okNotify = sendChoiceNotify(choice)
+            } finally {
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        if (okCheckin) {
+                            Toast.makeText(
+                                this,
+                                when (choice) {
+                                    "safe" -> "✅ Đã xác nhận: Hôm nay an toàn"
+                                    else -> "💬 Đã báo"
+                                },
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            // Vuốt xong → đánh dấu đã check-in cho KHUNG GIỜ HIỆN TẠI trên THIẾT BỊ NÀY
+                            // Thiết bị khác sẽ đọc cùng lastCheckinAt từ server
+                            setLocalCheckinNow()
+                            hideAlertPanel()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                "❌ Gửi thất bại. Thử lại sau.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            // Cho phép vuốt lại nếu thất bại
+                            isHandlingSwipe = false
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "UI error after safe/other swipe: ${e.message}")
+                        isHandlingSwipe = false
+                    }
                 }
             }
         }.start()
@@ -470,10 +528,13 @@ class FloatingCheckinService : Service() {
 
     private fun startAlertFeedback() {
         try {
-            // Hủy hẹn cũ nếu có
-            stopFeedbackRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
-            stopFeedbackRunnable = null
+            // Hủy mọi runnable cũ nếu còn
+            pulseStopRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+            pulseStartRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+            pulseStopRunnable = null
+            pulseStartRunnable = null
 
+            // 🔔 BẮT ĐẦU 1 NHỊP REO + RUNG (15s)
             vibrator?.let { vib ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     val effect = VibrationEffect.createWaveform(
@@ -494,21 +555,46 @@ class FloatingCheckinService : Service() {
             }
             ringtone?.play()
 
-            // Hẹn dừng chuông + rung sau 1 phút
-            stopFeedbackRunnable = Runnable {
-                stopAlertFeedback()
+            // Sau 15s thì dừng nhịp hiện tại, rồi nếu panel vẫn đang hiển thị
+            // thì hẹn 45s sau reo lại (tổng chu kỳ 60s).
+            pulseStopRunnable = Runnable {
+                try {
+                    vibrator?.cancel()
+                } catch (_: Exception) {
+                }
+                try {
+                    ringtone?.stop()
+                } catch (_: Exception) {
+                }
+
+                // Nếu overlay vẫn còn hiển thị thì 45s nữa reo lại
+                if (overlayView != null) {
+                    pulseStartRunnable = Runnable {
+                        startAlertFeedback()
+                    }
+                    alertFeedbackHandler.postDelayed(
+                        pulseStartRunnable!!,
+                        feedbackIntervalMs - feedbackPulseMs // 60s - 15s = 45s nghỉ
+                    )
+                } else {
+                    pulseStartRunnable = null
+                }
             }
-            alertFeedbackHandler.postDelayed(stopFeedbackRunnable!!, feedbackDurationMs)
+
+            alertFeedbackHandler.postDelayed(pulseStopRunnable!!, feedbackPulseMs)
         } catch (e: Exception) {
             Log.w(TAG, "startAlertFeedback error: ${e.message}")
         }
     }
 
     private fun stopAlertFeedback() {
-        // Hủy hẹn dừng nếu còn
-        stopFeedbackRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
-        stopFeedbackRunnable = null
+        // Hủy mọi chu kỳ reo + nghỉ
+        pulseStopRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+        pulseStartRunnable?.let { alertFeedbackHandler.removeCallbacks(it) }
+        pulseStopRunnable = null
+        pulseStartRunnable = null
 
+        // Tắt rung + chuông ngay lập tức
         try {
             vibrator?.cancel()
         } catch (_: Exception) {
@@ -713,6 +799,9 @@ class FloatingCheckinService : Service() {
                 if (serverMs != null) {
                     lastCheckinAt = serverMs
                     saveLocalState(serverMs, newTz)
+                } else {
+                    // Nếu server trả null lần đầu tiên → coi như chưa từng check-in
+                    lastCheckinAt = null
                 }
                 tzId = newTz
             }
@@ -739,11 +828,6 @@ class FloatingCheckinService : Service() {
      *          + lastCheckinAt < activeStart → HIỂN THỊ (chưa vuốt trong KHUNG GIỜ HIỆN TẠI).
      *          + lastCheckinAt >= activeStart → KHÔNG HIỂN THỊ (đã vuốt ở ÍT NHẤT 1 THIẾT BỊ;
      *              các thiết bị khác cũng thấy ẩn vì xài chung lastCheckinAt).
-     *
-     *  ✅ Quan trọng:
-     *      - Trong shouldShowNow() KHÔNG dùng getLocalLastCheckinMs() nữa,
-     *        để tránh mỗi máy tự suy đoán khác nhau.
-     *      - Đồng bộ dựa trên giá trị lastCheckinAt từ server → nhiều máy / nhiều wifi vẫn đúng.
      */
     private fun shouldShowNow(): Boolean {
         if (token.isNullOrEmpty() || baseUrl.isNullOrEmpty()) {
@@ -821,7 +905,7 @@ class FloatingCheckinService : Service() {
 
     private fun restoreLocalState() {
         val p = getPrefs()
-        val ms =
+        val ms: Long? =
             if (p.contains(KEY_LAST_CHECKIN_MS)) p.getLong(KEY_LAST_CHECKIN_MS, 0L) else null
         val tz = p.getString(KEY_TZID, tzId) ?: tzId
         if (ms != null && ms > 0) lastCheckinAt = ms
@@ -830,8 +914,9 @@ class FloatingCheckinService : Service() {
 
     private fun getLocalLastCheckinMs(): Long? {
         val p = getPrefs()
-        return if (p.contains(KEY_LAST_CHECKIN_MS)) p.getLong(KEY_LAST_CHECKIN_MS, 0L)
-            .takeIf { it > 0 } else null
+        return if (p.contains(KEY_LAST_CHECKIN_MS)) {
+            p.getLong(KEY_LAST_CHECKIN_MS, 0L).takeIf { it > 0 }
+        } else null
     }
 
     /** Ghi thời điểm check-in (khi vuốt) → dùng để panel tắt ngay trên THIẾT BỊ NÀY,

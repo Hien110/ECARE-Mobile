@@ -1,4 +1,4 @@
-// src/screens/Auth/RegistersScreen.jsx
+
 import { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -19,7 +19,7 @@ import { launchCamera } from 'react-native-image-picker';
 import { userService } from '../../services/userService';
 import logo from '../../assets/logoBrand.png';
 
-// ===== Button =====
+
 const Btn = ({ title, onPress, disabled }) => (
   <TouchableOpacity
     onPress={disabled ? undefined : onPress}
@@ -36,7 +36,7 @@ const Btn = ({ title, onPress, disabled }) => (
   </TouchableOpacity>
 );
 
-// ===== Toggle (support disabled) =====
+
 const Toggle = ({ active, label, onPress, disabled }) => (
   <TouchableOpacity
     onPress={disabled ? undefined : onPress}
@@ -59,7 +59,7 @@ const Toggle = ({ active, label, onPress, disabled }) => (
   </TouchableOpacity>
 );
 
-// Phone VN đơn giản
+
 const isValidPhone = (p) => /^\s*(\+?84|0)\d{9}\s*$/.test(String(p || ''));
 
 export default function RegistersScreen() {
@@ -74,31 +74,31 @@ export default function RegistersScreen() {
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState(false);
 
-  // Thông tin CCCD (đến từ backend)
+  
   const [identityCard, setIdentityCard] = useState('');
   const [fullName, setFullName] = useState('');
-  const [dateOfBirth, setDateOfBirth] = useState(''); // readonly
-  const [gender, setGender] = useState('male');        // readonly (nam/nữ)
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [gender, setGender] = useState('Khác');        
   const [address, setAddress] = useState('');
 
-  // Ảnh data URL + mime
-  const [frontImage, setFrontImage] = useState(null);
-  const [backImage, setBackImage] = useState(null);
-  const [frontMime, setFrontMime] = useState('image/jpeg');
-  const [backMime, setBackMime] = useState('image/jpeg');
+  
+  const [frontPreview, setFrontPreview] = useState(null);
+  const [backPreview, setBackPreview] = useState(null);
+  const [frontFile, setFrontFile] = useState(null);
+  const [backFile, setBackFile] = useState(null);
 
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [phoneError, setPhoneError] = useState('');
 
-  // ===== Countdown OTP =====
+  
   useEffect(() => {
     if (step !== 2.1 || countdown <= 0) return;
     const timer = setInterval(() => setCountdown((p) => (p > 0 ? p - 1 : 0)), 1000);
     return () => clearInterval(timer);
   }, [step, countdown]);
 
-  // ===== Cleanup session khi thoát flow =====
+
   useEffect(() => {
     return () => {
       cleanupOnExit();
@@ -118,7 +118,7 @@ export default function RegistersScreen() {
     setStep(newStep);
   };
 
-  // ===== OTP =====
+  
   const handleSendOTP = async () => {
     if (!isValidPhone(phoneNumber)) {
       setPhoneError('Số điện thoại không hợp lệ');
@@ -162,7 +162,7 @@ export default function RegistersScreen() {
     }
   };
 
-  // ===== Quyền camera (Android) =====
+ 
   const requestCameraPermissions = async () => {
     if (Platform.OS !== 'android') return true;
     try {
@@ -185,7 +185,7 @@ export default function RegistersScreen() {
     }
   };
 
-  // ===== Chụp ảnh (base64) =====
+  // ===== Chụp ảnh (file uri + preview base64) =====
   const captureSide = async (side) => {
     const hasPerm = await requestCameraPermissions();
     if (!hasPerm) return null;
@@ -202,27 +202,28 @@ export default function RegistersScreen() {
     if (result?.didCancel || result?.errorCode) return null;
 
     const asset = result?.assets?.[0];
-    if (!asset?.base64 || !asset?.type) {
+    if (!asset?.uri || !asset?.type) {
       Alert.alert('Lỗi', 'Không nhận được dữ liệu ảnh');
       return null;
     }
 
     const mime = asset.type || 'image/jpeg';
-    const dataUrl = `data:${mime};base64,${asset.base64}`;
+    const nameGuess = asset.fileName || `${side}.jpg`;
+    const preview = asset.base64 ? `data:${mime};base64,${asset.base64}` : null;
 
     if (side === 'front') {
-      setFrontImage(dataUrl);
-      setFrontMime(mime);
+      setFrontPreview(preview);
+      setFrontFile({ uri: asset.uri, type: mime, name: nameGuess });
     }
     if (side === 'back') {
-      setBackImage(dataUrl);
-      setBackMime(mime);
+      setBackPreview(preview);
+      setBackFile({ uri: asset.uri, type: mime, name: nameGuess });
     }
   };
 
-  // ===== Upload 2 ảnh để backend trích xuất =====
+ 
   const handleExtractFromImages = async () => {
-    if (!frontImage || !backImage) {
+    if (!frontFile || !backFile) {
       Alert.alert('Thiếu ảnh', 'Vui lòng chụp đủ 2 mặt CCCD.');
       return;
     }
@@ -232,31 +233,48 @@ export default function RegistersScreen() {
       setLoading(true);
       const res = await userService.uploadCCCD({
         phoneNumber: phoneNumber.trim(),
-        frontImageBase64: frontImage,
-        backImageBase64: backImage,
-        frontMime,
-        backMime,
+        frontFile,
+        backFile,
       });
 
       if (res?.success && res?.data) {
         setIdentityCard(res.data.identityCard || '');
         setFullName(res.data.fullName || '');
         setDateOfBirth(res.data.dateOfBirth || '');
-        setGender(res.data.gender || 'male'); // nếu backend trả 'other' thì UI không cho chọn 'Khác'
+        // Backend/model expects 'Nam' | 'Nữ' | 'Khác'
+        setGender(res.data.gender || 'Khác'); 
         setAddress(res.data.address || '');
         setStep(4);
       } else {
-        Alert.alert('Lỗi', res?.message || 'Không thể gửi thông tin CCCD');
+        const msg = res?.message || 'Không thể gửi thông tin CCCD';
+        if (res?.nextStep === 'enterPhone') {
+          Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+          setStep(2); // quay lại bước nhập số điện thoại
+        } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+          Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+          setStep(2.1);
+        } else {
+          Alert.alert('Lỗi', msg);
+        }
       }
     } catch (err) {
       console.error('handleExtractFromImages error:', err);
-      Alert.alert('Lỗi', err?.message || 'Không thể trích xuất');
+      const msg = err?.message || 'Không thể trích xuất';
+      if (err?.response?.data?.nextStep === 'enterPhone') {
+        Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+        setStep(2);
+      } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+        Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+        setStep(2.1);
+      } else {
+        Alert.alert('Lỗi', msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // ===== Hoàn tất đăng ký =====
+  
   const handleComplete = async () => {
     if (!password || password.length < 6) {
       Alert.alert('Mật khẩu không hợp lệ', 'Mật khẩu phải có ít nhất 6 ký tự');
@@ -269,19 +287,37 @@ export default function RegistersScreen() {
       const res = await userService.completeProfile({
         phoneNumber: phoneNumber.trim(),
         password,
-        fullName,     // cho phép chỉnh
-        gender,       // readonly nhưng vẫn gửi
-        dateOfBirth,  // readonly
-        address,      // cho phép chỉnh
+        fullName,     
+        gender,     
+        dateOfBirth,  
+        address,    
       });
       if (res.success) {
         Alert.alert('Đăng Ký Thành Công');
         nav.navigate('Login');
       } else {
-        Alert.alert('Lỗi', res.message || 'Hoàn tất không thành công');
+        const msg = res?.message || 'Hoàn tất không thành công';
+        if (res?.nextStep === 'enterPhone') {
+          Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+          setStep(2);
+        } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+          Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+          setStep(2.1);
+        } else {
+          Alert.alert('Lỗi', msg);
+        }
       }
     } catch (e) {
-      Alert.alert('Lỗi', e?.message || 'Hoàn tất không thành công');
+      const msg = e?.message || 'Hoàn tất không thành công';
+      if (e?.response?.data?.nextStep === 'enterPhone') {
+        Alert.alert('Phiên hết hạn', 'Vui lòng nhập lại số điện thoại để bắt đầu.');
+        setStep(2);
+      } else if (/Session\s+đăng ký tạm thời|Session\s+hết hạn/i.test(msg)) {
+        Alert.alert('Phiên hết hạn', 'Vui lòng xác thực OTP lại để tiếp tục.');
+        setStep(2.1);
+      } else {
+        Alert.alert('Lỗi', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -289,13 +325,13 @@ export default function RegistersScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, padding: 16 }}>
-      {/* STEP 1: chọn vai trò */}
+ 
       {step === 1 && (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 }}>
           <View style={{ marginTop: 25 }}>
             <Image source={logo} style={{ width: 200, height: 100, resizeMode: 'contain' }} />
           </View>
-          <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' }}>
+          <Text style={{ fontSize: 22, fontWeight: 'bold', marginBottom: 8, textAlign: 'center' , color: '#000'  }}>
             E-CARE{'\n'}Chào mừng bạn!
           </Text>
           <Text style={{ fontSize: 14, color: '#666', marginBottom: 24, textAlign: 'center' }}>
@@ -313,7 +349,7 @@ export default function RegistersScreen() {
           </TouchableOpacity>
 
           <Btn title="TIẾP TỤC" onPress={() => setStep(2)} />
-          <Text style={{ marginTop: 16 }}>
+          <Text style={{ marginTop: 16 , color: '#000'}}>
             Bạn đã có tài khoản{' '}
             <Text onPress={() => nav.navigate('Login')} style={{ color: '#2563eb', fontWeight: '700' }}>
               Đăng Nhập ngay
@@ -322,7 +358,7 @@ export default function RegistersScreen() {
         </View>
       )}
 
-      {/* STEP 2: nhập sđt */}
+     
       {step === 2 && (
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(1)}>
@@ -342,7 +378,7 @@ export default function RegistersScreen() {
           {phoneError ? <Text style={styles.error}>{phoneError}</Text> : null}
 
           <Btn title="Đăng ký" onPress={handleSendOTP} disabled={loading} />
-          <Text style={{ fontSize: 14, textAlign: 'center', marginTop: 16 }}>
+          <Text style={{ fontSize: 14, textAlign: 'center', marginTop: 16 ,color: '#000' }}>
             Bạn đã có tài khoản{' '}
             <Text onPress={() => nav.navigate('Login')} style={{ color: '#2563eb', fontWeight: '700' }}>
               Đăng Nhập ngay
@@ -351,7 +387,7 @@ export default function RegistersScreen() {
         </View>
       )}
 
-      {/* STEP 2.1: OTP */}
+   
       {step === 2.1 && (
         <View style={{ flex: 1, paddingTop: 80, alignItems: 'center' }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(2)}>
@@ -412,7 +448,7 @@ export default function RegistersScreen() {
         </View>
       )}
 
-      {/* STEP 3: Chụp CCCD 2 mặt */}
+     
       {step === 3 && (
         <View style={{ marginTop: 20 }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(2.1)}>
@@ -425,21 +461,21 @@ export default function RegistersScreen() {
 
           <Text style={{ color: '#000' }}>Chụp mặt trước CCCD</Text>
           <Btn title="Chụp mặt trước" onPress={() => captureSide('front')} />
-          {frontImage ? <Image source={{ uri: frontImage }} style={styles.cccdImg} /> : null}
+          {frontPreview ? <Image source={{ uri: frontPreview }} style={styles.cccdImg} /> : null}
 
           <Text style={{ marginTop: 12, color: '#000' }}>Chụp mặt sau CCCD</Text>
           <Btn title="Chụp mặt sau" onPress={() => captureSide('back')} />
-          {backImage ? <Image source={{ uri: backImage }} style={styles.cccdImg} /> : null}
+          {backPreview ? <Image source={{ uri: backPreview }} style={styles.cccdImg} /> : null}
 
           <Btn
             title="Trích xuất & gửi"
             onPress={handleExtractFromImages}
-            disabled={!(frontImage && backImage) || loading}
+            disabled={!(frontFile && backFile) || loading}
           />
         </View>
       )}
 
-      {/* STEP 4: hiển thị info + chỉnh/readonly */}
+    
       {step === 4 && (
         <View style={{ marginTop: 20 }}>
           <TouchableOpacity style={styles.backBtn} onPress={() => handleBack(3)}>
@@ -450,14 +486,14 @@ export default function RegistersScreen() {
             <Image source={logo} style={{ width: 80, height: 80, resizeMode: 'contain' }} />
           </View>
 
-          <Text style={{ fontWeight: '600', marginBottom: 8 }}>
-            Thông tin nhận diện từ CCCD (có trường không cho chỉnh)
+          <Text style={{ fontWeight: '600', marginBottom: 8 , color: '#000' }}>
+            Thông tin nhận diện từ CCCD 
           </Text>
 
-          {/* Cho phép chỉnh */}
+         
           <TextInput placeholder="Họ và tên" value={fullName} onChangeText={setFullName} style={styles.input} />
 
-          {/* Không cho chỉnh ngày sinh */}
+         
           <TextInput
             placeholder="Ngày sinh (dd/mm/yyyy)"
             value={dateOfBirth}
@@ -466,16 +502,19 @@ export default function RegistersScreen() {
             style={styles.readonly}
           />
 
-          {/* Không cho chỉnh giới tính – chỉ hiển thị 2 lựa chọn Nam/Nữ, bỏ Khác */}
+       
           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
-            <Toggle label="Nam" active={gender === 'male'} disabled onPress={() => {}} />
-            <Toggle label="Nữ" active={gender === 'female'} disabled onPress={() => {}} />
+            {gender === 'Nam' ? (
+              <Toggle label="Nam" active disabled onPress={() => {}} />
+            ) : gender === 'Nữ' ? (
+              <Toggle label="Nữ" active disabled onPress={() => {}} />
+            ) : null}
           </View>
 
-          {/* Số CCCD readonly */}
+          
           <TextInput placeholder="Số CCCD" editable={false} value={identityCard} style={styles.readonly} />
 
-          {/* Cho phép chỉnh địa chỉ */}
+        
           <TextInput
             placeholder="Địa chỉ thường trú"
             value={address}
@@ -499,7 +538,7 @@ export default function RegistersScreen() {
   );
 }
 
-/* ===== Styles ===== */
+
 const styles = {
   backBtn: { position: 'absolute', top: 20, left: 20, zIndex: 20 },
   input: { borderWidth: 1, borderColor: '#ccc', padding: 12, borderRadius: 8, marginTop: 12, color: '#000' },
@@ -523,6 +562,7 @@ const styles = {
     padding: 16,
     marginBottom: 16,
   }),
+
   roleTitle: { fontSize: 18, fontWeight: '600', color: '#007bff', marginBottom: 4 },
   roleDesc: { fontSize: 14, color: '#666' },
   cccdImg: { width: '100%', height: 180, marginTop: 8, borderRadius: 8 },

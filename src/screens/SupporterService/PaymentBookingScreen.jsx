@@ -172,9 +172,22 @@ const PaymentBookingScreen = ({ navigation, route }) => {
   };
 
   const handleGoHome = () => {
-    setShowSuccessModal(false);
+  setShowSuccessModal(false);
+
+  // Ưu tiên role lấy từ userBooking (getUser), fallback sang user từ route
+  const role = userBooking?.role || user?.role;
+
+  if (role === 'elderly') {
+    // Trang chủ người cao tuổi
+    navigation.navigate('ElderHome');
+  } else if (role === 'family') {
+    // Trang chủ người thân
     navigation.navigate('FamilyMemberHome');
-  };
+  } else {
+    // Nếu không rõ role thì quay lại màn trước cho an toàn
+    navigation.goBack();
+  }
+};
 
   return (
     <SafeAreaView style={styles.container}>

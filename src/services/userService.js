@@ -129,31 +129,42 @@ export const userService = {
     }
   },
 
-  /* ========== BƯỚC 3: Upload CCCD -> OCR (server làm) -> lưu tạm Redis ========== */
-  uploadCCCD: async ({
-    phoneNumber,
-    frontImageBase64,
-    backImageBase64,
-    frontMime = 'image/jpeg',
-    backMime = 'image/jpeg',
-  }) => {
+  /* ========== BƯỚC 3: Upload CCCD (multipart) -> OCR (server) -> lưu tạm Redis ========== */
+  uploadCCCD: async ({ phoneNumber, frontFile, backFile }) => {
     try {
-      const body = {
-        phoneNumber,
-        frontImageBase64: asDataUrl(frontImageBase64, frontMime),
-        backImageBase64: asDataUrl(backImageBase64, backMime),
-        frontMime,
-        backMime,
-      };
-      const res = await api.post('/users/register/kyc/cccd', body);
+      const form = new FormData();
+      form.append('phoneNumber', (phoneNumber ?? '').trim());
+      if (frontFile) {
+        form.append('frontImage', {
+          uri: frontFile.uri,
+          type: frontFile.type || 'image/jpeg',
+          name: frontFile.name || 'front.jpg',
+        });
+      }
+      if (backFile) {
+        form.append('backImage', {
+          uri: backFile.uri,
+          type: backFile.type || 'image/jpeg',
+          name: backFile.name || 'back.jpg',
+        });
+      }
+
+      const res = await api.post('/users/register/kyc/cccd', form, {
+        // thực ra có thể bỏ headers, axios tự set boundary, nhưng để vậy cũng được
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
       return {
         success: true,
         status: res.status,
-        data: res.data?.data, // {identityCard, fullName, dateOfBirth, gender, address}
+        data: res.data?.data,
         message: res.data?.message || 'Đã trích xuất CCCD',
+        nextStep: res.data?.nextStep || null,
       };
     } catch (error) {
-      return shapeAxiosError(error);
+      const shaped = shapeAxiosError(error);
+      const nextStep = error?.response?.data?.nextStep || null;
+      return { ...shaped, nextStep };
     }
   },
 
@@ -502,10 +513,10 @@ export const userService = {
     }
   },
 
-  getSupporterProfileByUserId: async (supporterId) => {
+  getSupporterProfileByUserId: async supporterId => {
     try {
-      console.log("Supporter Id Services", supporterId);
-      
+      console.log('Supporter Id Services', supporterId);
+
       const response = await api.get(
         `/users/supporter-profile/${supporterId}`,
         {

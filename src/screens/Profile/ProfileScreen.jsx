@@ -399,7 +399,7 @@ const ProfileScreen = ({ navigation }) => {
           <InfoRow
             icon="male-female-outline"
             label="Giới tính"
-            value={user?.gender}
+            value={user?.gender || 'Khác'}
           />
           <InfoRow
             icon="home-outline"

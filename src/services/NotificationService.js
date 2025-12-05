@@ -9,6 +9,7 @@ import DeadmanNotificationService from './DeadmanNotificationService';
 
 class NotificationService {
   navigationRef = null;
+  _lastDeadmanReminderAt = 0;
 
   /**
    * Khởi tạo Firebase Messaging
@@ -28,10 +29,10 @@ class NotificationService {
 
     // Tạo notification channels cho Android
     await this.createNotificationChannels();
-    
+
     // Khởi tạo Call Notification Service
     await CallNotificationService.initialize();
-    
+
     // Khởi tạo SOS Notification Service
     const SOSNotificationService = require('./SOSNotificationService').default;
     await SOSNotificationService.initialize();
@@ -79,10 +80,10 @@ class NotificationService {
 
     try {
       console.log('📱 Creating Android notification channels...');
-      
+
       // Sử dụng Firebase Messaging để tạo channels (không cần thư viện thêm)
       // Channels sẽ được tạo tự động khi nhận notification với channelId
-      
+
       console.log('✅ Notification channels ready');
     } catch (error) {
       console.error('❌ Error creating notification channels:', error);
@@ -100,11 +101,12 @@ class NotificationService {
           PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
           {
             title: 'Thông báo khẩn cấp',
-            message: 'E-Care cần quyền gửi thông báo để thông báo các cuộc gọi SOS khẩn cấp',
+            message:
+              'E-Care cần quyền gửi thông báo để thông báo các cuộc gọi SOS khẩn cấp',
             buttonNeutral: 'Hỏi lại sau',
             buttonNegative: 'Từ chối',
             buttonPositive: 'Đồng ý',
-          }
+          },
         );
 
         if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
@@ -146,8 +148,13 @@ class NotificationService {
       return token;
     } catch (error) {
       // SERVICE_NOT_AVAILABLE là lỗi tạm thời - không cần báo lỗi đỏ
-      if (error.code === 'messaging/unknown' || error.message?.includes('SERVICE_NOT_AVAILABLE')) {
-        console.warn('⚠️ FCM service temporarily unavailable, will retry later');
+      if (
+        error.code === 'messaging/unknown' ||
+        error.message?.includes('SERVICE_NOT_AVAILABLE')
+      ) {
+        console.warn(
+          '⚠️ FCM service temporarily unavailable, will retry later',
+        );
       } else {
         console.error('❌ Error getting FCM token:', error);
       }
@@ -162,7 +169,7 @@ class NotificationService {
     try {
       // Kiểm tra xem user đã đăng nhập chưa (có JWT token chưa)
       const jwtToken = await AsyncStorage.getItem('ecare_token');
-      
+
       if (!jwtToken) {
         console.log('⚠️ No JWT token found, skipping FCM token save');
         return;
@@ -206,6 +213,17 @@ class NotificationService {
     } catch {}
     return null;
   }
+  
+  _shouldSkipDeadmanReminder() {
+    const now = Date.now();
+    // Nếu trong vòng 10 giây vừa show rồi thì bỏ qua lần sau
+    if (this._lastDeadmanReminderAt && now - this._lastDeadmanReminderAt < 10_000) {
+      console.log('[NotificationService] Skip duplicate deadman_reminder');
+      return true;
+    }
+    this._lastDeadmanReminderAt = now;
+    return false;
+  }
 
   async shouldDisplayNotification(data) {
     // 1) Bắt buộc đã đăng nhập
@@ -215,20 +233,23 @@ class NotificationService {
       return false;
     }
 
-     if (data?.type === 'deadman_reminder') {
-     const currentUser = await this.getCurrentUser();
-     const role = currentUser?.role?.toLowerCase?.() || '';
-     return role === 'elderly';
-   }
+    if (data?.type === 'deadman_reminder') {
+      const currentUser = await this.getCurrentUser();
+      const role = currentUser?.role?.toLowerCase?.() || '';
+      return role === 'elderly';
+    }
 
-   if (data?.type === 'deadman_auto_sos') {
+    if (data?.type === 'deadman_auto_sos') {
       const currentUser = await this.getCurrentUser();
       const role = currentUser?.role?.toLowerCase?.() || '';
       const allowed = ['elderly', 'family', 'supporter'].includes(role);
-      console.log('[NotificationService] shouldDisplayNotification deadman_auto_sos ->', {
-        role,
-        allowed,
-      });
+      console.log(
+        '[NotificationService] shouldDisplayNotification deadman_auto_sos ->',
+        {
+          role,
+          allowed,
+        },
+      );
       return allowed;
     }
 
@@ -252,7 +273,7 @@ class NotificationService {
   async showForegroundBanner(notification, data) {
     try {
       const title = notification?.title || 'Thông báo';
-      const body  = notification?.body  || '';
+      const body = notification?.body || '';
 
       if (Platform.OS === 'android') {
         await notifee.displayNotification({
@@ -271,7 +292,11 @@ class NotificationService {
           title,
           body,
           ios: {
-            foregroundPresentationOptions: { banner: true, sound: true, badge: true },
+            foregroundPresentationOptions: {
+              banner: true,
+              sound: true,
+              badge: true,
+            },
           },
           data,
         });
@@ -290,7 +315,9 @@ class NotificationService {
       // Nếu là máy người cao tuổi → điều hướng sang ElderHome,
       // ở đó useEffect sẽ tự gọi handleEmergency()
       if (role === 'elderly') {
-        console.log('[NotificationService] Auto-SOS on ELDERLY device → navigate ElderHome');
+        console.log(
+          '[NotificationService] Auto-SOS on ELDERLY device → navigate ElderHome',
+        );
         if (this.navigationRef?.navigate) {
           try {
             this.navigationRef.navigate('ElderHome', {
@@ -323,10 +350,17 @@ class NotificationService {
   onMessageListener() {
     const unsubscribe = messaging().onMessage(async remoteMessage => {
       const { notification, data } = remoteMessage;
+      // Mở Chat khi đang foreground: chỉ hiển thị banner, điều hướng để người dùng tự bấm
+      if (data?.type === 'chat_message' && data?.conversationId) {
+        await this.showForegroundBanner(notification, data);
+        return;
+      }
 
       // 🆕 Xử lý SOS call notification (foreground - KHÔNG hiển thị)
       if (data?.type === 'sos_call') {
-        console.log('📥 [Foreground] SOS call notification received via FCM, NOT showing (Socket handles it)');
+        console.log(
+          '📥 [Foreground] SOS call notification received via FCM, NOT showing (Socket handles it)',
+        );
         // Socket.IO đã xử lý và hiển thị UI
         // KHÔNG cần hiển thị notification
         return;
@@ -338,7 +372,7 @@ class NotificationService {
         if (CallService.hasProcessedCall(data.callId)) {
           return;
         }
-        
+
         // Kiểm tra xem người hiện tại có phải là người GỌI không
         const currentUserId = await this.getCurrentUserId();
         const callerId = data?.callerId;
@@ -347,10 +381,10 @@ class NotificationService {
         if (currentUserId && callerId && currentUserId === callerId) {
           return;
         }
-        
+
         // Đánh dấu call đã được xử lý
         CallService.markCallAsProcessed(data.callId);
-        
+
         // KHI APP ĐANG MỞ (FOREGROUND): Socket đã xử lý và navigate đến IncomingCallScreen
         // KHÔNG cần xử lý gì thêm ở đây - return luôn
         return;
@@ -374,15 +408,18 @@ class NotificationService {
         return;
       } 
       else if (data?.type === 'deadman_reminder') {
+        // 🆕 Chống duplicate
+        if (this._shouldSkipDeadmanReminder()) {
+          return;
+        }
         await this.showForegroundBanner(notification, data);
         Alert.alert(
           notification?.title || 'Nhắc kiểm tra an toàn',
-          notification?.body || 'Bác có muốn xác nhận “Tôi ổn hôm nay” không ạ?',
+          notification?.body || 'Bác được nhắc kiểm tra an toàn hôm nay.',
           [
             { text: 'Để sau', style: 'cancel' },
-            { text: 'Tôi ổn hôm nay', onPress: () => this.postDeadmanCheckin() },
           ],
-          { cancelable: true }
+          { cancelable: true },
         );
       } else if (data?.type === 'deadman_alert') {
         await this.showForegroundBanner(notification, data);
@@ -391,30 +428,39 @@ class NotificationService {
           notification?.body || 'Chưa nhận được xác nhận an toàn hôm nay.',
           [
             { text: 'Bỏ qua', style: 'cancel' },
-            { text: 'Xem cảnh báo', onPress: () => this.navigateToAlertsCenter(data) },
+            {
+              text: 'Xem cảnh báo',
+              onPress: () => this.navigateToAlertsCenter(data),
+            },
           ],
-          { cancelable: true }
+          { cancelable: true },
         );
-      } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
-      // Cảnh báo: Người cao tuổi KHÔNG ỔN về SỨC KHỎE
-      const elderName = data?.elderName || data?.senderName || '';
-      const elderAvatar = data?.elderAvatar || data?.senderAvatar || '';
-      const timestamp = data?.timestamp;
+      } else if (
+        data?.type === 'deadman_choice' &&
+        data?.choice === 'phys_unwell'
+      ) {
+        // Cảnh báo: Người cao tuổi KHÔNG ỔN về SỨC KHỎE
+        const elderName = data?.elderName || data?.senderName || '';
+        const elderAvatar = data?.elderAvatar || data?.senderAvatar || '';
+        const timestamp = data?.timestamp;
 
-      await DeadmanNotificationService.showPhysUnwellNotification({
-        elderId: data?.elderId,
-        elderName,
-        elderAvatar,
-        message: notification?.body || data?.message,
-        timestamp,
-        notificationId: data?.notificationId,
-      });
+        await DeadmanNotificationService.showPhysUnwellNotification({
+          elderId: data?.elderId,
+          elderName,
+          elderAvatar,
+          message: notification?.body || data?.message,
+          timestamp,
+          notificationId: data?.notificationId,
+        });
 
         // Không hiện Alert.js nữa, vì đã có full-screen notification
         return;
       } else if (data?.type === 'deadman_auto_sos') {
         // 🆕 Auto-SOS sau 3 lần nhắc
-        console.log('[NotificationService] Foreground deadman_auto_sos received', data);
+        console.log(
+          '[NotificationService] Foreground deadman_auto_sos received',
+          data,
+        );
         await this.showDeadmanAutoSOS(notification, data);
         return;
       } else {
@@ -423,7 +469,7 @@ class NotificationService {
         Alert.alert(
           notification?.title || 'Thông báo',
           notification?.body || '',
-          [{ text: 'OK' }]
+          [{ text: 'OK' }],
         );
       }
     });
@@ -437,12 +483,43 @@ class NotificationService {
   onNotificationOpenedApp() {
     messaging().onNotificationOpenedApp(async remoteMessage => {
       const { data } = remoteMessage;
+      if (data?.type === 'chat_message' && data?.conversationId) {
+        // Điều hướng vào màn hình chat khi mở từ background
+        setTimeout(() => {
+          this.navigateToChat(data);
+        }, 800);
+        return;
+      }
 
       // Xử lý video call notification
       if (data?.type === 'video_call') {
-        // KHÔNG xử lý gì cả - vì video call đã được xử lý bởi Notifee actions
-        // hoặc background handler
-        console.log('⚠️ Video call notification opened - skipping (handled by Notifee)');
+        console.log('📲 Video call notification opened from background', data);
+
+        try {
+          if (this.navigationRef?.navigate) {
+            this.navigationRef.navigate('IncomingCallScreen', {
+              callId: data.callId,
+              conversationId: data.conversationId,
+              callType: data.callType || 'video',
+              caller: {
+                _id: data.callerId,
+                fullName: data.callerName,
+                avatar: data.callerAvatar,
+              },
+            });
+          } else {
+            CallNotificationService.handleOpenFromNotification?.(
+              data,
+              this.navigationRef,
+            );
+          }
+        } catch (e) {
+          console.error(
+            '[NotificationService] open video_call from background error:',
+            e,
+          );
+        }
+
         return;
       }
 
@@ -463,26 +540,34 @@ class NotificationService {
         }, 1000);
       }
       else if (data?.type === 'deadman_reminder') {
+        if (this._shouldSkipDeadmanReminder()) {
+          return;
+        }
         setTimeout(() => {
           Alert.alert(
             'Nhắc kiểm tra an toàn',
-            'Bác muốn xác nhận “Tôi ổn hôm nay” không ạ?',
+            'Bác được nhắc kiểm tra an toàn hôm nay.',
             [
               { text: 'Để sau', style: 'cancel' },
-              { text: 'Tôi ổn hôm nay', onPress: () => this.postDeadmanCheckin() },
             ],
-            { cancelable: true }
+            { cancelable: true },
           );
         }, 800);
       } else if (data?.type === 'deadman_alert') {
         setTimeout(() => this.navigateToAlertsCenter(data), 800);
-      } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+      } else if (
+        data?.type === 'deadman_choice' &&
+        data?.choice === 'phys_unwell'
+      ) {
         const elderName = data?.elderName || data?.senderName || '';
 
-        console.log('[NotificationService] Phys-unwell choice (background open)', {
-          elderId: data?.elderId,
-          elderName,
-        });
+        console.log(
+          '[NotificationService] Phys-unwell choice (background open)',
+          {
+            elderId: data?.elderId,
+            elderName,
+          },
+        );
 
         // Không tạo thêm notification, chỉ mở AlertsCenter nếu cần
         setTimeout(() => {
@@ -494,7 +579,10 @@ class NotificationService {
         return;
       } else if (data?.type === 'deadman_auto_sos') {
         // 🆕 Auto-SOS khi người dùng bấm vào noti (background)
-        console.log('[NotificationService] deadman_auto_sos opened from background', data);
+        console.log(
+          '[NotificationService] deadman_auto_sos opened from background',
+          data,
+        );
         const currentUser = await this.getCurrentUser();
         const role = currentUser?.role?.toLowerCase?.() || '';
 
@@ -532,18 +620,48 @@ class NotificationService {
   /**
    * Kiểm tra notification khởi động app (app đã tắt)
    */
-   getInitialNotification() {
+  getInitialNotification() {
     messaging()
       .getInitialNotification()
       .then(async remoteMessage => {
         if (remoteMessage) {
           const { data } = remoteMessage;
+          if (data?.type === 'chat_message' && data?.conversationId) {
+            // Điều hướng vào màn hình chat khi mở app từ killed state
+            setTimeout(() => {
+              this.navigateToChat(data);
+            }, 2000);
+            return;
+          }
 
           // Xử lý video call notification
           if (data?.type === 'video_call') {
-            // KHÔNG xử lý gì cả - vì video call đã được xử lý bởi Notifee actions
-            // hoặc pending actions trong App.tsx
-            console.log('⚠️ Video call notification from killed state - skipping (handled by Notifee)');
+            console.log('📲 Video call notification from killed state', data);
+
+            try {
+              if (this.navigationRef?.navigate) {
+                setTimeout(() => {
+                  this.navigationRef.navigate('IncomingCallScreen', {
+                    callId: data.callId,
+                    conversationId: data.conversationId,
+                    callType: data.callType || 'video',
+                    caller: {
+                      _id: data.callerId,
+                      fullName: data.callerName,
+                      avatar: data.callerAvatar,
+                    },
+                  });
+                }, 1500); // đợi RN, navigation mount xong
+              } else {
+                CallNotificationService.handleOpenFromKilledState?.(data);
+              }
+            } catch (e) {
+              console.error(
+                '[NotificationService] open video_call from killed state error:',
+                e,
+              );
+            }
+
             return;
           }
 
@@ -564,26 +682,34 @@ class NotificationService {
             }, 2000);
           }
           else if (data?.type === 'deadman_reminder') {
+            if (this._shouldSkipDeadmanReminder()) {
+              return;
+            }
             setTimeout(() => {
               Alert.alert(
                 'Nhắc kiểm tra an toàn',
-                'Bác muốn xác nhận “Tôi ổn hôm nay” không ạ?',
+                'Bác được nhắc kiểm tra an toàn hôm nay.',
                 [
                   { text: 'Để sau', style: 'cancel' },
-                  { text: 'Tôi ổn hôm nay', onPress: () => this.postDeadmanCheckin() },
                 ],
-                { cancelable: true }
+                { cancelable: true },
               );
             }, 2000);
           } else if (data?.type === 'deadman_alert') {
             setTimeout(() => this.navigateToAlertsCenter(data), 2000);
-          } else if (data?.type === 'deadman_choice' && data?.choice === 'phys_unwell') {
+          } else if (
+            data?.type === 'deadman_choice' &&
+            data?.choice === 'phys_unwell'
+          ) {
             const elderName = data?.elderName || data?.senderName || '';
 
-            console.log('[NotificationService] Phys-unwell choice (killed open)', {
-              elderId: data?.elderId,
-              elderName,
-            });
+            console.log(
+              '[NotificationService] Phys-unwell choice (killed open)',
+              {
+                elderId: data?.elderId,
+                elderName,
+              },
+            );
 
             setTimeout(() => {
               this.navigateToAlertsCenter({
@@ -593,7 +719,10 @@ class NotificationService {
             }, 2000);
           } else if (data?.type === 'deadman_auto_sos') {
             // 🆕 Auto-SOS khi mở app từ killed state
-            console.log('[NotificationService] deadman_auto_sos from killed state', data);
+            console.log(
+              '[NotificationService] deadman_auto_sos from killed state',
+              data,
+            );
             const currentUser = await this.getCurrentUser();
             const role = currentUser?.role?.toLowerCase?.() || '';
 
@@ -667,14 +796,42 @@ class NotificationService {
     }
   }
 
+  /**
+   * Navigate đến màn hình Chat
+   */
+  navigateToChat(data) {
+    if (!this.navigationRef) return;
+    try {
+      const conversationId = data?.conversationId;
+      const otherParticipant = {
+        _id: data?.senderId || data?.otherId,
+        fullName: data?.senderName || data?.otherName,
+        avatar: data?.senderAvatar || data?.otherAvatar,
+      };
+      this.navigationRef.navigate('Chat', { conversationId, otherParticipant });
+    } catch (e) {
+      console.warn(
+        '[NotificationService] navigateToChat error:',
+        e?.message || e,
+      );
+    }
+  }
+
   async postDeadmanCheckin() {
     try {
       const resp = await api.post('/deadman/checkin', {});
       const ok = resp?.data?.success !== false;
       if (ok) {
-        Alert.alert('✅ Đã xác nhận', 'Cảm ơn Bác! Hôm nay đã ghi nhận “Tôi ổn”.');
+        Alert.alert(
+          '✅ Đã xác nhận',
+          'Cảm ơn Bác! Hôm nay đã ghi nhận “Tôi ổn”.',
+        );
       } else {
-        Alert.alert('Ôi...', resp?.data?.message || 'Không thể check-in lúc này, thử lại giúp cháu nhé.');
+        Alert.alert(
+          'Ôi...',
+          resp?.data?.message ||
+            'Không thể check-in lúc này, thử lại giúp cháu nhé.',
+        );
       }
     } catch (e) {
       Alert.alert('Ôi...', 'Mạng yếu hoặc máy bận, thử lại sau một lát ạ.');
@@ -691,7 +848,10 @@ class NotificationService {
         });
       }
     } catch (e) {
-      console.warn('[NotificationService] navigateToAlertsCenter error:', e?.message || e);
+      console.warn(
+        '[NotificationService] navigateToAlertsCenter error:',
+        e?.message || e,
+      );
     }
   }
 

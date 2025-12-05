@@ -420,6 +420,19 @@ export const doctorBookingService = {
     };
   }
 },
+updateConsultationStatus: async (bookingId, nextStatus) => {
+  const TAG = '[doctorBookingService][updateConsultationStatus]';
+  console.log(TAG, 'CALL with', { bookingId, nextStatus });
+
+  // gom payload cho BE: status + optional reason
+  const payload = { status: nextStatus };
+
+  // TÁI DÙNG hàm cancelBooking đã viết
+  const res = await doctorBookingService.cancelBooking(bookingId, payload);
+
+  console.log(TAG, 'RESULT =', res);
+  return res;
+},
 };
 
 export default doctorBookingService;
