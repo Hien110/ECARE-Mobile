@@ -1,5 +1,35 @@
 // services/aiService.js
-import { api } from './api';
+// import { api } from './api';
+import axios from 'axios';
+import { userService } from './userService';
+
+const api = axios.create({
+  baseURL: 'https://ecare-backend-2mzh.onrender.com/api',
+  timeout: 12000,
+  headers: { "Content-Type": "application/json" },
+});
+
+// Gắn Authorization mỗi request
+api.interceptors.request.use(
+  async (config) => {
+    const token = await userService.getToken();
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// (tuỳ chọn) Nếu 401 có thể auto-logout tại đây
+api.interceptors.response.use(
+  (res) => res,
+  async (error) => {
+    // if (error?.response?.status === 401) {
+    //   await setAPIToken(null);
+    //   await setSavedUser(null);
+    // }
+    return Promise.reject(error);
+  }
+);
 
 export const aiService = {
   chat: async (payload) => {
