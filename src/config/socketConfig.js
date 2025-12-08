@@ -2,8 +2,8 @@
 export const CONFIG = {
   // Development
 
-  SOCKET_SERVER_URL: 'http://172.26.106.33:3000',
-  API_BASE_URL: 'http://172.26.106.33:3000/api',
+  SOCKET_SERVER_URL: 'https://ecarebackend-cvfvhjfsc9h5f2fw.eastasia-01.azurewebsites.net',
+  API_BASE_URL: 'https://ecarebackend-cvfvhjfsc9h5f2fw.eastasia-01.azurewebsites.net/api',
 
   // Production (uncomment when deploying)
   // SOCKET_SERVER_URL: 'https://your-api-domain.com',
