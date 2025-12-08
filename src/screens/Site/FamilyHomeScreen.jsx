@@ -536,7 +536,7 @@ export default function EnhancedHealthAppRN() {
           )}
 
           {/* Action buttons */}
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+          {/* <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
             <Button
               title="Cảnh báo khẩn cấp"
               left={<Text style={{ fontSize: 12 }}>🔔</Text>}
@@ -551,93 +551,10 @@ export default function EnhancedHealthAppRN() {
                 borderColor: C.green,
               }}
             />
-          </View>
+          </View> */}
         </Card>
 
         {/* ===== Activities ===== */}
-        <Card style={{ padding: 14 }}>
-          <View style={styles.activitiesHeader}>
-            <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
-              Hoạt động hôm nay
-            </Text>
-            <View style={styles.segment}>
-              {[
-                { id: 'today', label: 'Hôm nay' },
-                { id: 'week', label: 'Tuần' },
-                { id: 'month', label: 'Tháng' },
-              ].map(seg => (
-                <TouchableOpacity
-                  key={seg.id}
-                  onPress={() => setActiveTimeframe(seg.id)}
-                  style={[
-                    styles.segBtn,
-                    activeTimeframe === seg.id && styles.segBtnActive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.segText,
-                      activeTimeframe === seg.id && styles.segTextActive,
-                    ]}
-                  >
-                    {seg.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          <View style={{ gap: 10 }}>
-            {activities.map((a, i) => (
-              <View key={i} style={styles.activityRow}>
-                <Text style={styles.activityTime}>{a.time}</Text>
-                <View
-                  style={[
-                    styles.activityIconCircle,
-                    { backgroundColor: a.color },
-                  ]}
-                >
-                  <Text style={{ color: '#fff', fontSize: 14 }}>{a.icon}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activityTitle} numberOfLines={1}>
-                    {a.title}
-                  </Text>
-                  <Text style={styles.activitySub} numberOfLines={2}>
-                    {a.subtitle}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.smallStatusDot,
-                    {
-                      backgroundColor:
-                        a.status === 'completed'
-                          ? C.green
-                          : a.status === 'pending'
-                          ? C.yellow
-                          : '#9ca3af',
-                    },
-                  ]}
-                />
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.progressCard}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.progressTitle}>Tiến độ hôm nay</Text>
-              <Text style={styles.progressPct}>{progressPct}%</Text>
-            </View>
-            <RNProgress value={progressPct} />
-            <Text style={styles.progressHint}>
-              <Text style={{ color: C.indigo, fontWeight: '700' }}>
-                {completed}
-              </Text>
-              /{activities.length} hoạt động đã hoàn thành
-            </Text>
-          </View>
-        </Card>
 
         {loading && (
           <View style={{ padding: 16 }}>

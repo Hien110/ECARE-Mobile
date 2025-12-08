@@ -249,13 +249,26 @@ export const userService = {
     }
   },
 
-  logout: async () => {
+  logout: async ({ token } = {}) => {
     try {
       const socketService = require('./socketService').default;
       socketService.disconnect();
     } catch (error) {
       console.log('Socket disconnect warning:', error?.message);
     }
+    
+    // Gọi API logout backend nếu có token
+    if (token) {
+      try {
+        console.log('📤 Calling backend logout API...');
+        await api.post('/sos/logout', { token });
+        console.log('✅ Backend logout successful');
+      } catch (error) {
+        console.log('⚠️  Backend logout warning:', error?.message);
+        // Không throw error - tiếp tục logout locally ngay cả khi backend call fail
+      }
+    }
+    
     await userService.setToken(null);
     await userService.setUser(null);
   },

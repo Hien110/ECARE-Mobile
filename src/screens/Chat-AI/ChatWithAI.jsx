@@ -6,7 +6,6 @@ import {
   Animated,
   PermissionsAndroid,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +16,7 @@ import {
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import Sound, { createSound } from 'react-native-nitro-sound';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // TTS playback deps (only react-native-fs; avoid react-native-sound conflict)
 import RNFS from 'react-native-fs';
@@ -39,8 +39,26 @@ const AUTO_STOP_MS = 30_000; // auto dừng ghi sau 30s
 const DEBUG = false; // tắt toàn bộ log
 
 const BANNED_WORDS = [
-  'dm', 'dit me', 'ditme', 'dit con me', 'dcmm', 'cl', 'cc', 'cac', 'loz', 'lozz', 'lon', 'buoi', 'cacc',
-  'fuck', 'fucking', 'shit', 'bitch', 'asshole', 'motherfucker', 'mf'
+  'dm',
+  'dit me',
+  'ditme',
+  'dit con me',
+  'dcmm',
+  'cl',
+  'cc',
+  'cac',
+  'loz',
+  'lozz',
+  'lon',
+  'buoi',
+  'cacc',
+  'fuck',
+  'fucking',
+  'shit',
+  'bitch',
+  'asshole',
+  'motherfucker',
+  'mf',
 ];
 
 function normalizeVN(s = '') {
@@ -75,24 +93,48 @@ const LoadingBubble = () => {
       Animated.loop(
         Animated.sequence([
           Animated.delay(delayMs),
-          Animated.timing(av, { toValue: 1, duration: 300, useNativeDriver: true }),
-          Animated.timing(av, { toValue: 0, duration: 300, useNativeDriver: true }),
+          Animated.timing(av, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(av, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
         ]),
       );
 
     const a1 = makePulse(dot1, 0);
     const a2 = makePulse(dot2, 150);
     const a3 = makePulse(dot3, 300);
-    a1.start(); a2.start(); a3.start();
-    return () => { a1.stop(); a2.stop(); a3.stop(); };
+    a1.start();
+    a2.start();
+    a3.start();
+    return () => {
+      a1.stop();
+      a2.stop();
+      a3.stop();
+    };
   }, [dot1, dot2, dot3]);
 
   const Dot = ({ av }) => (
     <Animated.View
       style={{
-        width: 6, height: 6, borderRadius: 3,
-        marginHorizontal: 3, backgroundColor: '#1E88E5',
-        transform: [{ translateY: av.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) }],
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        marginHorizontal: 4,
+        backgroundColor: '#1E88E5',
+        transform: [
+          {
+            translateY: av.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -4],
+            }),
+          },
+        ],
         opacity: av.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
       }}
     />
@@ -100,8 +142,19 @@ const LoadingBubble = () => {
 
   return (
     <View style={[styles.messageContainer, { alignItems: 'flex-start' }]}>
-      <View style={[styles.messageBubble, { backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center' }]}>
-        <Text style={[styles.messageText, { marginRight: 6 }]}>Đang trả lời</Text>
+      <View
+        style={[
+          styles.messageBubble,
+          {
+            backgroundColor: '#FFFFFF',
+            flexDirection: 'row',
+            alignItems: 'center',
+          },
+        ]}
+      >
+        <Text style={[styles.messageText, { marginRight: 8 }]}>
+          Đang trả lời
+        </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Dot av={dot1} />
           <Dot av={dot2} />
@@ -116,7 +169,7 @@ const LoadingBubble = () => {
 async function requestMicPermission() {
   if (Platform.OS === 'android') {
     const res = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
     );
     return res === PermissionsAndroid.RESULTS.GRANTED;
   }
@@ -158,18 +211,23 @@ const ChatWithAI = ({ navigation, route }) => {
   // 1 sessionId cho phiên hiện tại
   const sessionIdRef = useRef(
     route?.params?.sessionId ||
-    (Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8))
+      Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8),
   );
 
-  const baseTitle = route?.params?.title ?? 'Trợ lý AI';
-  const baseSubtitle = route?.params?.subtitle ?? 'Hỗ trợ tâm lý';
+  const baseTitle = route?.params?.title ?? 'Trò chuyện E-Care';
+  const baseSubtitle = route?.params?.subtitle ?? 'AI lắng nghe & hỗ trợ';
   const title = baseTitle;
-  const subtitle =
-    speaking ? '🔊 Đang đọc câu trả lời…' :
-      uploading ? 'Đang chuyển giọng nói thành văn bản…' :
-        sending ? 'Đang trả lời…' :
-          connecting ? 'Đang kết nối…' :
-            connected ? 'Đã kết nối máy chủ' : baseSubtitle;
+  const subtitle = speaking
+    ? '🔊 Đang đọc câu trả lời…'
+    : uploading
+    ? 'Đang chuyển giọng nói thành văn bản…'
+    : sending
+    ? 'Đang trả lời…'
+    : connecting
+    ? 'Đang kết nối…'
+    : connected
+    ? 'Đã kết nối máy chủ'
+    : baseSubtitle;
 
   // ====== Speaking animation (pulsing concentric circles) ======
   const speakPulse = useRef(new Animated.Value(0)).current;
@@ -177,9 +235,17 @@ const ChatWithAI = ({ navigation, route }) => {
     if (speaking) {
       const loop = Animated.loop(
         Animated.sequence([
-          Animated.timing(speakPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
-          Animated.timing(speakPulse, { toValue: 0, duration: 700, useNativeDriver: true }),
-        ])
+          Animated.timing(speakPulse, {
+            toValue: 1,
+            duration: 700,
+            useNativeDriver: true,
+          }),
+          Animated.timing(speakPulse, {
+            toValue: 0,
+            duration: 700,
+            useNativeDriver: true,
+          }),
+        ]),
       );
       loop.start();
       return () => loop.stop();
@@ -191,7 +257,7 @@ const ChatWithAI = ({ navigation, route }) => {
 
   const scrollToEnd = () =>
     requestAnimationFrame(() =>
-      scrollRef.current?.scrollToEnd({ animated: true })
+      scrollRef.current?.scrollToEnd({ animated: true }),
     );
 
   const toHistory = useCallback(
@@ -208,9 +274,7 @@ const ChatWithAI = ({ navigation, route }) => {
 
   const didWelcome = useRef(false);
   const WELCOME_TEXT =
-    '👋 Chào mừng bạn đến với Trợ lý AI của E-Care! ' +
-    'Mình ở đây để lắng nghe và đồng hành cùng bạn. ' +
-    'Bạn có thể nhắn: “Tôi muốn gặp bác sĩ”, “Tôi cần người hỗ trợ”, hoặc kể vấn đề bạn đang gặp nhé.';
+    '👋 Chào mừng bác đến với Trợ lý AI của E-Care. Bác có thể nói chuyện, tâm sự hoặc hỏi bất cứ điều gì bác đang lo lắng.';
 
   // ========= Helpers lưu/đọc session list ở local =========
   const SESS_KEY = 'ai_sessions_v1';
@@ -220,14 +284,14 @@ const ChatWithAI = ({ navigation, route }) => {
       const raw = await AsyncStorage.getItem(SESS_KEY);
       const arr = raw ? JSON.parse(raw) : [];
       if (Array.isArray(arr)) setSessions(arr);
-    } catch { }
+    } catch {}
   }, []);
 
   const saveSessionsLocal = useCallback(async list => {
     try {
       setSessions(list);
       await AsyncStorage.setItem(SESS_KEY, JSON.stringify(list));
-    } catch { }
+    } catch {}
   }, []);
 
   const upsertSessionMeta = useCallback(async ({ id, title }) => {
@@ -238,7 +302,7 @@ const ChatWithAI = ({ navigation, route }) => {
         { id, title: normTitle, updatedAt: Date.now() },
         ...rest,
       ].slice(0, 50);
-      AsyncStorage.setItem(SESS_KEY, JSON.stringify(next)).catch(() => { });
+      AsyncStorage.setItem(SESS_KEY, JSON.stringify(next)).catch(() => {});
       return next;
     });
   }, []);
@@ -280,7 +344,7 @@ const ChatWithAI = ({ navigation, route }) => {
 
       list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
       await saveSessionsLocal(list);
-    } catch { }
+    } catch {}
   }, [saveSessionsLocal]);
 
   // ========= Khởi tạo =========
@@ -293,8 +357,8 @@ const ChatWithAI = ({ navigation, route }) => {
   useEffect(() => {
     addMessage(
       'assistant',
-      '👋 Chào mừng bạn đến với Trợ lý AI của E-Care! ' +
-      'Nhấn "Kết nối" để bắt đầu nói chuyện bằng giọng nói 🎙️',
+      '👋 Chào mừng bác đến với Trợ lý AI của E-Care. ' +
+        'Bác có thể bấm nút micro để nói chuyện với mình 🎙️',
     );
     scrollToEnd();
   }, [addMessage]);
@@ -322,7 +386,6 @@ const ChatWithAI = ({ navigation, route }) => {
     }
     try {
       console.log('[voice] startRecord');
-      // Không chỉ định path => lib tự chọn: iOS .m4a, Android .mp4
       const uri = await recorder.startRecorder();
       console.log('[voice] started at', uri);
       recordingRef.current = { uriStarted: uri };
@@ -330,10 +393,7 @@ const ChatWithAI = ({ navigation, route }) => {
       return true;
     } catch (e) {
       setIsRecording(false);
-      addMessage(
-        'assistant',
-        'Không thể bắt đầu ghi âm. Vui lòng thử lại.',
-      );
+      addMessage('assistant', 'Không thể bắt đầu ghi âm. Vui lòng thử lại.');
       return null;
     }
   }, [addMessage, recorder]);
@@ -353,48 +413,92 @@ const ChatWithAI = ({ navigation, route }) => {
     }
   }, [isRecording, recorder]);
 
-  // ====== TTS Playback helper (FIXED) ======
-  const playTTSBase64 = useCallback(async (base64) => {
-  if (!base64) {
-    console.log('[TTS] empty base64, skip');
-    return;
-  }
-  if (ttsPlayingRef.current) {
-    console.log('[TTS] already playing, skip');
-    return;
-  }
+  // ====== TTS Playback helper ======
+  const playTTSBase64 = useCallback(async base64 => {
+    if (!base64) {
+      console.log('[TTS] empty base64, skip');
+      return;
+    }
+    if (ttsPlayingRef.current) {
+      console.log('[TTS] already playing, skip');
+      return;
+    }
 
-  ttsPlayingRef.current = true;
-  setSpeaking(true);
+    ttsPlayingRef.current = true;
+    setSpeaking(true);
 
-  try {
-    const filePath = `${RNFS.CachesDirectoryPath}/ai_tts_${Date.now()}.mp3`;
+    try {
+      const filePath = `${RNFS.CachesDirectoryPath}/ai_tts_${Date.now()}.mp3`;
 
-    // Ghi file từ base64
-    await RNFS.writeFile(filePath, base64, 'base64');
-    console.log('[TTS] file written to:', filePath);
+      await RNFS.writeFile(filePath, base64, 'base64');
+      console.log('[TTS] file written to:', filePath);
 
-    const stat = await RNFS.stat(filePath);
-    console.log('[TTS] file size:', stat.size);
+      const stat = await RNFS.stat(filePath);
+      console.log('[TTS] file size:', stat.size);
 
-    // Lắng nghe khi phát xong
-    Sound.addPlaybackEndListener(() => {
-      console.log('[TTS] playback completed');
+      Sound.addPlaybackEndListener(() => {
+        console.log('[TTS] playback completed');
+        ttsPlayingRef.current = false;
+        setSpeaking(false);
+        Sound.removePlaybackEndListener();
+      });
+
+      const result = await Sound.startPlayer(filePath);
+      console.log('[TTS] startPlayer result:', result);
+    } catch (e) {
+      console.log('[TTS] playback error:', e?.message || e);
       ttsPlayingRef.current = false;
       setSpeaking(false);
-      Sound.removePlaybackEndListener();
-    });
+    }
+  }, []);
 
-    // Phát file local
-    const result = await Sound.startPlayer(filePath);
-    console.log('[TTS] startPlayer result:', result);
-  } catch (e) {
-    console.log('[TTS] playback error:', e?.message || e);
-    ttsPlayingRef.current = false;
-    setSpeaking(false);
-  }
-}, []);
+  const readMessageAloud = useCallback(
+    async text => {
+      if (!text) return;
+      try {
+        const token =
+          (await AsyncStorage.getItem('accessToken')) ||
+          (await AsyncStorage.getItem('token')) ||
+          '';
 
+        const r = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/ai/tts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ text, lang: 'vi' }),
+        });
+
+        const j = await r.json();
+        console.log('[TTS] response keys:', Object.keys(j || {}));
+
+        let b64 = j?.data?.base64 || j?.base64 || '';
+
+        if (!b64) {
+          console.log('[TTS] no base64 in response');
+          return;
+        }
+
+        // Nếu backend trả dạng "data:audio/xxx;base64,..."
+        if (b64.startsWith('data:')) {
+          const idx = b64.indexOf('base64,');
+          if (idx !== -1) {
+            b64 = b64.slice(idx + 'base64,'.length);
+          }
+        }
+
+        console.log('[TTS] base64 length:', b64.length);
+
+        await playTTSBase64(b64);
+      } catch (e) {
+        console.log('[TTS] fetch/play failed:', e?.message || e);
+        setSpeaking(false);
+        ttsPlayingRef.current = false;
+      }
+    },
+    [playTTSBase64],
+  );
 
   const handleSend = async text => {
     const msg = (text ?? '').trim();
@@ -404,11 +508,7 @@ const ChatWithAI = ({ navigation, route }) => {
     if (ban.hit) {
       addMessage(
         'assistant',
-        `⚠️ Từ/ cụm từ bạn dùng nằm trong danh sách cấm (“${ban.found}”). Vui lòng sử dụng ngôn từ lịch sự.`,
-      );
-      addMessage(
-        'assistant',
-        `⚠️ Từ/ cụm từ bạn dùng nằm trong danh sách cấm (“${ban.found}”). Vui lòng sử dụng ngôn từ lịch sự và tôn trọng.`,
+        `⚠️ Một số từ trong câu của bác không phù hợp (“${ban.found}”). Mình mong bác dùng lời lẽ nhẹ nhàng hơn nhé.`,
       );
       setMessage('');
       scrollToEnd();
@@ -431,7 +531,10 @@ const ChatWithAI = ({ navigation, route }) => {
       });
 
       const firstLine =
-        msg.split('\n').map(s => s.trim()).find(Boolean) || 'Cuộc trò chuyện';
+        msg
+          .split('\n')
+          .map(s => s.trim())
+          .find(Boolean) || 'Cuộc trò chuyện';
       upsertSessionMeta({
         id: sessionIdRef.current,
         title: firstLine.slice(0, 60),
@@ -448,7 +551,7 @@ const ChatWithAI = ({ navigation, route }) => {
     } catch {
       addMessage(
         'assistant',
-        'Kết nối hơi chậm 🌿. Mình gửi gợi ý nhanh nhé: thử hít thở sâu và chia sẻ thêm cho mình biết nhé.',
+        'Kết nối hơi chậm 🌿. Mình gợi ý nhỏ: bác thử hít thở chậm vài nhịp rồi nói tiếp cho mình nghe nhé.',
       );
     } finally {
       setSending(false);
@@ -490,6 +593,32 @@ const ChatWithAI = ({ navigation, route }) => {
     [addMessage, handleSend],
   );
 
+  // ====== Nút Mic cho người già – to, ngay cạnh ô nhập ======
+  const handleMicPress = useCallback(async () => {
+    if (isRecording) {
+      if (stopTimerRef.current) {
+        clearTimeout(stopTimerRef.current);
+        stopTimerRef.current = null;
+      }
+      const uri = await stopRecordGetUri();
+      await transcribeAndAppend(uri);
+    } else {
+      const started = await startRecord();
+      if (started) {
+        addMessage(
+          'assistant',
+          '🎙️ Đang ghi âm. Khi nói xong, bác bấm lại nút micro màu đỏ để dừng.',
+        );
+      }
+    }
+  }, [
+    isRecording,
+    stopRecordGetUri,
+    transcribeAndAppend,
+    startRecord,
+    addMessage,
+  ]);
+
   // ========= Tải lịch sử của session hiện tại =========
   const loadHistory = useCallback(
     async opts => {
@@ -500,10 +629,10 @@ const ChatWithAI = ({ navigation, route }) => {
         const res = await (aiService.history
           ? aiService.history({ sessionId, limit: 200 })
           : fetch(
-            '/ai/history?sessionId=' +
-            encodeURIComponent(sessionId) +
-            '&limit=200',
-          ).then(r => r.json()));
+              '/ai/history?sessionId=' +
+                encodeURIComponent(sessionId) +
+                '&limit=200',
+            ).then(r => r.json()));
 
         const ok =
           res?.success ??
@@ -525,13 +654,13 @@ const ChatWithAI = ({ navigation, route }) => {
         } else {
           addMessage(
             'assistant',
-            'Không tải được lịch sử. Bạn thử lại sau nhé.',
+            'Không tải được lịch sử. Bác thử lại sau nhé.',
           );
         }
       } catch {
         addMessage(
           'assistant',
-          'Mạng hơi chập chờn nên chưa lấy được lịch sử. Bạn thử lại sau nhé.',
+          'Mạng hơi chập chờn nên chưa lấy được lịch sử. Bác thử lại sau nhé.',
         );
       } finally {
         setLoadingHistory(false);
@@ -577,9 +706,7 @@ const ChatWithAI = ({ navigation, route }) => {
   // ========= Tạo session mới =========
   const newChat = useCallback(async () => {
     const newId =
-      Date.now().toString(36) +
-      '-' +
-      Math.random().toString(36).slice(2, 8);
+      Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
 
     const ok = await createSessionOnServer({
       id: newId,
@@ -604,7 +731,12 @@ const ChatWithAI = ({ navigation, route }) => {
     refreshSessionsFromServer();
 
     requestAnimationFrame(scrollToEnd);
-  }, [addMessage, upsertSessionMeta, createSessionOnServer, refreshSessionsFromServer]);
+  }, [
+    addMessage,
+    upsertSessionMeta,
+    createSessionOnServer,
+    refreshSessionsFromServer,
+  ]);
 
   // ========= Xoá toàn bộ một session =========
   const deleteSession = useCallback(
@@ -612,7 +744,7 @@ const ChatWithAI = ({ navigation, route }) => {
       if (!id) return;
       Alert.alert(
         'Xoá cuộc trò chuyện',
-        'Bạn có chắc muốn xoá toàn bộ cuộc trò chuyện này? Hành động này không thể hoàn tác.',
+        'Bác có chắc muốn xoá toàn bộ cuộc trò chuyện này? Hành động này không thể hoàn tác.',
         [
           { text: 'Huỷ', style: 'cancel' },
           {
@@ -628,8 +760,7 @@ const ChatWithAI = ({ navigation, route }) => {
                   ok = resp?.success !== false;
                 } else {
                   const r = await fetch(
-                    '/ai/sessions?sessionId=' +
-                    encodeURIComponent(id),
+                    '/ai/sessions?sessionId=' + encodeURIComponent(id),
                     { method: 'DELETE' },
                   );
                   const j = await r.json().catch(() => ({}));
@@ -647,7 +778,7 @@ const ChatWithAI = ({ navigation, route }) => {
               setSessions(prev => {
                 const next = prev.filter(s => s.id !== id);
                 AsyncStorage.setItem(SESS_KEY, JSON.stringify(next)).catch(
-                  () => { },
+                  () => {},
                 );
                 return next;
               });
@@ -667,14 +798,15 @@ const ChatWithAI = ({ navigation, route }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      {/* <StatusBar barStyle="light-content" /> */}
 
-      {/* Header */}
+      {/* Header – chữ to, ít nút, dễ hiểu */}
       <View style={styles.header}>
         <TouchableOpacity
-          style={[styles.backButton, { marginRight: 8 }]}
-          onPress={() => navigation?.goBack?.()}>
-          <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+          style={styles.backButton}
+          onPress={() => navigation?.goBack?.()}
+        >
+          <Ionicons name="arrow-back" size={26} color="#FFFFFF" />
         </TouchableOpacity>
 
         <View style={styles.avatarContainer}>
@@ -683,177 +815,135 @@ const ChatWithAI = ({ navigation, route }) => {
           </View>
           {speaking && (
             <View style={styles.speakingWrap}>
-              <Animated.View style={[styles.pulseCircle, {
-                transform: [{ scale: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.4] }) }],
-                opacity: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0.15] })
-              }]} />
-              <Animated.View style={[styles.pulseCircle, {
-                transform: [{ scale: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.2] }) }],
-                opacity: speakPulse.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.08] })
-              }]} />
-              <Ionicons name="volume-high" size={18} color="#FFFFFF" style={styles.pulseIcon} />
+              <Animated.View
+                style={[
+                  styles.pulseCircle,
+                  {
+                    transform: [
+                      {
+                        scale: speakPulse.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.9, 1.4],
+                        }),
+                      },
+                    ],
+                    opacity: speakPulse.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.6, 0.15],
+                    }),
+                  },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.pulseCircle,
+                  {
+                    transform: [
+                      {
+                        scale: speakPulse.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.5, 1.2],
+                        }),
+                      },
+                    ],
+                    opacity: speakPulse.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.4, 0.08],
+                    }),
+                  },
+                ]}
+              />
+              <Ionicons
+                name="volume-high"
+                size={18}
+                color="#FFFFFF"
+                style={styles.pulseIcon}
+              />
             </View>
           )}
         </View>
 
         <View style={styles.headerTextContainer}>
           <Text style={styles.headerTitle}>{title}</Text>
-          <Text style={styles.headerSubtitle}>{subtitle}</Text>
+          {/* <Text style={styles.headerSubtitle} numberOfLines={2}>
+            {subtitle}
+          </Text> */}
         </View>
 
-        {/* Menu lịch sử & Tạo mới */}
-        <View style={styles.headerIcons}>
+        {/* Menu lịch sử & Tạo mới – gom phía bên phải */}
+        {/* <View style={styles.headerIcons}>
           <TouchableOpacity
-            style={styles.backButton}
+            style={styles.iconButton}
             onPress={async () => {
               await refreshSessionsFromServer();
               setShowSessions(true);
-            }}>
+            }}
+          >
             <Ionicons name="menu" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.iconButton, { marginLeft: 8 }]}
-            onPress={newChat}>
-            <Ionicons name="add-circle-outline" size={22} color="#FFFFFF" />
+          <TouchableOpacity style={styles.iconButton} onPress={newChat}>
+            <Ionicons name="add-circle-outline" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-        </View>
-
-        {/* Nút Mic/Dừng thủ công */}
-        <TouchableOpacity
-          style={[
-            styles.connectButton,
-            {
-              marginLeft: 8,
-              backgroundColor: isRecording ? '#E53935' : 'transparent',
-            },
-          ]}
-          onPress={async () => {
-            if (isRecording) {
-              if (stopTimerRef.current) {
-                clearTimeout(stopTimerRef.current);
-                stopTimerRef.current = null;
-              }
-              const uri = await stopRecordGetUri();
-              await transcribeAndAppend(uri);
-            } else {
-              const started = await startRecord();
-              if (started)
-                addMessage(
-                  'assistant',
-                  '🎙️ Đang ghi âm… Nhấn Dừng để chuyển thành văn bản.',
-                );
-            }
-          }}>
-          <Ionicons
-            name={isRecording ? 'stop-circle' : 'mic'}
-            size={20}
-            color="#FFF"
-          />
-          <Text style={styles.connectText}>
-            {isRecording ? 'Dừng' : 'Mic'}
-          </Text>
-        </TouchableOpacity>
+        </View> */}
       </View>
 
       {!!bannerText && (
-        <View
-          style={{
-            backgroundColor: '#F1F8E9',
-            paddingVertical: 6,
-            paddingHorizontal: 16,
-          }}>
-          <Text style={{ color: '#558B2F', fontSize: 12 }}>{bannerText}</Text>
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>{bannerText}</Text>
         </View>
       )}
 
       {loadingHistory && (
-        <View
-          style={{
-            backgroundColor: '#E3F2FD',
-            paddingVertical: 8,
-            paddingHorizontal: 16,
-          }}>
-          <Text style={{ color: '#1E88E5', fontSize: 13 }}>
+        <View style={styles.loadingBar}>
+          <Text style={styles.loadingBarText}>
             Đang tải lịch sử cuộc trò chuyện…
           </Text>
         </View>
       )}
+      <View style={styles.hintBar}>
+        <Text style={styles.hintBarText}>
+          💡 Bác có thể chạm vào tin nhắn của Trợ lý để nghe đọc.
+        </Text>
+      </View>
 
       {/* Chat */}
       <ScrollView
         ref={scrollRef}
         style={styles.chatContainer}
-        onContentSizeChange={scrollToEnd}>
-        {messages.map(m => (
-          <View
-            key={m.id}
-            style={[
-              styles.messageContainer,
-              m.role === 'user'
-                ? { alignItems: 'flex-end' }
-                : { alignItems: 'flex-start' },
-            ]}>
+        onContentSizeChange={scrollToEnd}
+      >
+        {messages.map(m => {
+          const isUser = m.role === 'user';
+          const isAssistant = m.role === 'assistant';
+          const BubbleComponent = isAssistant ? TouchableOpacity : View;
+
+          return (
             <View
+              key={m.id}
               style={[
-                styles.messageBubble,
-                m.role === 'user'
-                  ? { backgroundColor: '#E3F2FD' }
-                  : { backgroundColor: '#FFFFFF' },
-              ]}>
-              <Text style={styles.messageText}>{m.content}</Text>
-              {m.role === 'assistant' && (
-                <TouchableOpacity
-                  style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center' }}
-                  onPress={async () => {
-                    try {
-                      // Không setSpeaking ở đây, để playTTSBase64 quản lý
-                      const token =
-                        (await AsyncStorage.getItem('accessToken')) ||
-                        (await AsyncStorage.getItem('token')) ||
-                        '';
-                      const r = await fetch(`${API_BASE_URL.replace(/\/$/, '')}/ai/tts`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                        body: JSON.stringify({ text: m.content, lang: 'vi' }),
-                      });
-                      const j = await r.json();
-                      console.log('[TTS] response keys:', Object.keys(j || {}));
-
-                      let b64 = j?.data?.base64 || j?.base64 || '';
-
-                      if (!b64) {
-                        console.log('[TTS] no base64 in response');
-                        return;
-                      }
-
-                      // Nếu backend trả "data:audio/xxx;base64,...." thì cắt prefix
-                      if (b64.startsWith('data:')) {
-                        const idx = b64.indexOf('base64,');
-                        if (idx !== -1) {
-                          b64 = b64.slice(idx + 'base64,'.length);
-                        }
-                      }
-
-                      console.log('[TTS] base64 length:', b64.length);
-
-                      await playTTSBase64(b64);
-                    } catch (e) {
-                      console.log('[TTS] fetch/play failed:', e?.message || e);
-                      setSpeaking(false);
-                      ttsPlayingRef.current = false;
-                    }
-                  }}
-                >
-                  <Ionicons name="volume-high" size={16} color="#1E88E5" />
-                  <Text style={{ marginLeft: 6, color: '#1E88E5', fontSize: 12 }}>Đọc đoạn này</Text>
-                </TouchableOpacity>
-              )}
+                styles.messageContainer,
+                isUser
+                  ? { alignItems: 'flex-end' }
+                  : { alignItems: 'flex-start' },
+              ]}
+            >
+              <BubbleComponent
+                activeOpacity={isAssistant ? 0.8 : 1}
+                onPress={
+                  isAssistant ? () => readMessageAloud(m.content) : undefined
+                }
+                style={[
+                  styles.messageBubble,
+                  isUser
+                    ? { backgroundColor: '#E3F2FD' }
+                    : { backgroundColor: '#FFFFFF' },
+                ]}
+              >
+                <Text style={styles.messageText}>{m.content}</Text>
+              </BubbleComponent>
             </View>
-          </View>
-        ))}
+          );
+        })}
 
         {(sending || uploading) && <LoadingBubble />}
 
@@ -864,7 +954,8 @@ const ChatWithAI = ({ navigation, route }) => {
                 <TouchableOpacity
                   key={`${i}-${s}`}
                   onPress={() => handleSend(s)}
-                  style={styles.followChip}>
+                  style={styles.followChip}
+                >
                   <Text style={styles.followChipText}>{s}</Text>
                 </TouchableOpacity>
               ))}
@@ -873,12 +964,23 @@ const ChatWithAI = ({ navigation, route }) => {
         )}
       </ScrollView>
 
-      {/* Input */}
+      {/* Input – font to, nút mic lớn bên trái, nút gửi bên phải */}
       <View style={styles.inputContainer}>
         <View style={styles.inputRow}>
+          <TouchableOpacity
+            style={[styles.micButton, isRecording && styles.micButtonActive]}
+            onPress={handleMicPress}
+          >
+            <Ionicons
+              name={isRecording ? 'stop' : 'mic'}
+              size={26}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+
           <TextInput
             style={styles.textInput}
-            placeholder="Nhập tin nhắn..."
+            placeholder="Bác có thể gõ nội dung tại đây..."
             placeholderTextColor="#999"
             value={message}
             onChangeText={setMessage}
@@ -891,14 +993,18 @@ const ChatWithAI = ({ navigation, route }) => {
           <TouchableOpacity
             style={[styles.sendButton, sending && { opacity: 0.6 }]}
             onPress={() => handleSend(message)}
-            disabled={sending}>
+            disabled={sending}
+          >
             {sending ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Ionicons name="send" size={20} color="#FFFFFF" />
+              <Ionicons name="send" size={22} color="#FFFFFF" />
             )}
           </TouchableOpacity>
         </View>
+        <Text style={styles.micHint}>
+          Bác có thể nhấn nút micro để nói, hoặc gõ chữ rồi bấm gửi.
+        </Text>
       </View>
 
       {/* Panel lịch sử */}
@@ -914,7 +1020,8 @@ const ChatWithAI = ({ navigation, route }) => {
               <View style={{ flexDirection: 'row' }}>
                 <TouchableOpacity
                   onPress={newChat}
-                  style={{ padding: 6, marginRight: 6 }}>
+                  style={{ padding: 6, marginRight: 6 }}
+                >
                   <Ionicons
                     name="add-circle-outline"
                     size={22}
@@ -923,7 +1030,8 @@ const ChatWithAI = ({ navigation, route }) => {
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setShowSessions(false)}
-                  style={{ padding: 6 }}>
+                  style={{ padding: 6 }}
+                >
                   <Ionicons name="close" size={22} color="#1E88E5" />
                 </TouchableOpacity>
               </View>
@@ -932,8 +1040,8 @@ const ChatWithAI = ({ navigation, route }) => {
             <ScrollView style={{ flex: 1 }}>
               {sessions.length === 0 && (
                 <View style={{ padding: 16 }}>
-                  <Text style={{ color: '#616161' }}>
-                    Chưa có lịch sử. Hãy bắt đầu cuộc trò chuyện mới.
+                  <Text style={{ color: '#616161', fontSize: 15 }}>
+                    Chưa có lịch sử. Bác có thể bắt đầu cuộc trò chuyện mới.
                   </Text>
                 </View>
               )}
@@ -941,7 +1049,8 @@ const ChatWithAI = ({ navigation, route }) => {
                 <View key={s.id} style={styles.sessionItem}>
                   <TouchableOpacity
                     onPress={() => switchSession(s.id)}
-                    style={{ flex: 1, paddingRight: 10 }}>
+                    style={{ flex: 1, paddingRight: 10 }}
+                  >
                     <Text style={styles.sessionTitle} numberOfLines={1}>
                       {s.title || 'Cuộc trò chuyện'}
                     </Text>
@@ -952,24 +1061,21 @@ const ChatWithAI = ({ navigation, route }) => {
 
                   <TouchableOpacity
                     onPress={() => deleteSession(s.id)}
-                    style={{ padding: 6, marginRight: 6 }}>
-                    <Ionicons
-                      name="trash-outline"
-                      size={18}
-                      color="#E53935"
-                    />
+                    style={{ padding: 6, marginRight: 6 }}
+                  >
+                    <Ionicons name="trash-outline" size={20} color="#E53935" />
                   </TouchableOpacity>
 
                   {s.id === sessionIdRef.current ? (
                     <Ionicons
                       name="chatbubble-ellipses-outline"
-                      size={18}
+                      size={20}
                       color="#1E88E5"
                     />
                   ) : (
                     <Ionicons
                       name="chevron-forward"
-                      size={18}
+                      size={20}
                       color="#9E9E9E"
                     />
                   )}
@@ -985,33 +1091,45 @@ const ChatWithAI = ({ navigation, route }) => {
 
 /* ================== Styles ================== */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5' },
+  container: { flex: 1, backgroundColor: '#F3F4F6' },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1E88E5',
     paddingHorizontal: 16,
-    paddingVertical: 25,
+    paddingVertical: 18,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
-  backButton: { marginRight: 12, marginTop: 4 },
-  avatarContainer: { marginRight: 12 },
+  backButton: {
+    padding: 6,
+    marginRight: 6,
+  },
+  avatarContainer: { marginRight: 10 },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#FF6F00',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
+  avatarText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
   headerTextContainer: { flex: 1 },
-  headerTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '600' },
-  headerSubtitle: { color: '#E3F2FD', fontSize: 12, marginTop: 2 },
+  headerTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    color: '#E3F2FD',
+    fontSize: 13,
+    marginTop: 4,
+  },
 
   headerIcons: {
     flexDirection: 'row',
@@ -1021,26 +1139,29 @@ const styles = StyleSheet.create({
   iconButton: {
     paddingHorizontal: 6,
     paddingVertical: 4,
+    marginLeft: 4,
   },
 
-  connectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
-    marginLeft: 8,
+  banner: {
+    backgroundColor: '#F1F8E9',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
-  connectText: { color: '#FFFFFF', marginLeft: 6, fontSize: 12 },
+  bannerText: { color: '#558B2F', fontSize: 13 },
+
+  loadingBar: {
+    backgroundColor: '#E3F2FD',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  loadingBarText: { color: '#1E88E5', fontSize: 14 },
 
   chatContainer: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
   messageContainer: { marginBottom: 16 },
   messageBubble: {
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
-    maxWidth: '80%',
+    maxWidth: '86%',
     backgroundColor: '#FFFFFF',
     elevation: 1,
     shadowColor: '#000',
@@ -1048,47 +1169,78 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  messageText: { fontSize: 15, color: '#212121', lineHeight: 22 },
+  messageText: { fontSize: 20, color: '#111827', lineHeight: 24 },
+  readButton: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  readButtonText: {
+    marginLeft: 8,
+    color: '#1E88E5',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
   followChip: {
     backgroundColor: '#EFF6FF',
     borderColor: '#CFE2FF',
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 999,
     marginRight: 8,
     marginBottom: 8,
   },
-  followChipText: { color: '#1E88E5', fontSize: 13 },
+  followChipText: { color: '#1E88E5', fontSize: 14 },
+
   inputContainer: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 60,
+    paddingTop: 10,
+    paddingBottom: 18,
     borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    borderTopColor: '#E5E7EB',
   },
-  inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  textInput: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    marginHorizontal: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'transparent',
-    color: '#111',
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  micButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#1E88E5',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  micButtonActive: {
+    backgroundColor: '#E53935',
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 26,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 17,
+    marginHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    color: '#111827',
+  },
+  sendButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#1E88E5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  micHint: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#6B7280',
   },
 
   sessionsOverlay: {
@@ -1121,14 +1273,14 @@ const styles = StyleSheet.create({
   sessionsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#EEEEEE',
   },
   sessionsTitle: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#1E88E5',
   },
   sessionItem: {
@@ -1139,8 +1291,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F5F5F5',
   },
-  sessionTitle: { fontSize: 14, color: '#212121', marginBottom: 2 },
-  sessionMeta: { fontSize: 11, color: '#757575' },
+  sessionTitle: { fontSize: 15, color: '#212121', marginBottom: 2 },
+  sessionMeta: { fontSize: 12, color: '#757575' },
 
   speakingWrap: {
     position: 'absolute',
@@ -1153,14 +1305,23 @@ const styles = StyleSheet.create({
   },
   pulseCircle: {
     position: 'absolute',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
+    borderColor: 'rgba(255,255,255,0.6)',
   },
   pulseIcon: {
     position: 'absolute',
+  },
+  hintBar: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  hintBarText: {
+    fontSize: 15,
+    color: '#0F172A',
   },
 });
 
