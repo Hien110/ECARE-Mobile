@@ -133,13 +133,27 @@ const PersonalInfoScreen = ({ navigation }) => {
 
   const onLogout = useCallback(async () => {
     try {
+      // Lấy FCM token từ AsyncStorage để gửi lên backend
+      const fcmToken = await AsyncStorage.getItem('fcm_token');
+      
+      // Gọi API logout để xóa FCM token trên backend
+      if (fcmToken) {
+        try {
+          console.log('📤 Calling logout API to remove FCM token...');
+          await userService.logout?.({ token: fcmToken });
+        } catch (error) {
+          console.log('⚠️  Warning - logout API call failed:', error?.message);
+          // Tiếp tục logout ngay cả khi API call fail
+        }
+      }
+      
       await disableFloating();
       socketService.disconnect();
-      await userService.logout?.();
       await AsyncStorage.multiRemove([
         'ecare_token',
         'ecare_user',
         AVATAR_STAMP_KEY,
+        'fcm_token',
       ]);
     } finally {
       navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
