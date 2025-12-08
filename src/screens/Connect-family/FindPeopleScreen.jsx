@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+/* eslint-disable react/prop-types */
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -6,7 +7,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   Modal,
   Image,
@@ -21,6 +21,8 @@ import {
   widthPercentageToDP as wp,
   heightPercentageToDP as hp,
 } from "react-native-responsive-screen";
+
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // Relationship suggestions
 const relationshipSuggestions = ["Con", "Cháu", "Người chăm sóc", "Em"];
@@ -550,7 +552,6 @@ const FindPeopleScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2196F3" />
 
       {/* Header */}
       <View style={styles.header}>
@@ -660,7 +661,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: wp("4%"),
     paddingVertical: hp("1.5%"),
-    elevation: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: hp("0.2%") },
     shadowOpacity: 0.1,
@@ -675,6 +675,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   searchContainer: {
+    paddingTop: hp("1.5%"),
     backgroundColor: "#2196F3",
     paddingHorizontal: wp("4%"),
     paddingBottom: hp("2%"),

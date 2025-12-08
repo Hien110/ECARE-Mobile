@@ -10,7 +10,8 @@ import {
   StyleSheet,
   Text,
   ToastAndroid,
-  TouchableOpacity, View,
+  TouchableOpacity,
+  View,
   NativeEventEmitter,
   NativeModules,
 } from 'react-native';
@@ -30,7 +31,6 @@ import { enableFloating, disableFloating } from '../../utils/floatingCheckinHelp
 export default function HomeScreen() {
   const nav = useNavigation();
   const route = useRoute();
-  console.log('🧭 [ElderHome/HomeScreen] route params:', route?.params);
 
   // boot/auth
   const [booting, setBooting] = useState(true);
@@ -43,55 +43,162 @@ export default function HomeScreen() {
   const [familyList, setFamilyList] = useState([]);
   const [relationships, setRelationships] = useState([]);
 
-  
-  // 🆕 Track SOS sending state
+  // Track SOS sending state
   const [isSendingSOS, setIsSendingSOS] = useState(false);
 
-  // emergency handler
-  
+  // time
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const timeStr = useMemo(
+    () =>
+      now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    [now],
+  );
+  const dateStr = useMemo(() => {
+    const weekday = now.toLocaleDateString('vi-VN', { weekday: 'long' });
+    const day = now.getDate();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    return `${cap(weekday)}, ${day} tháng ${month}, ${year}`;
+  }, [now]);
+
+  // helper: notify
+  const notify = useCallback((msg, type = 'info') => {
+    if (Platform.OS === 'android') ToastAndroid.show(msg, ToastAndroid.SHORT);
+    else {
+      Alert.alert(
+        type === 'success' ? 'Thành công' : type === 'error' ? 'Lỗi' : 'Thông báo',
+        msg,
+      );
+    }
+  }, []);
+
+  // helper: lấy người “còn lại” trong quan hệ
+  const getOtherMember = useCallback((rel, myId) => {
+    const isMeElderly = String(rel?.elderly?._id) === String(myId);
+    return isMeElderly ? rel?.family : rel?.elderly;
+  }, []);
+
+  // Hàm lấy vị trí hiện tại
+  const getCurrentLocation = useCallback(() => {
+    return new Promise(async (resolve, reject) => {
+      try {
+        if (Platform.OS === 'android') {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+            {
+              title: 'Quyền truy cập vị trí',
+              message: 'E-Care cần quyền truy cập vị trí để gửi cảnh báo khẩn cấp.',
+              buttonPositive: 'Đồng ý',
+              buttonNegative: 'Từ chối',
+            },
+          );
+
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            reject(new Error('Không có quyền truy cập vị trí'));
+            return;
+          }
+        }
+
+        Geolocation.getCurrentPosition(
+          position => {
+            resolve({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+          },
+          error => {
+            console.error('Geolocation error:', error);
+            reject(error);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 10000,
+          },
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }, []);
+
+  // Hàm chuyển tọa độ thành địa chỉ
+  const reverseGeocode = useCallback(async (latitude, longitude) => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=vi`,
+        {
+          headers: {
+            'User-Agent': 'E-Care Mobile App',
+          },
+        },
+      );
+
+      const data = await response.json();
+
+      if (data && data.display_name) {
+        return data.display_name;
+      }
+
+      if (data && data.address) {
+        const addr = data.address;
+        const parts = [
+          addr.road || addr.street,
+          addr.suburb || addr.neighbourhood,
+          addr.city || addr.town || addr.village,
+          addr.state,
+          addr.country,
+        ].filter(Boolean);
+
+        return parts.join(', ');
+      }
+
+      return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    } catch (error) {
+      console.error('Reverse geocoding error:', error);
+      return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+    }
+  }, []);
+
   // emergency
   const handleEmergency = useCallback(async () => {
-    // Kiểm tra user đã login chưa
     if (!user?._id) {
       Alert.alert('Lỗi', 'Bạn cần đăng nhập để sử dụng tính năng này!');
       return;
     }
 
-    // 🆕 Kiểm tra xem đang có SOS đang gửi không
     if (isSendingSOS) {
       Alert.alert(
         '⚠️ Đang xử lý',
         'Đang có cuộc gọi SOS đang được xử lý. Vui lòng đợi hoàn tất.',
-        [{ text: 'OK' }]
+        [{ text: 'OK' }],
       );
       return;
     }
 
     try {
-      setIsSendingSOS(true); // 🆕 Set state đang gửi SOS
-      
-      // Kiểm tra token CHI TIẾT
+      setIsSendingSOS(true);
+
       const token = await AsyncStorage.getItem('ecare_token');
 
       if (!token) {
-        Alert.alert(
-          'Lỗi',
-          'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!',
-        );
+        Alert.alert('Lỗi', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!');
         nav.reset({ index: 0, routes: [{ name: 'Login' }] });
         return;
       }
 
       notify('Đang gửi cảnh báo khẩn cấp...', 'info');
 
-      // Lấy vị trí hiện tại
+      // Lấy vị trí
       let location;
       try {
         const coords = await getCurrentLocation();
-        const address = await reverseGeocode(
-          coords.latitude,
-          coords.longitude,
-        );
+        const address = await reverseGeocode(coords.latitude, coords.longitude);
 
         location = {
           coordinates: {
@@ -101,12 +208,8 @@ export default function HomeScreen() {
           address: address,
         };
       } catch (locationError) {
-        console.warn(
-          '⚠️ Could not get location, using fallback:',
-          locationError,
-        );
+        console.warn('⚠️ Could not get location, using fallback:', locationError);
 
-        // Fallback: Sử dụng vị trí mẫu nếu không lấy được vị trí thực
         location = {
           coordinates: {
             latitude: 10.762622,
@@ -116,78 +219,55 @@ export default function HomeScreen() {
         };
       }
 
-      // Lấy danh sách family members
+      // Lấy family
       const familyRes = await userService.getFamilyMembersByElderlyId({
         elderlyId: user._id,
       });
       if (!familyRes.success) {
-        setIsSendingSOS(false); // 🆕 Reset state khi có lỗi
+        setIsSendingSOS(false);
         Alert.alert('Lỗi', 'Không thể lấy danh sách thành viên gia đình');
         return;
       }
 
-      // Loại bỏ chính người gửi khỏi danh sách recipients
       const recipients = familyRes.data
         .map(member => member._id)
         .filter(memberId => memberId !== user._id);
 
       if (recipients.length === 0) {
         setIsSendingSOS(false);
-        Alert.alert(
-          'Lỗi',
-          'Không có thành viên gia đình nào để gửi cảnh báo',
-        );
+        Alert.alert('Lỗi', 'Không có thành viên gia đình nào để gửi cảnh báo');
         return;
       }
 
-      // Tạo SOS notification
-      const message = `${
-        user?.fullName || 'Người dùng'
-      } cần trợ giúp ngay lập tức!`;
+      const message = `${user?.fullName || 'Người dùng'} cần trợ giúp ngay lập tức!`;
 
-      const result = await sosService.createSOS(
-        recipients,
-        message,
-        location,
-      );
+      await sosService.createSOS(recipients, message, location);
 
       notify('Đã gửi cảnh báo đến tất cả thành viên!', 'success');
-      
-      // 🆕 Note: isSendingSOS sẽ được clear bởi listener sos_call_no_answer hoặc khi cuộc gọi kết thúc
+      // isSendingSOS sẽ được clear bởi listener sos_call_no_answer hoặc khi cuộc gọi kết thúc
     } catch (error) {
       console.error('❌ Error sending emergency notification:', error);
       console.error('❌ Error details:', error?.response?.data);
-      
-      setIsSendingSOS(false); // 🆕 Reset state khi có lỗi
-      
-      // 🆕 Xử lý error code ACTIVE_SOS_EXISTS
+
+      setIsSendingSOS(false);
+
       const errorCode = error?.response?.data?.code;
       const errorMsg = error?.response?.data?.message;
-      
+
       if (errorCode === 'ACTIVE_SOS_EXISTS') {
         Alert.alert(
           '⚠️ SOS đang xử lý',
-          errorMsg || 'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
-          [{ text: 'OK' }]
+          errorMsg ||
+            'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
+          [{ text: 'OK' }],
         );
       } else {
-        const defaultMsg = errorMsg || 'Gửi cảnh báo thất bại. Vui lòng thử lại.';
+        const defaultMsg =
+          errorMsg || 'Gửi cảnh báo thất bại. Vui lòng thử lại.';
         Alert.alert('Lỗi', defaultMsg);
       }
     }
   }, [notify, user, nav, getCurrentLocation, reverseGeocode, isSendingSOS]);
-
-  // helper: notify
-  const notify = useCallback((msg, type = 'info') => {
-    if (Platform.OS === 'android') ToastAndroid.show(msg, ToastAndroid.SHORT);
-    else Alert.alert(type === 'success' ? 'Thành công' : 'Thông báo', msg);
-  }, []);
-
-  // helper: lấy người “còn lại” trong quan hệ
-  const getOtherMember = useCallback((rel, myId) => {
-    const isMeElderly = String(rel?.elderly?._id) === String(myId);
-    return isMeElderly ? rel?.family : rel?.elderly;
-  }, []);
 
   // tải yêu cầu kết nối (pending)
   const loadPendingRequests = useCallback(async () => {
@@ -208,41 +288,41 @@ export default function HomeScreen() {
 
   // tải danh sách đã kết nối (accepted)
   const loadFamilyRelationships = useCallback(async () => {
-  if (!user?._id) return;
-  try {
-    setFamilyLoading(true);
-    const res = await relationshipService.getAllRelationships();
-    if (res?.success) {
-      const all = res.data || [];
-      setRelationships(all);
-      const list = all
-        .filter(r => r?.status === 'accepted')
-        .map(r => {
-          const other = getOtherMember(r, user._id);
-          if (!other?._id) return null;
-          return {
-            _id: other._id,
-            fullName: other.fullName || 'Thành viên',
-            role: other.role, // doctor/family/supporter/...
-            avatar: other.avatar,
-            relationship: r?.relationship, // “con trai”, “con gái”,...
-          };
-        })
-        .filter(Boolean);
-      setFamilyList(list);
-    } else {
-      console.log('getAllRelationships error:', res?.message);
+    if (!user?._id) return;
+    try {
+      setFamilyLoading(true);
+      const res = await relationshipService.getAllRelationships();
+      if (res?.success) {
+        const all = res.data || [];
+        setRelationships(all);
+        const list = all
+          .filter(r => r?.status === 'accepted')
+          .map(r => {
+            const other = getOtherMember(r, user._id);
+            if (!other?._id) return null;
+            return {
+              _id: other._id,
+              fullName: other.fullName || 'Thành viên',
+              role: other.role,
+              avatar: other.avatar,
+              relationship: r?.relationship,
+            };
+          })
+          .filter(Boolean);
+        setFamilyList(list);
+      } else {
+        console.log('getAllRelationships error:', res?.message);
+      }
+    } catch (e) {
+      console.log('loadFamilyRelationships error:', e);
+    } finally {
+      setFamilyLoading(false);
     }
-  } catch (e) {
-    console.log('loadFamilyRelationships error:', e);
-  } finally {
-    setFamilyLoading(false);
-  }
-}, [user, getOtherMember]);
+  }, [user, getOtherMember]);
 
   // chấp nhận / từ chối yêu cầu
   const respondToRequest = useCallback(
-    async (relationshipId, action /* 'accept' | 'reject' */) => {
+    async (relationshipId, action) => {
       try {
         setReqLoading(true);
         if (action === 'accept') {
@@ -258,8 +338,8 @@ export default function HomeScreen() {
               id: relationshipId,
               status: 'accepted',
             });
-          } else {
-            await relationshipService.patch?.(relationshipId, {
+          } else if (relationshipService.patch) {
+            await relationshipService.patch(relationshipId, {
               status: 'accepted',
             });
           }
@@ -277,8 +357,8 @@ export default function HomeScreen() {
               id: relationshipId,
               status: 'rejected',
             });
-          } else {
-            await relationshipService.patch?.(relationshipId, {
+          } else if (relationshipService.patch) {
+            await relationshipService.patch(relationshipId, {
               status: 'rejected',
             });
           }
@@ -288,7 +368,7 @@ export default function HomeScreen() {
         await loadFamilyRelationships();
       } catch (e) {
         console.log('respondToRequest error:', e);
-        notify('Xử lý yêu cầu thất bại. Vui lòng thử lại.');
+        notify('Xử lý yêu cầu thất bại. Vui lòng thử lại.', 'error');
       } finally {
         setReqLoading(false);
       }
@@ -296,67 +376,64 @@ export default function HomeScreen() {
     [loadPendingRequests, loadFamilyRelationships, notify],
   );
 
-  // Xử lý video call đến thành viên gia đình
-  const handleVideoCallToMember = useCallback(async (member) => {
-    try {
-      // Kiểm tra socket đã kết nối chưa
-      if (!socketService.isConnected) {
-        notify('Không thể thực hiện cuộc gọi. Vui lòng kiểm tra kết nối.', 'error');
-        return;
+  // gọi video tới thành viên gia đình
+  const handleVideoCallToMember = useCallback(
+    async member => {
+      try {
+        if (!socketService.isConnected) {
+          notify('Không thể thực hiện cuộc gọi. Vui lòng kiểm tra kết nối.', 'error');
+          return;
+        }
+
+        if (!user) {
+          notify('Không thể lấy thông tin người dùng', 'error');
+          return;
+        }
+
+        const convResult =
+          await conversationService.getConversationByParticipants(
+            user._id,
+            member._id,
+          );
+
+        if (!convResult.success) {
+          notify('Không tìm thấy cuộc trò chuyện với thành viên này', 'error');
+          return;
+        }
+
+        const conversationId = convResult.data._id;
+
+        const call = CallService.createCall({
+          conversationId,
+          otherParticipant: member,
+          callType: 'video',
+        });
+
+        console.log('📞 Initiating video call to member:', call);
+
+        socketService.requestVideoCall({
+          callId: call.callId,
+          conversationId,
+          callerId: user._id,
+          callerName: user.fullName,
+          callerAvatar: user.avatar,
+          calleeId: member._id,
+          callType: 'video',
+        });
+
+        nav.navigate('VideoCall', {
+          callId: call.callId,
+          conversationId,
+          otherParticipant: member,
+          isIncoming: false,
+        });
+      } catch (error) {
+        console.error('❌ Error initiating video call:', error);
+        notify('Không thể thực hiện cuộc gọi. Vui lòng thử lại.', 'error');
       }
-
-      // Kiểm tra có user hiện tại không
-      if (!user) {
-        notify('Không thể lấy thông tin người dùng', 'error');
-        return;
-      }
-
-      // Lấy conversation giữa 2 người
-      const convResult = await conversationService.getConversationByParticipants(
-        user._id,
-        member._id
-      );
-
-      if (!convResult.success) {
-        notify('Không tìm thấy cuộc trò chuyện với thành viên này', 'error');
-        return;
-      }
-
-      const conversationId = convResult.data._id;
-
-      // Tạo cuộc gọi mới
-      const call = CallService.createCall({
-        conversationId,
-        otherParticipant: member,
-        callType: 'video'
-      });
-
-      console.log('📞 Initiating video call to member:', call);
-
-      // Emit socket event để gọi
-      socketService.requestVideoCall({
-        callId: call.callId,
-        conversationId,
-        callerId: user._id,
-        callerName: user.fullName,
-        callerAvatar: user.avatar,
-        calleeId: member._id,
-        callType: 'video'
-      });
-
-      // Navigate đến VideoCallScreen
-      nav.navigate('VideoCall', {
-        callId: call.callId,
-        conversationId,
-        otherParticipant: member,
-        isIncoming: false, // Người gọi
-      });
-
-    } catch (error) {
-      console.error('❌ Error initiating video call:', error);
-      notify('Không thể thực hiện cuộc gọi. Vui lòng thử lại.', 'error');
-    }
-  }, [user, nav, notify]);
+    },
+    [user, nav, notify],
+  );
 
   // boot user
   useEffect(() => {
@@ -395,57 +472,51 @@ export default function HomeScreen() {
     }
   }, [user, loadPendingRequests, loadFamilyRelationships]);
 
+  // Bật/tắt FloatingDeadman theo role & relationship
   useEffect(() => {
-  if (!user?._id) return;
-  const role = (user?.role || '').toLowerCase();
+    if (!user?._id) return;
+    const role = (user?.role || '').toLowerCase();
 
-  if (role !== 'elderly') {
-    disableFloating();
-    return;
-  }
+    if (role !== 'elderly') {
+      disableFloating();
+      return;
+    }
 
-  const hasAcceptedRelationship = (relationships || []).some(rel => {
-    const isElderInRel =
-      String(rel?.elderly?._id) === String(user._id) ||
-      String(rel?.family?._id) === String(user._id);
+    const hasAcceptedRelationship = (relationships || []).some(rel => {
+      const isElderInRel =
+        String(rel?.elderly?._id) === String(user._id) ||
+        String(rel?.family?._id) === String(user._id);
       return isElderInRel && rel?.status === 'accepted';
-  });
+    });
 
-  if (!hasAcceptedRelationship) {
-    disableFloating();
-    return;
-  }
+    if (!hasAcceptedRelationship) {
+      disableFloating();
+      return;
+    }
 
-  enableFloating();
-}, [user, relationships]);
+    enableFloating();
+  }, [user, relationships]);
 
-  // time
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-
-  // 🆕 Listener cho SOS call answered (elderly nhận khi có người chấp nhận)
+  // Listener SOS answered / no answer
   useEffect(() => {
     if (!user?._id) return;
 
-    const handleSOSCallAnswered = (data) => {
+    const handleSOSCallAnswered = data => {
       const { sosId, callId, recipient } = data;
 
       console.log('✅ SOS call answered by:', recipient?.fullName);
 
-      // 🆕 Clear isSendingSOS state vì đã có người nhận
       setIsSendingSOS(false);
 
       try {
-        console.log('🧹 Disabling Deadman floating overlay because SOS call was answered');
+        console.log(
+          '🧹 Disabling Deadman floating overlay because SOS call was answered',
+        );
         disableFloating();
       } catch (err) {
         console.log('⚠️ Error disabling Deadman floating overlay:', err);
       }
 
-      // Tự động navigate đến VideoCall
       nav.navigate('VideoCall', {
         callId,
         conversationId: null,
@@ -455,25 +526,26 @@ export default function HomeScreen() {
         sosId,
       });
 
-      // Show toast notification
       if (Platform.OS === 'android') {
         ToastAndroid.show(
-          `✅ ${recipient?.fullName || 'Thành viên gia đình'} đã chấp nhận cuộc gọi`,
-          ToastAndroid.SHORT
+          `✅ ${
+            recipient?.fullName || 'Thành viên gia đình'
+          } đã chấp nhận cuộc gọi`,
+          ToastAndroid.SHORT,
         );
       }
     };
 
-    const handleSOSCallNoAnswer = (data) => {
+    const handleSOSCallNoAnswer = data => {
       console.log('❌ SOS call - no one answered');
-      
-      // 🆕 Clear isSendingSOS state vì đã hết người để gọi
+
       setIsSendingSOS(false);
-      
+
       Alert.alert(
         '⚠️ Không có phản hồi',
-        data.message || 'Không có thành viên nào trả lời cuộc gọi khẩn cấp. Vui lòng thử gọi trực tiếp hoặc liên hệ số khẩn cấp 115.',
-        [{ text: 'OK' }]
+        data.message ||
+          'Không có thành viên nào trả lời cuộc gọi khẩn cấp. Vui lòng thử gọi trực tiếp hoặc liên hệ số khẩn cấp 115.',
+        [{ text: 'OK' }],
       );
     };
 
@@ -486,7 +558,7 @@ export default function HomeScreen() {
     };
   }, [user, nav]);
 
-  // 🆕 Listener cho event từ Floating Checkin khi vuốt xuống
+  // Listener Deadman vuốt xuống
   useEffect(() => {
     if (!user?._id) return;
 
@@ -496,12 +568,11 @@ export default function HomeScreen() {
       return;
     }
     const eventEmitter = new NativeEventEmitter(NativeModules.FloatingCheckin);
-    
-    const subscription = eventEmitter.addListener('onDeadmanSwipe', (event) => {
+
+    const subscription = eventEmitter.addListener('onDeadmanSwipe', event => {
       const { choice } = event;
       console.log('🚨 Deadman swipe event received:', choice);
-      
-      // Nếu vuốt xuống (phys_unwell) → gọi handleEmergency
+
       if (choice === 'phys_unwell') {
         console.log('📞 Triggering handleEmergency from swipe down...');
         handleEmergency();
@@ -513,146 +584,32 @@ export default function HomeScreen() {
     };
   }, [user, handleEmergency]);
 
+  // Auto SOS khi quay lại từ Deadman
   useEffect(() => {
     if (!user?._id) {
-      console.log('⚠️ [ElderHome/HomeScreen] autoSOSFromDeadman: chưa có user, bỏ qua');
       return;
     }
 
     const role = (user?.role || '').toLowerCase();
     const autoSOS = route?.params?.autoSOSFromDeadman;
 
-    console.log('🔁 [ElderHome/HomeScreen] check autoSOSFromDeadman:', {
-      userId: user?._id,
-      role,
-      autoSOS,
-      params: route?.params,
-    });
-
-    // Chỉ người cao tuổi mới auto SOS
     if (role !== 'elderly') {
-      console.log('ℹ️ [ElderHome/HomeScreen] Không phải elderly, bỏ qua autoSOSFromDeadman');
       return;
     }
 
-    // Không có flag thì thôi
     if (!autoSOS) {
       return;
     }
 
-    console.log('📞 [ElderHome/HomeScreen] Auto calling handleEmergency() từ autoSOSFromDeadman');
-
-    // GỌI SOS THẲNG
     handleEmergency();
 
-    // Reset flag để tránh auto gọi lại nhiều lần khi re-render
     if (nav.setParams) {
       nav.setParams({
         ...(route?.params || {}),
         autoSOSFromDeadman: false,
       });
-      console.log('✅ [ElderHome/HomeScreen] Đã reset autoSOSFromDeadman về false');
     }
   }, [user, route, nav, handleEmergency]);
-
-  const timeStr = useMemo(
-    () =>
-      now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-    [now],
-  );
-  const dateStr = useMemo(() => {
-    const weekday = now.toLocaleDateString('vi-VN', { weekday: 'long' });
-    const day = now.getDate();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
-    return `${cap(weekday)}, ${day} tháng ${month}, ${year}`;
-  }, [now]);
-
-  // Hàm lấy vị trí hiện tại
-  const getCurrentLocation = useCallback(() => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        // Yêu cầu quyền truy cập vị trí trên Android
-        if (Platform.OS === 'android') {
-          const granted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-            {
-              title: 'Quyền truy cập vị trí',
-              message:
-                'E-Care cần quyền truy cập vị trí để gửi cảnh báo khẩn cấp.',
-              buttonPositive: 'Đồng ý',
-              buttonNegative: 'Từ chối',
-            },
-          );
-
-          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            reject(new Error('Không có quyền truy cập vị trí'));
-            return;
-          }
-        }
-
-        // Lấy vị trí hiện tại
-        Geolocation.getCurrentPosition(
-          position => {
-            resolve({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            });
-          },
-          error => {
-            console.error('Geolocation error:', error);
-            reject(error);
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 10000,
-          },
-        );
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }, []);
-
-  // Hàm chuyển đổi tọa độ thành địa chỉ bằng Nominatim
-  const reverseGeocode = useCallback(async (latitude, longitude) => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=vi`,
-        {
-          headers: {
-            'User-Agent': 'E-Care Mobile App',
-          },
-        },
-      );
-
-      const data = await response.json();
-
-      if (data && data.display_name) {
-        return data.display_name;
-      }
-
-      // Fallback nếu không có display_name
-      if (data && data.address) {
-        const addr = data.address;
-        const parts = [
-          addr.road || addr.street,
-          addr.suburb || addr.neighbourhood,
-          addr.city || addr.town || addr.village,
-          addr.state,
-          addr.country,
-        ].filter(Boolean);
-
-        return parts.join(', ');
-      }
-
-      return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      return `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    }
-  }, []);
 
   const bookAppointment = () => {
     nav.navigate('IntroductionBookingDoctor', {
@@ -663,9 +620,10 @@ export default function HomeScreen() {
   const findSupport = () => {
     nav.navigate('ServiceSelectionScreen', {
       elderlyId: user?._id || null,
-      source: 'FamilyListFunction_Supporter', // để màn sau biết đi từ đâu
+      source: 'FamilyListFunction_Supporter',
     });
   };
+
   const chatSupport = () => nav.navigate('ChatWithAI');
 
   if (booting) {
@@ -677,9 +635,7 @@ export default function HomeScreen() {
         ]}
       >
         <ActivityIndicator size="large" />
-        <Text style={{ marginTop: 12, color: '#6b7280', fontSize: 18 }}>
-          Đang tải dữ liệu...
-        </Text>
+        <Text style={styles.loadingText}>Đang tải dữ liệu...</Text>
       </SafeAreaView>
     );
   }
@@ -687,11 +643,10 @@ export default function HomeScreen() {
   const displayName =
     (user?.fullName && `bác ${user.fullName.split(' ').slice(-1)[0]}`) ||
     (user?.phoneNumber && `người dùng ${user.phoneNumber}`) ||
-    'bác Minh';
+    'bác';
 
-  // rút gọn để ít phải lướt: chỉ lấy 2 yêu cầu và 4 thành viên
   const pendingPreview = pendingRequests.slice(0, 2);
-  const familyPreview = familyList.slice(0, 4);
+  const familyPreview = familyList.slice(0, 3);
 
   /* ===================== RENDER ===================== */
   return (
@@ -700,223 +655,151 @@ export default function HomeScreen() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header} accessibilityRole="header">
-          <View style={styles.headerTop}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.hi} maxFontSizeMultiplier={1.4}>
-                Chào {displayName}! 👋
-              </Text>
-              <Text style={styles.date} maxFontSizeMultiplier={1.3}>
-                {dateStr}
-              </Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              {/* <View
-                style={styles.timePill}
-                accessible
-                accessibilityLabel={`Bây giờ là ${timeStr}`}
-              >
-                <Text style={styles.timeText} maxFontSizeMultiplier={1.6}>
-                  {timeStr}
-                </Text>
-              </View> */}
-              {/* <TouchableOpacity
-                style={styles.logoutBtn}
-                onPress={onLogout}
-                accessibilityRole="button"
-                accessibilityLabel="Đăng xuất"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.logoutText}>Đăng xuất</Text>
-              </TouchableOpacity> */}
-            </View>
-          </View>
-        </View>
+        {/* Không cần lời chào to, chỉ hiển thị thông tin ngày giờ gọn */}
+        {/* <View style={styles.infoPillRow}>
+          <Text style={styles.infoPillText}>{dateStr}</Text>
+          <Text style={styles.infoPillText}>Bây giờ: {timeStr}</Text>
+        </View> */}
 
-        {/* Emergency – nút lớn, ít chữ, tương phản cao */}
+        {/* Khối 1 – GỌI KHẨN CẤP */}
         <TouchableOpacity
-          style={[
-            styles.emgBigBtn,
-            isSendingSOS && { opacity: 0.6, backgroundColor: '#ef4444' }
-          ]}
+          style={[styles.emgBigBtn, isSendingSOS && { opacity: 0.7 }]}
           onPress={handleEmergency}
           disabled={isSendingSOS}
           accessibilityRole="button"
           accessibilityLabel="Gọi khẩn cấp. Nhấn để báo động cho gia đình"
           activeOpacity={0.9}
         >
-          <Text style={styles.emgBigIcon} accessible>🚨</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.emgBigTitle}>
-              {isSendingSOS ? 'ĐANG XỬ LÝ...' : 'GỌI KHẨN CẤP'}
-            </Text>
-            <Text style={styles.emgBigDesc}>
-              {isSendingSOS 
-                ? 'Đang gọi đến thành viên gia đình...' 
-                : 'Liên hệ ngay toàn bộ gia đình'}
+          <View style={styles.emgIconWrap}>
+            <Text style={styles.emgBigIcon} accessible>
+              🚨
             </Text>
           </View>
-          <Text style={styles.emgChevron}>›</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.emgBigTitle}>
+              {isSendingSOS ? 'ĐANG GỬI TÍN HIỆU...' : 'GỌI KHẨN CẤP'}
+            </Text>
+            <Text style={styles.emgBigDesc}>
+              {isSendingSOS
+                ? 'Đang liên hệ với các thành viên gia đình...'
+                : 'Nhấn một lần để báo động cho gia đình'}
+            </Text>
+          </View>
         </TouchableOpacity>
 
-        {/* Quick actions – 2 cột, nút lớn */}
-        <Section title="Tác vụ nhanh" icon="" color="#2563eb">
-          <View style={styles.quickGrid}>
-            <BigAction
-              tint="#F59E0B"
-              icon="🧑🏻‍⚕️"
-              title="Hẹn bác sĩ"
-              desc="Khám trực tiếp/Video"
-              onPress={bookAppointment}
-            />
+        {/* Khối 2 – TÁC VỤ CHÍNH */}
+        <Section title="Tác vụ chính" icon="⭐" color="#2563eb">
+          <View style={styles.mainActionList}>
             <BigAction
               tint="#4F46E5"
               icon="💬"
-              title="Trò chuyện E-Care"
-              desc="AI hỗ trợ tinh thần"
+              title="Trò chuyện với E-Care"
+              desc="AI lắng nghe và hỗ trợ"
               onPress={chatSupport}
             />
             <BigAction
               tint="#16A34A"
-              icon="💁‍♀️"
+              icon="🧑🏻‍⚕️"
+              title="Hẹn gặp bác sĩ"
+              desc="Khám trực tiếp hoặc video"
+              onPress={bookAppointment}
+            />
+            <BigAction
+              tint="#059669"
+              icon="🤝"
               title="Thuê người hỗ trợ"
-              desc="Giúp việc • Chăm sóc"
+              desc="Giúp việc • chăm sóc tại nhà"
               onPress={findSupport}
             />
-            {/* <BigAction
-              tint="#22A2F2"
-              icon="❤️"
-              title="Nhật ký sức khỏe"
-              desc="Triệu chứng • Chỉ số"
-              onPress={healthDiary}
-            /> */}
-            
           </View>
         </Section>
 
-        {/* Family Connections – rút gọn để ít phải lướt */}
-        <Section title="Kết nối gia đình" icon="👨‍👩‍👧" color="#f43f5e">
-          
-          {/* ĐÃ KẾT NỐI (tối đa 4) */}
-          <View style={[styles.card, { paddingTop: 12 }]}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Đã kết nối</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={styles.countPill}>
-                  {familyLoading ? '…' : familyList.length}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => nav.navigate('FamilyConnectionList')}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.viewAll}>Xem tất cả ›</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
+        {/* Khối 3 – GIA ĐÌNH & BÁC SĨ */}
+        <Section
+          title="Kết nối"
+          icon="👨‍👩‍👧"
+          color="#f43f5e"
+          rightText="Xem tất cả"
+          onRightPress={() => nav.navigate('FamilyConnectionList')}
+        >
+          <View style={styles.card}>
             {familyLoading ? (
               <ActivityIndicator />
             ) : familyPreview.length === 0 ? (
-              <View
-                style={[
-                  styles.msgCard,
-                  { backgroundColor: '#FFF7ED', borderLeftColor: '#FB923C' },
-                ]}
-              >
-                <View style={[styles.msgIcon, { backgroundColor: '#FFEDD5' }]}>
+              <View style={styles.msgCard}>
+                <View style={styles.msgIcon}>
                   <Text>👋</Text>
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.msgTitle}>Chưa có thành viên gia đình</Text>
                   <Text style={styles.msgText}>
-                    Hãy mời người thân kết nối để tiện liên lạc và theo dõi.
+                    Mời con cháu hoặc bác sĩ kết nối để tiện liên lạc.
                   </Text>
-                  <TouchableOpacity onPress={() => nav.navigate('FamilyConnectionList')}>
-                    <Text style={[styles.secRight, { marginTop: 6 }]}>
-                      Mời/Quản lý gia đình ›
-                    </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      nav.navigate('FamilyConnectionList')
+                    }
+                  >
+                    <Text style={styles.msgLink}>Mời/Quản lý gia đình ›</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ) : (
-              <View style={styles.familyRow}>
-                {familyPreview.map(m => {
-                const rel = (m.relationship || '').toLowerCase();
-                const role = (m.role || '').toLowerCase();
+              <>
+                <View style={styles.familyList}>
+                  {familyPreview.map(m => {
+                    const rel = (m.relationship || '').toLowerCase();
+                    const role = (m.role || '').toLowerCase();
 
-                const isDoctor =
-                  role === 'doctor' ||
-                  rel === 'doctor' ||
-                  rel === 'bác sĩ';   // 👈 thêm trường hợp tiếng Việt
+                    const isDoctor =
+                      role === 'doctor' ||
+                      rel === 'doctor' ||
+                      rel === 'bác sĩ';
 
-                const subText = isDoctor
-                  ? `Bác sĩ của ${user?.fullName || 'người cao tuổi'}`
-                  : (m.relationship || 'Thành viên');
+                    const subText = isDoctor
+                      ? `Bác sĩ của ${user?.fullName || 'người cao tuổi'}`
+                      : (m.relationship || 'Thành viên gia đình');
 
-                console.log('[REL RENDER] item =', {
-                  fullName: m.fullName,
-                  id: m._id,
-                  isDoctor,
-                  relationship: m.relationship,
-                  role: m.role,
-                  subText,
-                });
-
-                return (
-                  <ConnectedCard
-                    key={m._id}
-                    icon={isDoctor ? '👩‍⚕️' : '👤'}
-                    sub={subText}
-                    title={m.fullName}
-                    onPress={() => handleVideoCallToMember(m)}
-                    online={false}
-                  />
-                );
-              })}
-                <Text
-                  style={{
-                    marginTop: 6,
-                    color: '#6b7280',
-                    fontSize: 14,
-                    textAlign: 'center',
-                    width: '100%',
-                  }}
-                >
-                  Nhấn vào tên của thành viên để gọi video
+                    return (
+                      <ConnectedCard
+                        key={m._id}
+                        icon={isDoctor ? '👩‍⚕️' : '👤'}
+                        sub={subText}
+                        title={m.fullName}
+                        onPress={() => handleVideoCallToMember(m)}
+                        online={false}
+                      />
+                    );
+                  })}
+                </View>
+                <Text style={styles.familyHint}>
+                  Nhấn vào tên để gọi video.
                 </Text>
-              </View>
+              </>
             )}
           </View>
+        </Section>
 
-          {/* YÊU CẦU KẾT NỐI (0–2 item) */}
+        {/* Khối 4 – YÊU CẦU KẾT NỐI */}
+        <Section
+          title="Yêu cầu kết nối"
+          icon="📩"
+          color="#0f766e"
+          rightText="Xem tất cả"
+          onRightPress={() => nav.navigate('FamilyConnection')}
+        >
           <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardTitle}>Yêu cầu kết nối</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={styles.countPill}>
-                  {reqLoading ? '…' : pendingRequests.length}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => nav.navigate('FamilyConnection')}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.viewAll}>Xem tất cả ›</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
             {reqLoading ? (
               <ActivityIndicator />
             ) : pendingPreview.length === 0 ? (
-              <Text style={styles.muted}>Không có yêu cầu mới.</Text>
+              <Text style={styles.muted}>Hiện không có yêu cầu mới.</Text>
             ) : (
               <View style={{ gap: 12 }}>
                 {pendingPreview.map(r => {
                   const other = getOtherMember(r, user?._id);
                   const name = other?.fullName || 'Người dùng';
-                  const relation = r?.relationship || 'Thành viên gia đình';
+                  const relation =
+                    r?.relationship || 'Thành viên gia đình';
                   const requestedAt = r?.createdAt
                     ? new Date(r.createdAt).toLocaleString('vi-VN')
                     : 'Gần đây';
@@ -926,55 +809,22 @@ export default function HomeScreen() {
                       rq={{
                         name,
                         relation,
-                        note: r?.note || 'Yêu cầu kết nối',
+                        note:
+                          r?.note ||
+                          'Yêu cầu kết nối với bạn trên E-Care',
                         requestedAt,
                       }}
-                      onAccept={() => respondToRequest(r?._id, 'accept')}
-                      onDecline={() => respondToRequest(r?._id, 'reject')}
+                      onAccept={() =>
+                        respondToRequest(r?._id, 'accept')
+                      }
+                      onDecline={() =>
+                        respondToRequest(r?._id, 'reject')
+                      }
                     />
                   );
                 })}
               </View>
             )}
-          </View>
-        </Section>
-
-        {/* Schedule – chỉ việc sắp tới + 1 việc kế */}
-        <Section title="Lịch hôm nay" icon="📅" color="#7c3aed">
-          <View style={styles.scheduleList}>
-            <ScheduleItem
-              icon="🚶"
-              title="Đi bộ trong công viên"
-              sub="16:00 • Sắp đến giờ"
-              status="soon"
-              rightBadge="30 phút"
-            />
-            <ScheduleItem
-              icon="💊"
-              title="Uống thuốc tối"
-              sub="20:00 • Chưa đến giờ"
-              status="default"
-            />
-          </View>
-        </Section>
-
-        {/* Health overview – icon và chữ to, dễ đọc */}
-        <Section title="Tổng quan sức khỏe" icon="📊" color="#16A34A">
-          <View style={styles.statRow}>
-            <StatChip color="#22C55E" icon="❤️" label="Huyết áp" value="120/80" />
-            <StatChip color="#3B82F6" icon="🌡️" label="Nhiệt độ" value="36.5°C" />
-            <StatChip color="#F59E0B" icon="💓" label="Nhịp tim" value="72" />
-          </View>
-
-          <View style={styles.scoreCard}>
-            <View style={styles.scoreHeader}>
-              <Text style={styles.scoreTitle}>Chỉ số sức khỏe tổng thể</Text>
-              <Text style={styles.scoreBadge}>Tốt • 85%</Text>
-            </View>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: '85%' }]} />
-            </View>
-            <Text style={styles.scoreHint}>Dựa trên các chỉ số gần đây</Text>
           </View>
         </Section>
       </ScrollView>
@@ -1001,8 +851,19 @@ function Section({
           onPress={onTitlePress}
           activeOpacity={0.8}
         >
-          <Text style={[styles.secChipText, { color }]}>{icon}</Text>
-          <Text style={[styles.secChipText, { color, marginLeft: 8 }]}>{title}</Text>
+          {!!icon && (
+            <Text style={[styles.secChipText, { color }]}>
+              {icon}
+            </Text>
+          )}
+          <Text
+            style={[
+              styles.secChipText,
+              { color, marginLeft: icon ? 8 : 0 },
+            ]}
+          >
+            {title}
+          </Text>
         </TitleComponent>
         {rightText ? (
           <TouchableOpacity
@@ -1023,7 +884,7 @@ function BigAction({ tint, icon, title, desc, onPress }) {
     <TouchableOpacity
       style={[
         styles.bigAction,
-        { borderColor: hexWithAlpha(tint, 0.3), backgroundColor: '#fff' },
+        { borderColor: hexWithAlpha(tint, 0.35), backgroundColor: '#fff' },
       ]}
       onPress={onPress}
       activeOpacity={0.9}
@@ -1037,65 +898,15 @@ function BigAction({ tint, icon, title, desc, onPress }) {
         <Text style={[styles.bigIcon, { color: tint }]}>{icon}</Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.bigTitle} numberOfLines={1} maxFontSizeMultiplier={1.4}>
+        <Text style={styles.bigTitle} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={styles.bigDesc} numberOfLines={2} maxFontSizeMultiplier={1.3}>
+        <Text style={styles.bigDesc} numberOfLines={2}>
           {desc}
         </Text>
       </View>
       <Text style={[styles.actionChevron, { color: tint }]}>›</Text>
     </TouchableOpacity>
-  );
-}
-
-function StatChip({ color, icon, label, value }) {
-  return (
-    <View
-      style={[
-        styles.statChip,
-        {
-          borderColor: hexWithAlpha(color, 0.35),
-          backgroundColor: hexWithAlpha(color, 0.08),
-        },
-      ]}
-      accessibilityRole="summary"
-      accessible
-      importantForAccessibility="yes"
-    >
-      <Text style={[styles.statChipIcon, { color }]}>{icon}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.statChipValue, { color }]}>{value}</Text>
-        <Text style={styles.statChipLabel}>{label}</Text>
-      </View>
-    </View>
-  );
-}
-
-function ScheduleItem({ icon, title, sub, status = 'default', rightBadge }) {
-  const map = {
-    done: { border: '#22C55E', bg: '#F0FFF7' },
-    soon: { border: '#F59E0B', bg: '#FFF8ED' },
-    default: { border: '#CBD5E1', bg: '#F8FAFC' },
-  };
-  const { border, bg } = map[status] ?? map.default;
-  return (
-    <View
-      style={[styles.schItem, { borderLeftColor: border, backgroundColor: bg }]}
-      accessibilityRole="summary"
-      accessible
-    >
-      <Text style={styles.schIcon}>{icon}</Text>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.schTitle}>{title}</Text>
-        <Text style={styles.schSub}>{sub}</Text>
-      </View>
-      {!!rightBadge && (
-        <View style={[styles.badge, { backgroundColor: border }]}>
-          <Text style={styles.badgeText}>{rightBadge}</Text>
-        </View>
-      )}
-    </View>
   );
 }
 
@@ -1118,12 +929,14 @@ function ConnectedCard({ icon, title, sub, onPress, online }) {
           ]}
         />
       </View>
-      <Text style={styles.contactTitle} numberOfLines={1}>
-        {title}
-      </Text>
-      <Text style={styles.contactSub} numberOfLines={1}>
-        {sub}
-      </Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.contactTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={styles.contactSub} numberOfLines={1}>
+          {sub}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -1133,7 +946,8 @@ function RequestItem({ rq, onAccept, onDecline }) {
     <View style={styles.reqItem} accessible>
       <View style={{ flex: 1 }}>
         <Text style={styles.reqName}>
-          {rq.name} • <Text style={styles.reqRelation}>{rq.relation}</Text>
+          {rq.name}{' '}
+          <Text style={styles.reqRelation}>• {rq.relation}</Text>
         </Text>
         <Text style={styles.reqNote}>{rq.note}</Text>
         <Text style={styles.reqTime}>{rq.requestedAt}</Text>
@@ -1173,45 +987,45 @@ function hexWithAlpha(hex, alpha = 0.1) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F6F8FC' },
-  container: { padding: 16, paddingBottom: 28, gap: 16 },
+  safe: {
+    flex: 1,
+    backgroundColor: '#EEF2FF',
+  },
+  container: {
+    padding: 16,
+    paddingBottom: 32,
+    gap: 18,
+  },
 
-  /* Header */
-  header: {
-    backgroundColor: '#4F79FF',
-    borderRadius: 22,
-    padding: 18,
-    paddingBottom: 18,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
+  /* Loading */
+  loadingText: {
+    marginTop: 12,
+    color: '#4b5563',
+    fontSize: 18,
+    fontWeight: '600',
   },
-  headerTop: {
+
+  /* Info row (ngày/giờ nhỏ gọn) */
+  infoPillRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
   },
-  hi: { color: '#fff', fontSize: 24, fontWeight: '800' },
-  date: { color: 'rgba(255,255,255,0.95)', marginTop: 8, fontSize: 16 },
-  timePill: {
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 14,
+  infoPillText: {
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    color: '#1e293b',
+    fontSize: 13,
+    fontWeight: '600',
   },
-  timeText: { color: '#fff', fontSize: 22, fontWeight: '800' },
-  logoutBtn: {
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.15)',
-    borderRadius: 12,
-  },
-  logoutText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 
   /* Section */
-  section: { gap: 12 },
+  section: {
+    gap: 10,
+  },
   secHeader: {
     paddingHorizontal: 2,
     flexDirection: 'row',
@@ -1221,200 +1035,162 @@ const styles = StyleSheet.create({
   secChip: {
     alignSelf: 'flex-start',
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  secChipText: { fontWeight: '800', fontSize: 18 },
-  secRight: { color: '#475569', fontWeight: '800', fontSize: 14 },
-  viewAll: { color: '#475569', fontWeight: '800', fontSize: 14 },
+  secChipText: {
+    fontWeight: '800',
+    fontSize: 20,
+  },
+  secRight: {
+    color: '#0f172a',
+    fontWeight: '700',
+    fontSize: 20,
+    textDecorationLine: 'underline',
+  },
 
   /* Emergency BIG */
   emgBigBtn: {
-    backgroundColor: '#EA3D3D',
-    borderRadius: 18,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: hexWithAlpha('#000', 0.08),
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: 26,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
+    borderWidth: 2,
+    borderColor: '#B91C1C',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
   },
-  emgBigIcon: { fontSize: 28, marginRight: 14 },
-  emgBigTitle: { color: '#fff', fontSize: 20, fontWeight: '900' },
-  emgBigDesc: { color: 'rgba(255,255,255,0.92)', marginTop: 2, fontSize: 14 },
-  emgChevron: { color: 'rgba(255,255,255,0.95)', fontSize: 30, marginLeft: 8 },
+  emgIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 999,
+    backgroundColor: 'rgba(248, 250, 252, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  emgBigIcon: {
+    fontSize: 34,
+  },
+  emgBigTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '900',
+  },
+  emgBigDesc: {
+    color: 'rgba(255,255,255,0.95)',
+    marginTop: 4,
+    fontSize: 15,
+  },
 
-  /* Quick actions */
-  quickGrid: {
+  /* Main actions (vertical list) */
+  mainActionList: {
     flexDirection: 'column',
-    flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   bigAction: {
-    flexBasis: '48%',
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    minHeight: 84,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    backgroundColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOpacity: 0.03,
+    shadowOpacity: 0.04,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },
   },
   bigIconWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 12,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bigIcon: { fontSize: 26 },
-  bigTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
-  bigDesc: { color: '#6b7280', fontSize: 14, marginTop: 2 },
-  actionChevron: { fontSize: 28 },
+  bigIcon: {
+    fontSize: 26,
+  },
+  bigTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  bigDesc: {
+    color: '#6b7280',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  actionChevron: {
+    fontSize: 28,
+  },
 
-  /* Cards */
+  /* Card chung */
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E6E9F1',
-    padding: 12,
+    borderColor: '#E5E7EB',
+    padding: 14,
     shadowColor: '#000',
     shadowOpacity: 0.04,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
-    gap: 12,
+    gap: 10,
   },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardTitle: { fontWeight: '900', fontSize: 18, color: '#0f172a' },
-  countPill: {
-    backgroundColor: '#EEF2FF',
-    color: '#3730a3',
-    fontWeight: '800',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
+  muted: {
+    color: '#9ca3af',
     fontSize: 14,
   },
-  muted: { color: '#94a3b8', fontSize: 14 },
 
-  /* Health */
-  statRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 4,
+  /* Family list */
+  familyList: {
+    flexDirection: 'column',
+    gap: 10,
   },
-  statChip: {
-    flexGrow: 1,
-    flexBasis: '30%',
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-  },
-  statChipIcon: { fontSize: 22 },
-  statChipValue: { fontSize: 18, fontWeight: '900' },
-  statChipLabel: { color: '#475569', fontSize: 13 },
-
-  scoreCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  scoreHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  scoreTitle: { fontWeight: '900', fontSize: 18, color: '#111827' },
-  scoreBadge: {
-    backgroundColor: hexWithAlpha('#22C55E', 0.15),
-    color: '#16A34A',
-    fontWeight: '900',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-  progressTrack: {
-    height: 12,
-    borderRadius: 8,
-    backgroundColor: '#E5E7EB',
-    overflow: 'hidden',
-  },
-  progressFill: { height: '100%', backgroundColor: '#22C55E' },
-  scoreHint: { color: '#6b7280', fontSize: 13, marginTop: 8 },
-
-  /* Schedule */
-  scheduleList: { gap: 12 },
-  schItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-    borderRadius: 16,
-    borderLeftWidth: 6,
-  },
-  schIcon: { fontSize: 20, width: 28, textAlign: 'center' },
-  schTitle: { fontSize: 17, fontWeight: '800', color: '#111827' },
-  schSub: { color: '#475569', fontSize: 13, marginTop: 3 },
-  badge: {
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    alignSelf: 'flex-start',
-  },
-  badgeText: { color: '#fff', fontWeight: '900', fontSize: 12 },
-
-  /* Family */
-  familyRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 6,
+  familyHint: {
+    marginTop: 6,
+    color: '#6b7280',
+    fontSize: 14,
   },
   contact: {
-    flexBasis: '48%',
-    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
+    padding: 12,
   },
   contactIconWrap: {
-    width: 54,
-    height: 54,
-    borderRadius: 14,
+    width: 52,
+    height: 52,
+    borderRadius: 999,
     backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginRight: 12,
   },
-  contactIcon: { fontSize: 28 },
+  contactIcon: {
+    fontSize: 28,
+  },
   contactTitle: {
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#111827',
-    textAlign: 'center',
-    marginBottom: 4,
-    fontSize: 16,
+    fontSize: 17,
   },
-  contactSub: { color: '#6b7280', fontSize: 13 },
+  contactSub: {
+    color: '#6b7280',
+    fontSize: 14,
+    marginTop: 2,
+  },
   dot: {
     position: 'absolute',
     right: -2,
@@ -1431,50 +1207,78 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 14,
     borderRadius: 16,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F9FAFB',
     borderWidth: 1,
-    borderColor: '#E6E9F1',
+    borderColor: '#E5E7EB',
     gap: 12,
   },
-  reqName: { fontWeight: '900', color: '#0f172a', fontSize: 16 },
-  reqRelation: { color: '#2563eb', fontWeight: '800' },
-  reqNote: { color: '#475569', marginTop: 4, fontSize: 14 },
-  reqTime: { color: '#94a3b8', fontSize: 12, marginTop: 6 },
-  reqBtnRow: { justifyContent: 'center', gap: 10 },
+  reqName: {
+    fontWeight: '800',
+    color: '#0f172a',
+    fontSize: 16,
+  },
+  reqRelation: {
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+  reqNote: {
+    color: '#475569',
+    marginTop: 4,
+    fontSize: 14,
+  },
+  reqTime: {
+    color: '#9ca3af',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  reqBtnRow: {
+    justifyContent: 'center',
+    gap: 8,
+  },
   reqBtn: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
-    minWidth: 110,
+    borderRadius: 14,
+    minWidth: 120,
     alignItems: 'center',
   },
-  reqBtnText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+  reqBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+  },
 
   /* Message */
   msgCard: {
     flexDirection: 'row',
     gap: 12,
-    backgroundColor: '#F0FFF7',
+    backgroundColor: '#FEF3C7',
     borderRadius: 16,
     borderLeftWidth: 6,
-    borderLeftColor: '#22C55E',
-    padding: 16,
-    marginTop: 6,
+    borderLeftColor: '#FBBF24',
+    padding: 14,
   },
   msgIcon: {
     width: 32,
     height: 32,
-    borderRadius: 8,
-    backgroundColor: '#DCFCE7',
+    borderRadius: 999,
+    backgroundColor: '#FDE68A',
     alignItems: 'center',
     justifyContent: 'center',
   },
   msgTitle: {
-    fontWeight: '900',
+    fontWeight: '800',
     color: '#111827',
-    marginBottom: 6,
+    marginBottom: 4,
     fontSize: 16,
   },
-  msgText: { color: '#475569', marginBottom: 6, lineHeight: 20, fontSize: 14 },
-  msgTime: { color: '#94a3b8', fontSize: 12 },
+  msgText: {
+    color: '#4b5563',
+    fontSize: 14,
+  },
+  msgLink: {
+    color: '#1D4ED8',
+    fontWeight: '700',
+    marginTop: 6,
+  },
 });
