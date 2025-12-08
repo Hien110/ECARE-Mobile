@@ -240,8 +240,8 @@ const IntroductionBookingDoctor = (props) => {
             <Text style={styles.doctorDescription}>
               Quy trình gồm 3 bước đơn giản:{'\n'}
               1. Chọn người cao tuổi cần được chăm sóc.{'\n'}
-              2. Chọn gói khám và thời lượng 30 / 90 / 180 / 270 ngày.{'\n'}
-              3. Chọn bác sĩ phù hợp và xác nhận thanh toán.
+              2. Chọn bác sĩ mong muốn.{'\n'}
+              3. Chọn thời gian và xác nhận thanh toán.
             </Text>
           </View>
         </View>

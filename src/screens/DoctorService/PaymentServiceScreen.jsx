@@ -30,13 +30,9 @@ const PaymentServiceScreen = () => {
     family,
     elderly: elderlyParam,
     doctor: doctorParam,
-    healthPackage: packageParam,
-    durationDays: durationParam,
-    startDate: startDateParam,
-    shiftLabel: shiftLabelParam,
-    address: addressParam,
-    serviceName: serviceNameParam,
-    hireTypeLabel: hireTypeLabelParam,
+    scheduledDate: scheduledDateParam,
+    slotLabel: slotLabelParam,
+    slot,
     price: priceParam,
   } = route.params || {};
 
@@ -56,6 +52,33 @@ const PaymentServiceScreen = () => {
   const [qrCode, setQrCode] = useState(null);
   const [loadingQR, setLoadingQR] = useState(false);
   const [qrError, setQrError] = useState('');
+  const [defaultPrice, setDefaultPrice] = useState(null);
+
+  useEffect(() => {
+    const fetchDefaultPriceIfNeeded = async () => {
+      const hasPriceParam =
+        priceParam != null && !Number.isNaN(Number(priceParam));
+      const hasRegistrationPrice =
+        registration &&
+        registration.price != null &&
+        !Number.isNaN(Number(registration.price));
+
+      if (hasPriceParam || hasRegistrationPrice) {
+        return;
+      }
+
+      try {
+        const res = await doctorBookingService.getDefaultConsultationPrice();
+        if (res?.success && typeof res.data === 'number') {
+          setDefaultPrice(res.data);
+        }
+      } catch (e) {
+        // bỏ qua, sẽ hiển thị "-" nếu không có giá
+      }
+    };
+
+    fetchDefaultPriceIfNeeded();
+  }, [priceParam, registration]);
 
   useEffect(() => {
     userService
@@ -72,17 +95,14 @@ const PaymentServiceScreen = () => {
   }, []);
 
   const registration = registrationParam || {};
-  const packageRef = registration.packageRef || packageParam || {};
   const doctor = registration.doctor || doctorParam || {};
   const registrant = registration.registrant || family || {};
   const beneficiary = registration.beneficiary || elderlyParam || {};
 
-  const durationDays = durationParam || registration.durationDays || 0;
-
-  const startDateIso =
-    startDateParam ||
-    (registration.registeredAt
-      ? new Date(registration.registeredAt).toISOString().slice(0, 10)
+  const scheduledDateIso =
+    scheduledDateParam ||
+    (registration.scheduledDate
+      ? new Date(registration.scheduledDate).toISOString().slice(0, 10)
       : '');
 
   const formatDate = iso => {
@@ -95,24 +115,7 @@ const PaymentServiceScreen = () => {
     return `${day}/${month}/${year}`;
   };
 
-  const startDateObj = startDateIso ? new Date(startDateIso) : null;
-  const endDateObj =
-    startDateObj && durationDays
-      ? new Date(
-          startDateObj.getFullYear(),
-          startDateObj.getMonth(),
-          startDateObj.getDate() + Number(durationDays) - 1,
-        )
-      : null;
-
-  const displayStartDate = formatDate(startDateIso);
-  const displayEndDate = endDateObj
-    ? formatDate(endDateObj.toISOString().slice(0, 10))
-    : '';
-
-  const displayDurationText = durationDays
-    ? `${durationDays} ngày (~${Math.round(durationDays / 30)} tháng)`
-    : '';
+  const displayDate = formatDate(scheduledDateIso);
 
   // tên người đăng ký (family) – fallback currentUser.fullName
   const supporterName =
@@ -149,20 +152,11 @@ const PaymentServiceScreen = () => {
     ? elderlyName || supporterName
     : supporterName || elderlyName;
 
-  const displayServiceName =
-    serviceNameParam ||
-    packageRef.title ||
-    packageRef.name ||
-    registration.description ||
-    '';
+  const displayServiceName = 'Dịch vụ tư vấn bác sĩ';
 
-  const displayHireType =
-    hireTypeLabelParam ||
-    registration.description ||
-    'Gói khám sức khỏe tại nhà / tư vấn bác sĩ';
+  const displayHireType = 'Tư vấn bác sĩ theo lịch hẹn';
 
-  const displayDate = displayStartDate;
-  const displayShift = shiftLabelParam || '';
+  const displayShift = slotLabelParam || slot || '';
 
   const doctorName =
     doctor.fullName ||
@@ -179,28 +173,8 @@ const PaymentServiceScreen = () => {
     (doctor.profile && doctor.profile.hospitalName) ||
     '';
 
-  // ====== TÌM DURATION TRONG GÓI ĐỂ LẤY FEE THEO SCHEMA MỚI ======
-  const matchedDuration = useMemo(() => {
-    if (
-      !durationDays ||
-      !packageRef ||
-      !Array.isArray(packageRef.durations) ||
-      !packageRef.durations.length
-    ) {
-      return null;
-    }
-
-    const found = packageRef.durations.find(d => {
-      const dDays = Number(d?.days);
-      return Number.isFinite(dDays) && dDays === Number(durationDays);
-    });
-
-    return found || null;
-  }, [packageRef, durationDays]);
-
   // Giá số (raw) dùng cho PayOS
   const rawPriceNumber = useMemo(() => {
-    // Ưu tiên: priceParam → registration.price → durations[].fee → packageRef.price
     const fromParam =
       priceParam != null && !Number.isNaN(Number(priceParam))
         ? Number(priceParam)
@@ -211,29 +185,16 @@ const PaymentServiceScreen = () => {
       !Number.isNaN(Number(registration.price))
         ? Number(registration.price)
         : null;
-    const fromDurationFee =
-      matchedDuration &&
-      matchedDuration.fee != null &&
-      !Number.isNaN(Number(matchedDuration.fee))
-        ? Number(matchedDuration.fee)
-        : null;
-    const fromPackagePrice =
-      packageRef &&
-      packageRef.price != null &&
-      !Number.isNaN(Number(packageRef.price))
-        ? Number(packageRef.price)
+
+    const fromDefault =
+      defaultPrice != null && !Number.isNaN(Number(defaultPrice))
+        ? Number(defaultPrice)
         : null;
 
-    let num =
-      fromParam ??
-      fromRegistration ??
-      fromDurationFee ??
-      fromPackagePrice ??
-      0;
-
+    const num = fromParam ?? fromRegistration ?? fromDefault ?? 0;
     if (!num || Number.isNaN(num)) return 0;
     return num;
-  }, [priceParam, registration, matchedDuration, packageRef, durationDays]);
+  }, [priceParam, registration, defaultPrice]);
 
   // Chuỗi hiển thị giá
   const displayPrice = useMemo(() => {
@@ -246,12 +207,6 @@ const PaymentServiceScreen = () => {
     doctor._id ||
     doctor.userId ||
     (doctor.user && doctor.user._id) ||
-    null;
-
-  const healthPackageId =
-    packageRef._id ||
-    packageParam?._id ||
-    registration.packageRefId ||
     null;
 
   // ======== TÍNH ELDERLY ID =========
@@ -282,23 +237,16 @@ const PaymentServiceScreen = () => {
       );
       return false;
     }
-    if (!healthPackageId) {
-      Alert.alert('Lỗi dữ liệu', 'Thiếu thông tin gói khám.');
-      return false;
-    }
     if (!doctorId) {
       Alert.alert('Lỗi dữ liệu', 'Thiếu thông tin bác sĩ.');
       return false;
     }
-    if (!durationDays || !startDateIso) {
-      Alert.alert(
-        'Lỗi dữ liệu',
-        'Thiếu thời lượng gói hoặc ngày bắt đầu.',
-      );
+    if (!scheduledDateIso) {
+      Alert.alert('Lỗi dữ liệu', 'Thiếu ngày khám.');
       return false;
     }
     if (!rawPriceNumber || rawPriceNumber <= 0) {
-      Alert.alert('Lỗi dữ liệu', 'Giá gói khám không hợp lệ.');
+      Alert.alert('Lỗi dữ liệu', 'Giá dịch vụ không hợp lệ.');
       return false;
     }
     return true;
@@ -414,35 +362,15 @@ const PaymentServiceScreen = () => {
       setSubmitting(true);
 
       const payload = {
-        elderlyId,
-        healthPackageId,
-        durationDays,
-        startDate: startDateIso,
         doctorId,
-        paymentMethod: method, // 'cash' | 'qr'
+        elderlyId,
+        scheduledDate: scheduledDateIso,
+        slot: slot || 'morning',
+        paymentMethod: method,
         note,
-        bookingRole: normalizedRole,
-        isElderlySelfBooking,
       };
 
-      let res = null;
-      if (
-        doctorBookingService &&
-        typeof doctorBookingService.bookDoctor === 'function'
-      ) {
-        res = await doctorBookingService.bookDoctor(payload);
-      } else if (
-        doctorBookingService &&
-        typeof doctorBookingService.createBooking === 'function'
-      ) {
-        res = await doctorBookingService.createBooking(payload);
-      } else {
-        Alert.alert(
-          'Lỗi cấu hình',
-          'Không tìm thấy hàm đặt lịch trong doctorBookingService.',
-        );
-        return;
-      }
+      const res = await doctorBookingService.createRegistration(payload);
 
       if (res?.success) {
         setShowSuccessModal(true);
@@ -526,9 +454,6 @@ const PaymentServiceScreen = () => {
           <InfoRow label={registrantLabel} value={registrantDisplayName} />
           <InfoRow label="Gói khám:" value={displayServiceName} />
           <InfoRow label="Hình thức thuê:" value={displayHireType} />
-          <InfoRow label="Thời lượng gói:" value={displayDurationText} />
-          <InfoRow label="Ngày bắt đầu:" value={displayStartDate} />
-          <InfoRow label="Ngày kết thúc dự kiến:" value={displayEndDate} />
 
           <View style={styles.sectionSeparator} />
           <Text style={styles.sectionTitle}>Bác sĩ phụ trách</Text>
