@@ -228,18 +228,18 @@ const HealthPackageScheduleScreen = () => {
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Icon name="arrow-back" size={24} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Đặt gói sức khỏe</Text>
+        <Text style={styles.headerTitle}>Đặt lịch tư vấn tại nhà</Text>
         <View style={{ width: 24 }} />
       </View>
 
       {/* Steps */}
       <View style={styles.stepContainer}>
         <View style={styles.stepItem}>
-          <Text style={styles.stepLabel}>1. Chọn gói sức khỏe</Text>
+          <Text style={styles.stepLabel}>1. Chọn bác sĩ</Text>
         </View>
         <View style={styles.stepDivider} />
         <View style={[styles.stepItem, styles.stepItemActive]}>
-          <Text style={styles.stepLabelActive}>2. Chọn gói & thời gian</Text>
+          <Text style={styles.stepLabelActive}>2. Chọn thời gian</Text>
         </View>
       </View>
 

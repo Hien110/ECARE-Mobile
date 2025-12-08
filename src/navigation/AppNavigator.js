@@ -69,9 +69,8 @@ import FamilyListFunctionScreen from '../screens/Connect-family/FamilyListFuncti
 import SOSDetailScreen from '../screens/SOS/SOSDetailScreen.jsx';
 import ChatWithAIScreen from '../screens/Chat-AI/ChatWithAI.jsx';
 import IntroductionBookingDoctorScreen from '../screens/DoctorService/IntroductionBookingDoctor.jsx';
-import HealthPackageListScreen from '../screens/DoctorService/HealthPackageListScreen.jsx';
-import HealthPackageScheduleScreen from '../screens/DoctorService/HealthPackageScheduleScreen.jsx';
-import DoctorListScreen from '../screens/DoctorService/DoctorListScreen.jsx';
+import DoctorListBookScreen from '../screens/DoctorService/DoctorListBookScreen.jsx';
+import DoctorScheduleSelectScreen from '../screens/DoctorService/DoctorScheduleSelectScreen.jsx';
 import PaymentServiceScreen from '../screens/DoctorService/PaymentServiceScreen.jsx';
 import DoctorBookingHistoryScreen from '../screens/DoctorService/DoctorBookingHistoryScreen.jsx';
 import DoctorConsultationDetailScreen from '../screens/DoctorService/DoctorConsultationDetailScreen.jsx';
@@ -573,17 +572,12 @@ const NavigationContent = ({ initialRouteName }) => {
         />
         <Stack.Screen
           name="HealthPackageListScreen"
-          component={withFooter(HealthPackageListScreen, 'home')}
+          component={withFooter(DoctorListBookScreen, 'home')}
           options={{ headerShown: false }}
         />
         <Stack.Screen
-          name="HealthPackageScheduleScreen"
-          component={withFooter(HealthPackageScheduleScreen, 'home')}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="DoctorListScreen"
-          component={withFooter(DoctorListScreen, 'home')}
+          name="DoctorScheduleSelectScreen"
+          component={withFooter(DoctorScheduleSelectScreen, 'home')}
           options={{ headerShown: false }}
         />
         {/* Xem chi tiết hồ sơ bác sĩ từ danh sách chọn bác sĩ */}
