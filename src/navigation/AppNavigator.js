@@ -55,6 +55,7 @@ import DoctorHomeScreen from '../screens/Site/DoctorHomeScreen.jsx';
 import ProfileDoctorScreen from '../screens/Doctor/ProfileScreen.jsx';
 import ScheduleScreen from '../screens/Doctor/ScheduleScreen.jsx';
 import ReviewsScreen from '../screens/Doctor/ReviewsScreen.jsx';
+import ConsulationSummaryScreen from '../screens/Doctor/consulationSummaryScreen.jsx';
 
 
 import SupporterBookingListFamilyScreen from '../screens/SupporterService/SupporterBookingListFamilyScreen.jsx';
@@ -470,6 +471,11 @@ const NavigationContent = ({ initialRouteName }) => {
         <Stack.Screen
           name="DoctorHome"
           component={withFooter(DoctorHomeScreen, 'DoctorHome')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ConsulationSummary"
+          component={withFooter(ConsulationSummaryScreen, 'DoctorHome')}
           options={{ headerShown: false }}
         />
 

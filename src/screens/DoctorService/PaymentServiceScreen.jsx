@@ -1,4 +1,3 @@
-// src/screens/doctorBooking/PaymentServiceScreen.jsx
 import { useNavigation, useRoute } from '@react-navigation/native';
 import PropTypes from 'prop-types';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -9,7 +8,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -39,15 +37,11 @@ const PaymentServiceScreen = () => {
   const [userRole, setUserRole] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
 
-  // --- STATE CHO GHI CHÚ + SUBMIT ---
-  const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // method: 'cash' | 'qr'
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
-  // --- PAYOS ---
   const [orderCode, setOrderCode] = useState(null);
   const [qrCode, setQrCode] = useState(null);
   const [loadingQR, setLoadingQR] = useState(false);
@@ -117,14 +111,12 @@ const PaymentServiceScreen = () => {
 
   const displayDate = formatDate(scheduledDateIso);
 
-  // tên người đăng ký (family) – fallback currentUser.fullName
   const supporterName =
     registrant.fullName ||
     registrant.name ||
     (currentUser && currentUser.fullName) ||
     '';
 
-  // tên người được khám (elderly)
   const rawElderlyName =
     beneficiary.fullName ||
     beneficiary.name ||
@@ -173,7 +165,6 @@ const PaymentServiceScreen = () => {
     (doctor.profile && doctor.profile.hospitalName) ||
     '';
 
-  // Giá số (raw) dùng cho PayOS
   const rawPriceNumber = useMemo(() => {
     const fromParam =
       priceParam != null && !Number.isNaN(Number(priceParam))
@@ -196,7 +187,6 @@ const PaymentServiceScreen = () => {
     return num;
   }, [priceParam, registration, defaultPrice]);
 
-  // Chuỗi hiển thị giá
   const displayPrice = useMemo(() => {
     if (!rawPriceNumber) return '';
     return rawPriceNumber.toLocaleString('vi-VN');
@@ -209,7 +199,6 @@ const PaymentServiceScreen = () => {
     (doctor.user && doctor.user._id) ||
     null;
 
-  // ======== TÍNH ELDERLY ID =========
   const elderlyIdFromSelection =
     (beneficiary &&
       typeof beneficiary === 'object' &&
@@ -252,7 +241,6 @@ const PaymentServiceScreen = () => {
     return true;
   };
 
-  // ================= PAYOS: TẠO QR KHI CHỌN ONLINE (qr) =================
   useEffect(() => {
     const generateQRCode = async () => {
       if (selectedMethod !== 'qr') {
@@ -276,10 +264,8 @@ const PaymentServiceScreen = () => {
 
         const MAX_DESC_LEN = 25;
 
-        // Chuỗi mô tả ngắn gọn
         let shortDesc = `Goi kham BS - ${elderlyName || 'NCT'}`;
 
-        // Nếu dài hơn 25 ký tự thì cắt
         if (shortDesc.length > MAX_DESC_LEN) {
           shortDesc = shortDesc.slice(0, MAX_DESC_LEN);
         }
@@ -287,7 +273,7 @@ const PaymentServiceScreen = () => {
         const paymentData = {
           orderCode: newOrderCode,
           amount: rawPriceNumber,
-          description: shortDesc, // ⚡ PayOS yêu cầu <= 25 ký tự
+          description: shortDesc, 
           returnUrl: 'https://your-app-url.com/doctor-payment-success',
           cancelUrl: 'https://your-app-url.com/doctor-payment-cancel',
         };
@@ -321,7 +307,6 @@ const PaymentServiceScreen = () => {
     generateQRCode();
   }, [selectedMethod, rawPriceNumber, elderlyName]);
 
-  // ================= PAYOS: KIỂM TRA TRẠNG THÁI THANH TOÁN =================
   const checkPaymentStatus = async () => {
     if (!orderCode) {
       return false;
@@ -346,7 +331,6 @@ const PaymentServiceScreen = () => {
     }
   };
 
-  // ================= GỬI BOOKING LÊN BACKEND =================
   const handlePayment = async method => {
     if (submitting) return;
     if (!method) {
@@ -367,7 +351,6 @@ const PaymentServiceScreen = () => {
         scheduledDate: scheduledDateIso,
         slot: slot || 'morning',
         paymentMethod: method,
-        note,
       };
 
       const res = await doctorBookingService.createRegistration(payload);
@@ -390,7 +373,6 @@ const PaymentServiceScreen = () => {
     }
   };
 
-  // ================= NÚT "XÁC NHẬN THANH TOÁN" =================
   const handleConfirmPayment = async () => {
     if (!selectedMethod) {
       Alert.alert(
@@ -473,19 +455,6 @@ const PaymentServiceScreen = () => {
             </Text>
           </View>
 
-          <Text style={styles.noteLabel}>
-            Ghi chú cho bác sĩ (không bắt buộc):
-          </Text>
-          <View style={styles.noteInputWrapper}>
-            <TextInput
-              style={styles.noteInput}
-              multiline
-              value={note}
-              onChangeText={setNote}
-              placeholder="Ví dụ: Bố hơi khó ngủ, đang uống thuốc huyết áp buổi sáng..."
-              placeholderTextColor="#9CA3AF"
-            />
-          </View>
         </View>
 
         {/* CHỌN PHƯƠNG THỨC THANH TOÁN */}
@@ -544,7 +513,6 @@ const PaymentServiceScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* HIỂN THỊ QR KHI CHỌN ONLINE + GIÁ TIỀN THANH TOÁN */}
         {selectedMethod === 'qr' && (
           <View style={styles.qrContainer}>
             <Text style={styles.qrTitle}>Mã QR thanh toán</Text>
@@ -576,7 +544,6 @@ const PaymentServiceScreen = () => {
           </View>
         )}
 
-        {/* NÚT XÁC NHẬN THANH TOÁN */}
         <View style={styles.confirmWrapper}>
           <TouchableOpacity
             style={[
@@ -598,7 +565,6 @@ const PaymentServiceScreen = () => {
         </View>
       </ScrollView>
 
-      {/* POPUP ĐẶT LỊCH THÀNH CÔNG */}
       <Modal
         transparent
         visible={showSuccessModal}
@@ -657,7 +623,6 @@ InfoRow.defaultProps = {
   value: '',
 };
 
-// styles giữ nguyên
 const styles = StyleSheet.create({
   container: {
     flex: 1,
