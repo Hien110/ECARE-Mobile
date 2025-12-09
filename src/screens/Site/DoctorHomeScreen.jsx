@@ -17,21 +17,19 @@ import { useNavigation } from "@react-navigation/native";
 import logo from "../../assets/logoBrand.png";
 import { doctorService } from "../../services/doctorService";
 import userService from "../../services/userService";
+import doctorBookingService from "../../services/doctorBookingService";
 
-// ---------- helpers ----------
 const { width: SCREEN_W } = Dimensions.get("window");
 const isSmall = SCREEN_W < 360;
 
 function mapJsDayToSchema(dayIdx) {
-  // JS: 0..6 (Sun..Sat) -> Schema: 2..8 (Mon..Sun)
   if (dayIdx === 0) return 8;
-  return dayIdx + 1; // 1..6 -> 2..7
+  return dayIdx + 1;
 }
 function timeRangeStr(slot) {
   return `${slot?.start || "--:--"} - ${slot?.end || "--:--"}`;
 }
 
-// Tag hỗ trợ size nhỏ (sm) để tránh tràn
 const Tag = ({ children, type = "primary", size = "md" }) => {
   const map = {
     primary: styles.tagPrimary,
@@ -50,7 +48,6 @@ const Tag = ({ children, type = "primary", size = "md" }) => {
   );
 };
 
-// ---- Stats helpers ----
 const CompletionBar = ({ total, done }) => {
   const safePercent =
     total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
@@ -96,7 +93,6 @@ const StatItem = ({
   );
 };
 
-// ---------- main screen ----------
 const DoctorHomeScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -104,26 +100,17 @@ const DoctorHomeScreen = () => {
   const [rating, setRating] = useState({ averageRating: 0, totalRatings: 0 });
   const [activeApptTab, setActiveApptTab] = useState("today");
   const [errorMsg, setErrorMsg] = useState("");
+  const [appointmentsToday, setAppointmentsToday] = useState([]);
+  const [appointmentsUpcoming, setAppointmentsUpcoming] = useState([]);
   const navigate = useNavigation();
 
-  // Demo data lịch hẹn (thay bằng API của bạn sau)
-  const sampleApptsToday = [
-    { id: "1", name: "Nguyễn Thị Mai", age: 68, time: "09:00", type: "Video call", status: "Hoàn thành" },
-    { id: "2", name: "Trần Văn Hùng", age: 72, time: "10:30", type: "Tư vấn trực tiếp", status: "Hoàn thành" },
-    { id: "3", name: "Lê Thị Hoa", age: 75, time: "14:00", type: "Khám tổng quát", status: "Sắp đến" },
-    { id: "4", name: "Phạm Minh Tuấn", age: 72, time: "15:30", type: "Tư vấn dinh dưỡng", status: "Đã đặt" },
-    { id: "5", name: "Võ Thị Lan", age: 69, time: "16:00", type: "Đau khớp", status: "Chờ khám" },
-  ];
-  const sampleApptsUpcoming = [
-    { id: "6", name: "Phạm Thị Bình", age: 70, time: "08:30 ngày mai", type: "Video call", status: "Sắp tới" },
-    { id: "7", name: "Đỗ Văn Long", age: 74, time: "10:00 ngày mai", type: "Tư vấn trực tiếp", status: "Sắp tới" },
-  ];
+ 
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      let user = await userService.getUser(); // { success, data }
+      let user = await userService.getUser();
       const userId = user?.data?._id;
       const role = user?.data?.role;
 
@@ -138,16 +125,78 @@ const DoctorHomeScreen = () => {
         return;
       }
 
-      // Gọi API: /doctors/by-user/:userId (public) + /doctors/ratings/stats (auth)
       const [p, r] = await Promise.all([
         doctorService.getProfileByUserId(userId),
         doctorService.getMyRatingStats(),
       ]);
-
       if (p?.success) setProfile(p.data);
       else setErrorMsg(p?.message || "Không thể tải hồ sơ bác sĩ.");
 
       if (r?.success) setRating(r.data || { averageRating: 0, totalRatings: 0 });
+
+      const bookingsRes = await doctorBookingService.getMyBookings();
+      if (bookingsRes?.success && Array.isArray(bookingsRes.data)) {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        const today = [];
+        const upcoming = [];
+
+        bookingsRes.data.forEach((b) => {
+          const when = b.scheduledDate ? new Date(b.scheduledDate) : null;
+          if (!when) return;
+
+          const isToday = when >= startOfToday && when <= endOfToday;
+
+          let timeLabel = "--:--";
+          if (b.slot === "morning") {
+            timeLabel = "8h - 10h";
+          } else if (b.slot === "afternoon") {
+            timeLabel = "14h - 16h";
+          }
+
+          const statusLabel =
+            b.status === "completed"
+              ? "Hoàn thành"
+              : b.status === "confirmed"
+              ? "Chờ khám"
+              : b.status === "cancelled"
+              ? "Đã hủy"
+              : "Đã đặt";
+
+          const dob = b.beneficiary?.dateOfBirth
+            ? new Date(b.beneficiary.dateOfBirth)
+            : null;
+          const computedAge = dob
+            ? new Date().getFullYear() - dob.getFullYear()
+            : "";
+
+          const item = {
+            id: String(b._id),
+            name: b.beneficiary?.fullName || "Người bệnh",
+            age: computedAge,
+            gender: b.beneficiary?.gender || "",
+            dob: b.beneficiary?.dateOfBirth || null,
+            scheduledDate: b.scheduledDate || null,
+            slot: b.slot || null,
+            type: b.slot === "morning" ? "Buổi sáng" : b.slot === "afternoon" ? "Buổi chiều" : "",
+            time: timeLabel,
+            status: statusLabel,
+          };
+
+          if (isToday) {
+            today.push(item);
+          } else if (when > endOfToday) {
+            upcoming.push(item);
+          }
+        });
+
+        setAppointmentsToday(today);
+        setAppointmentsUpcoming(upcoming);
+      } else {
+        setAppointmentsToday([]);
+        setAppointmentsUpcoming([]);
+      }
     } catch (e) {
       setErrorMsg(e?.message || "Đã xảy ra lỗi không xác định.");
     } finally {
@@ -192,10 +241,10 @@ const DoctorHomeScreen = () => {
   const expYears = profile?.experience ?? 0;
 
   const statsToday = {
-    total: sampleApptsToday.length,
-    done: sampleApptsToday.filter((a) => a.status === "Hoàn thành").length,
-    canceled: 0, // hoặc số "chờ xử lý" thực tế
-    workingHours: workingHourStr, // ví dụ: "8:00 - 17:00"
+    total: appointmentsToday.length,
+    done: appointmentsToday.filter((a) => a.status === "Hoàn thành").length,
+    canceled: appointmentsToday.filter((a) => a.status === "Chờ khám").length,
+    workingHours: workingHourStr,
   };
 
   return (
@@ -215,14 +264,12 @@ const DoctorHomeScreen = () => {
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Error / Empty states */}
         {!!errorMsg && (
           <View style={[styles.card, { backgroundColor: "#fff3f2" }]}>
             <Text style={{ color: "#9b1c1c", fontWeight: "700" }}>{errorMsg}</Text>
           </View>
         )}
 
-        {/* Doctor card */}
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.avatar}>
@@ -244,7 +291,6 @@ const DoctorHomeScreen = () => {
                 {specialization} • {hospital}
               </Text>
 
-              {/* Hàng meta: wrap + pill nhỏ để không tràn */}
               <View style={styles.metaRow}>
                 <View style={styles.metaItem}>
                   <Tag size="sm" type="success">
@@ -264,7 +310,6 @@ const DoctorHomeScreen = () => {
           </View>
         </View>
 
-        {/* Thống kê hôm nay - layout 2x2 */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Thông kê hôm nay</Text>
           <View style={styles.sectionRight}>
@@ -310,7 +355,6 @@ const DoctorHomeScreen = () => {
           </View>
         </View>
 
-        {/* Schedule today */}
         <View style={styles.sectionHeader}>
           <Text  style={styles.sectionTitle}>Lịch làm việc hôm nay</Text>
           <TouchableOpacity activeOpacity={0.7} onPress={() => navigate.navigate('CreateWorkSchedule')}> 
@@ -363,7 +407,6 @@ const DoctorHomeScreen = () => {
           )}
         </View>
 
-        {/* Legend */}
         <View style={styles.legend}>
           <View style={styles.legendRow}>
             <View style={[styles.legendDot, { backgroundColor: "#e8f7ff" }]} />
@@ -375,25 +418,38 @@ const DoctorHomeScreen = () => {
           </View>
         </View>
 
-        {/* Appointments list */}
         <View style={styles.sectionHeader}>
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity onPress={() => setActiveApptTab("today")}>
               <Text style={[styles.tab, activeApptTab === "today" && styles.tabActive]}>
-                Hôm nay ({sampleApptsToday.length})
+                Hôm nay ({appointmentsToday.length})
               </Text>
             </TouchableOpacity>
             <View style={{ width: 12 }} />
             <TouchableOpacity onPress={() => setActiveApptTab("upcoming")}>
               <Text style={[styles.tab, activeApptTab === "upcoming" && styles.tabActive]}>
-                Sắp tới ({sampleApptsUpcoming.length})
+                Sắp tới ({appointmentsUpcoming.length})
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {(activeApptTab === "today" ? sampleApptsToday : sampleApptsUpcoming).map((a) => (
-          <View key={a.id} style={styles.apptCard}>
+        {(activeApptTab === "today" ? appointmentsToday : appointmentsUpcoming).map((a) => (
+          <TouchableOpacity
+            key={a.id}
+            style={styles.apptCard}
+            activeOpacity={0.8}
+            onPress={() =>
+              navigate.navigate('ConsulationSummary', {
+                registrationId: a.id,
+                patientName: a.name,
+                patientGender: a.gender,
+                patientDob: a.dob,
+                scheduledDate: a.scheduledDate,
+                slot: a.slot,
+              })
+            }
+          >
             <View style={styles.apptLeft}>
               <View style={styles.circleAvatar}>
                 <Text style={styles.circleAvatarText}>
@@ -419,7 +475,7 @@ const DoctorHomeScreen = () => {
             <TouchableOpacity style={styles.moreBtn} activeOpacity={0.7}>
               <Text style={styles.moreBtnText}>⋯</Text>
             </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
     </SafeAreaView>
@@ -428,7 +484,6 @@ const DoctorHomeScreen = () => {
 
 export default DoctorHomeScreen;
 
-// ---------- styles ----------
 const CARD_BG = "#ffffff";
 const SURFACE = "#f6f7fb";
 
@@ -480,7 +535,6 @@ const styles = StyleSheet.create({
   doctorName: { fontSize: isSmall ? 16 : 18, fontWeight: "700", color: "#111827" },
   doctorSub: { color: "#4b5563", marginTop: 2 },
 
-  // Hàng meta cho ⭐ / đánh giá / năm KN (wrap để không tràn)
   metaRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: 8 },
   metaItem: { marginRight: 8, marginBottom: 6 },
 
@@ -495,7 +549,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: isSmall ? 15 : 16, fontWeight: "700", color: "#0f172a" },
   sectionRight: { flexDirection: "row", alignItems: "center" },
 
-  // ----- Stats (2x2) -----
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -588,7 +641,6 @@ const styles = StyleSheet.create({
   moreBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
   moreBtnText: { fontSize: 18, color: "#94a3b8" },
 
-  // Tags
   tagBase: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   tagText: { color: "#0f172a", fontWeight: "700", fontSize: 12 },
   tagBaseSm: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },

@@ -35,8 +35,8 @@ const DoctorScheduleSelectScreen = () => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [freeSlots, setFreeSlots] = useState([]); // [{ date, freeSlots: [{ slot, start, end }] }]
-  const [selectedSlot, setSelectedSlot] = useState(null); // { date, slot }
+  const [freeSlots, setFreeSlots] = useState([]); 
+  const [selectedSlot, setSelectedSlot] = useState(null); 
 
   const doctorId = doctor?.doctorId || doctor?._id;
 
@@ -67,7 +67,7 @@ const DoctorScheduleSelectScreen = () => {
 
       if (!res?.success || !list.length) {
         setError(
-          res?.message || 'Bác sĩ không còn lịch trống trong ngày này.',
+          res?.message || 'Bác sĩ hôm nay đã hết lịch làm việc.',
         );
       } else {
         setError('');
@@ -95,7 +95,6 @@ const DoctorScheduleSelectScreen = () => {
   };
 
   const handleSelectSlot = (dateKey, slotKey) => {
-    // luôn dùng ngày đang chọn ở ô phía trên để đồng bộ hiển thị
     const normalizedSelectedDate = formatDate(selectedDate);
     setSelectedSlot({ date: normalizedSelectedDate, slot: slotKey });
   };
@@ -110,7 +109,6 @@ const DoctorScheduleSelectScreen = () => {
       elderly,
       family,
       doctor,
-      // dùng cho PaymentServiceScreen hiển thị + gửi BE
       scheduledDate: selectedSlot.date,
       slot: selectedSlot.slot,
       slotLabel:
@@ -155,7 +153,7 @@ const DoctorScheduleSelectScreen = () => {
                   styles.slotButtonTextActive,
               ]}
             >
-              Sáng (08:00 - 10:00)
+              Sáng (08:00h - 10:00h)
             </Text>
           </TouchableOpacity>
 
@@ -181,7 +179,7 @@ const DoctorScheduleSelectScreen = () => {
                   styles.slotButtonTextActive,
               ]}
             >
-              Chiều (14:00 - 17:00)
+              Chiều (14:00h - 17:00h)
             </Text>
           </TouchableOpacity>
         </View>
