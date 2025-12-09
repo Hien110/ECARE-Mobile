@@ -2,9 +2,10 @@ import axios from 'axios';
 import { Platform } from 'react-native';
 // Optional lazy load for file system if we need to copy content:// URIs
 let RNFS = null;
-import { BASE_URL as API_BASE_URL } from './api/axiosConfig';
+// import { BASE_URL as API_BASE_URL } from './api/axiosConfig';
 import userService from './userService';
 
+const API_BASE_URL = 'https://ecare-backend-2mzh.onrender.com/api';
 async function ensureFileUri(u) {
   if (!u) return u;
   if (u.startsWith('file://')) return u;
