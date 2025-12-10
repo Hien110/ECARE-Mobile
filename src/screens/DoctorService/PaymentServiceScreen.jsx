@@ -345,12 +345,14 @@ const PaymentServiceScreen = () => {
     try {
       setSubmitting(true);
 
+      const backendPaymentMethod = method === 'qr' ? 'bank_transfer' : method;
+
       const payload = {
         doctorId,
         elderlyId,
         scheduledDate: scheduledDateIso,
         slot: slot || 'morning',
-        paymentMethod: method,
+        paymentMethod: backendPaymentMethod,
       };
 
       const res = await doctorBookingService.createRegistration(payload);
