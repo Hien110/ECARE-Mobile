@@ -90,14 +90,20 @@ const PaymentBookingScreen = ({ navigation, route }) => {
       const schedulingData = {
         supporter: supporter.user._id,
         elderly: user._id,
-        registrant: userBooking._id,
+        createdBy: userBooking._id,
         service: bookingDraft.serviceId,
-        startDate: bookingDraft.startDate,  // ✅ Sử dụng từ bookingDraft
-        endDate: bookingDraft.endDate,      // ✅ Sử dụng từ bookingDraft
-        notes: note?.trim() || '',
-        paymentMethod: method === 'online' ? 'bank_transfer' : 'cash',
-        paymentStatus: method === 'online' ? 'paid' : 'unpaid',
-        price: bookingDraft?.priceAtBooking || 0,
+        address: user.currentAddress,
+        notes: note?.trim() || '', // ✅ Lưu ghi chú từ input
+        paymentStatus: method === 'online' ? 'paid' : 'unpaid', // 'unpaid'|'paid'|'refunded'
+        paymentMethod: method === 'online' ? 'bank_transfer' : 'cash', // ✅ khớp model
+        bookingType: bookingDraft?.packageType, // 'session'|'day'|'month'
+        scheduleDate:
+          bookingDraft?.session?.date || bookingDraft?.day?.date || null,
+        scheduleTime: bookingDraft?.session?.slot || null,
+        monthStart: bookingDraft?.month?.start || null,
+        monthEnd: bookingDraft?.month?.end || null,
+        monthSessionsPerDay: service?.byMonth?.sessionsPerDay || [],
+        priceAtBooking: bookingDraft?.priceAtBooking || undefined,
       };
 
       const res = await supporterSchedulingService.createScheduling(
@@ -211,34 +217,83 @@ const PaymentBookingScreen = ({ navigation, route }) => {
             {bookingDraft?.serviceName || 'Không rõ'}
           </Text>
 
-          <Text style={styles.label}>Thời hạn:</Text>
+          <Text style={styles.label}>Loại thuê:</Text>
           <Text style={styles.value}>
-            {bookingDraft?.numberOfDays || 0} ngày
+            Thuê
+            {bookingDraft?.session !== undefined
+              ? ' theo ca'
+              : bookingDraft?.day !== undefined
+              ? ' theo ngày'
+              : bookingDraft?.month !== undefined
+              ? ' theo tháng'
+              : ' Không rõ'}
           </Text>
 
-          <Text style={styles.label}>Ngày bắt đầu:</Text>
-          <Text style={styles.value}>
-            {bookingDraft?.startDate
-              ? new Date(bookingDraft.startDate).toLocaleDateString('vi-VN', {
+          {bookingDraft.session !== undefined && (
+            <View>
+              <Text style={styles.label}>Ngày hỗ trợ:</Text>
+              <Text style={styles.value}>
+                {new Date(bookingDraft?.session?.date).toLocaleDateString(
+                  'vi-VN',
+                  {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  },
+                )}
+              </Text>
+
+              <Text style={styles.label}>Ca làm việc:</Text>
+              <Text style={styles.value}>
+                {bookingDraft?.session?.slot === 'morning'
+                  ? 'Buổi sáng'
+                  : bookingDraft?.session?.slot === 'afternoon'
+                  ? 'Buổi chiều'
+                  : 'Buổi tối'}
+              </Text>
+            </View>
+          )}
+
+          {bookingDraft.day !== undefined && (
+            <View>
+              <Text style={styles.label}>Ngày hỗ trợ:</Text>
+              <Text style={styles.value}>
+                {new Date(bookingDraft?.day.date).toLocaleDateString('vi-VN', {
                   weekday: 'long',
                   year: 'numeric',
                   month: 'long',
                   day: 'numeric',
-                })
-              : 'Không rõ'}
-          </Text>
+                })}
+              </Text>
+            </View>
+          )}
 
-          <Text style={styles.label}>Ngày kết thúc:</Text>
-          <Text style={styles.value}>
-            {bookingDraft?.endDate
-              ? new Date(bookingDraft.endDate).toLocaleDateString('vi-VN', {
+          {bookingDraft.month !== undefined && (
+            <View>
+              <Text style={styles.label}>Ngày bắt đầu hỗ trợ:</Text>
+              <Text style={styles.value}>
+                {new Date(bookingDraft?.month.start).toLocaleDateString(
+                  'vi-VN',
+                  {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  },
+                )}
+              </Text>
+              <Text style={styles.label}>Ngày kết thúc hỗ trợ:</Text>
+              <Text style={styles.value}>
+                {new Date(bookingDraft?.month.end).toLocaleDateString('vi-VN', {
                   weekday: 'long',
                   year: 'numeric',
                   month: 'long',
                   day: 'numeric',
-                })
-              : 'Không rõ'}
-          </Text>
+                })}
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.label}>Giá dịch vụ:</Text>
           <Text style={[styles.value, { color: '#16a34a', fontWeight: '700' }]}>

@@ -23,6 +23,18 @@ import userService from '../../services/userService';
 const HEADER_COLOR = '#4F7EFF';
 const VN_TZ = 'Asia/Ho_Chi_Minh';
 
+const scheduleTimeMap = {
+  morning: 'Buổi sáng: 8h - 12h',
+  afternoon: 'Buổi chiều: 13h - 17h',
+  evening: 'Buổi tối: 18h - 21h',
+};
+
+const scheduleTimeShortMap = {
+  morning: 'Buổi sáng',
+  afternoon: 'Buổi chiều',
+  evening: 'Buổi tối',
+};
+
 const statusColors = {
   pending: {
     bg: '#FFF7E6',
@@ -395,29 +407,39 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     const elderlyName = item?.elderly?.fullName || '—';
     const elderlyAvatar = item?.elderly?.avatar;
 
-    // Hiển thị thời gian từ startDate và endDate (chỉ ngày, không có giờ)
+    const bookingType = item?.bookingType || 'session';
+
     let mainTimeText = '';
     let subTimeText = '';
 
-    const startDate = item?.startDate;
-    const endDate = item?.endDate;
+    if (bookingType === 'session') {
+      const scheduleDate =
+        formatDateISOToVN(item?.scheduleDate).split(' • ')[0] || '';
+      const scheduleTime =
+        scheduleTimeMap[item?.scheduleTime] || item?.scheduleTime || '';
+      mainTimeText = scheduleDate;
+      subTimeText = scheduleTime || 'Theo buổi';
+    } else if (bookingType === 'day') {
+      const scheduleDate =
+        formatDateISOToVN(item?.scheduleDate).split(' • ')[0] || '';
+      mainTimeText = scheduleDate || 'Theo ngày';
+      subTimeText = 'Cả ngày';
+    } else if (bookingType === 'month') {
+      const start = formatDateOnlyVN(item?.monthStart);
+      const end = formatDateOnlyVN(item?.monthEnd);
+      mainTimeText = start && end ? `${start} - ${end}` : 'Theo tháng';
 
-    if (startDate && endDate) {
-      const startDateOnly = formatDateOnlyVN(startDate);
-      const endDateOnly = formatDateOnlyVN(endDate);
-      
-      if (startDateOnly === endDateOnly) {
-        // Cùng ngày
-        mainTimeText = startDateOnly;
-        subTimeText = 'Trong ngày';
+      if (
+        Array.isArray(item?.monthSessionsPerDay) &&
+        item.monthSessionsPerDay.length
+      ) {
+        const sessionsText = item.monthSessionsPerDay
+          .map(slot => scheduleTimeShortMap[slot] || slot)
+          .join(', ');
+        subTimeText = `Buổi trong ngày: ${sessionsText}`;
       } else {
-        // Khác ngày, hiển thị ngày bắt đầu - ngày kết thúc
-        mainTimeText = `${startDateOnly} - ${endDateOnly}`;
-        subTimeText = 'Nhiều ngày';
+        subTimeText = 'Lịch theo tháng';
       }
-    } else {
-      mainTimeText = 'Chưa có thông tin';
-      subTimeText = '';
     }
 
     const statusKey = (item?.status || 'default').toLowerCase();
@@ -442,7 +464,7 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
         <View style={styles.rowBetween}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
             <Text style={styles.cardTitle} numberOfLines={1}>
-              Lịch khám
+              Đặt lịch #{id?.slice(-6) || ''}
             </Text>
           </View>
           <Chip scheme={statusScheme} text={statusScheme.label} />
@@ -488,6 +510,7 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
           <View style={{ flex: 1, paddingRight: 8 }}>
             <Text style={styles.sectionLabel}>Thời gian</Text>
             <Text style={styles.timeText}>{mainTimeText}</Text>
+            {subTimeText ? <Text style={styles.timeSub}>{subTimeText}</Text> : null}
             <Text style={[styles.timeSub, { marginTop: 4 }]}>
               Phương thức: {paymentMethodLabel}
             </Text>

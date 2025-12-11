@@ -29,11 +29,23 @@ const VN_TZ = 'Asia/Ho_Chi_Minh';
 
 // ==== STATUS MAPPING (booking + payment) ====
 const statusColors = {
+  pending: {
+    bg: '#FFF7E6',
+    text: '#B46900',
+    border: '#FFE1B6',
+    label: 'Chờ xác nhận',
+  },
   confirmed: {
     bg: '#E6FFFB',
     text: '#00796B',
     border: '#B2F5EA',
     label: 'Đã xác nhận',
+  },
+  in_progress: {
+    bg: '#FFFAEB',
+    text: '#D97706',
+    border: '#FDE68A',
+    label: 'Đang tiến hành',
   },
   completed: {
     bg: '#F0FFF4',
@@ -187,7 +199,34 @@ const formatDateOnlyVN = iso => {
 // ==== DURATION HELPERS ====
 const getDurationLabel = item => {
   try {
-    const days = item?.durationDays ?? 7; // Default 7 days theo model
+    let days =
+      item?.durationDays ?? item?.packageInfo?.durationDays ?? null;
+
+    if (
+      (days == null || Number.isNaN(Number(days))) &&
+      item?.packageInfo?.startDate &&
+      item?.packageInfo?.endDate
+    ) {
+      const start = new Date(item.packageInfo.startDate);
+      const end = new Date(item.packageInfo.endDate);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+        const startMs = new Date(
+          start.getFullYear(),
+          start.getMonth(),
+          start.getDate(),
+        ).getTime();
+        const endMs = new Date(
+          end.getFullYear(),
+          end.getMonth(),
+          end.getDate(),
+        ).getTime();
+        const diffDays = Math.round(
+          (endMs - startMs) / (1000 * 60 * 60 * 24),
+        );
+        days = diffDays + 1;
+      }
+    }
+
     const n = Number(days);
     if (!Number.isFinite(n) || n <= 0) {
       return '—';
@@ -211,7 +250,13 @@ const normalizePaymentStatusKey = raw => {
 };
 
 const getPaymentMethodRaw = item => {
-  return item.paymentMethod || 'cash';
+  return (
+    item.paymentMethod ||
+    item.payment?.method ||
+    item.payment?.paymentMethod ||
+    item.consultation?.payment?.method ||
+    'cash'
+  );
 };
 
 const getPaymentMethodLabel = item => {
@@ -222,24 +267,93 @@ const getPaymentMethodLabel = item => {
     item._id,
     'rawMethod =',
     raw,
+    'payment =',
+    item.payment,
+    'consultation.payment =',
+    item.consultation?.payment,
   );
 
-  if (raw === 'bank_transfer') {
-    return 'Chuyển khoản';
+  if (['qr', 'online', 'bank_transfer', 'bank-transfer'].includes(raw)) {
+    return 'Online';
   }
   return 'Tiền mặt';
 };
 
-const getConsultationDate = item => {
-  // Lấy scheduledDate từ model RegistrationConsulation
-  return item?.scheduledDate || item?.registeredAt || item?.createdAt || null;
+const isValidDateValue = v => {
+  if (!v) return false;
+  const d = new Date(v);
+  return !Number.isNaN(d.getTime());
 };
 
-const getSlotLabel = item => {
-  const slot = item?.slot;
-  if (slot === 'morning') return 'Buổi sáng (8h-10h)';
-  if (slot === 'afternoon') return 'Buổi chiều (14h-17h)';
-  return '—';
+const getConsultationDate = item => {
+  const candidates = {
+    consultationScheduledAt: item?.consultation?.scheduledAt,
+    consultationScheduledDate: item?.consultation?.scheduledDate,
+    consultationDate: item?.consultation?.date,
+    consultationStartTime: item?.consultation?.startTime,
+    consultationSlotStart: item?.consultation?.slotStart,
+    bookingScheduledDate: item?.scheduledDate,
+    bookingScheduledAt: item?.scheduledAt,
+    packageStartDate: item?.packageInfo?.startDate,
+    registeredAt: item?.registeredAt,
+    createdAt: item?.createdAt,
+  };
+
+  console.log(`${TAG}[getConsultationDate] raw fields for booking`, {
+    id: item?._id,
+    code: item?.code,
+    ...candidates,
+  });
+
+  const priorityOrder = [
+    'consultationScheduledAt',
+    'consultationScheduledDate',
+    'consultationDate',
+    'consultationStartTime',
+    'consultationSlotStart',
+    'bookingScheduledAt',
+    'bookingScheduledDate',
+    'packageStartDate',
+  ];
+
+  for (const key of priorityOrder) {
+    const v = candidates[key];
+    if (isValidDateValue(v)) {
+      console.log(
+        `${TAG}[getConsultationDate] CHOSEN (priority)`,
+        key,
+        '=>',
+        v,
+        'formatted =',
+        formatDateOnlyVN(v),
+      );
+      return v;
+    }
+  }
+
+  if (isValidDateValue(candidates.registeredAt)) {
+    console.log(
+      `${TAG}[getConsultationDate] FALLBACK registeredAt =>`,
+      candidates.registeredAt,
+      'formatted =',
+      formatDateOnlyVN(candidates.registeredAt),
+    );
+    return candidates.registeredAt;
+  }
+  if (isValidDateValue(candidates.createdAt)) {
+    console.log(
+      `${TAG}[getConsultationDate] FALLBACK createdAt =>`,
+      candidates.createdAt,
+      'formatted =',
+      formatDateOnlyVN(candidates.createdAt),
+    );
+    return candidates.createdAt;
+  }
+
+  console.log(`${TAG}[getConsultationDate] NO VALID DATE FOUND`, {
+    id: item?._id,
+  });
+  return null;
 };
 
 // =================== MAIN SCREEN ===================
@@ -273,33 +387,55 @@ const DoctorBookingHistoryScreen = () => {
 
   // ---- FORMAT HELPERS (bookings) ----
   const getBookingCode = item => {
-    if (item._id) return `Lịch tư vấn `;
-    return 'Lịch tư vấn';
+    if (item.code) return `Đặt lịch #${item.code}`;
+    if (item._id) return `Đặt lịch #${String(item._id).slice(-6)}`;
+    return 'Đặt lịch';
   };
 
   const getElderlyName = item =>
+    item.elderly?.fullName ||
+    item.elderly?.name ||
     item.beneficiary?.fullName ||
     item.beneficiary?.name ||
     'Người cao tuổi';
 
   const getElderlyAvatar = item =>
-    item.beneficiary?.avatar || null;
+    item.elderly?.avatar || item.beneficiary?.avatar || null;
 
   const getDoctorName = item =>
     item.doctor?.fullName || item.doctor?.name || 'Bác sĩ';
 
   const getStatusLabelAndStyle = item => {
-    const rawStatus = item.status || 'confirmed';
-    const statusKey = String(rawStatus).toLowerCase();
+    const rawStatus =
+      item.status ||
+      item.consultation?.status ||
+      item.registration?.status ||
+      'pending';
+
+    const statusKey = String(rawStatus || 'pending').toLowerCase();
     const bookScheme = statusColors[statusKey] || statusColors.default;
 
-    const rawPayStatus = item.paymentStatus || 'unpaid';
-    const payKey = normalizePaymentStatusKey(rawPayStatus);
-    let payScheme = paymentStatusColors[payKey] || paymentStatusColors.default;
+    const rawPayStatus =
+      item.paymentStatus ||
+      item.payment?.status ||
+      item.consultation?.payment?.status ||
+      'unpaid';
 
-    // Nếu đã hủy và đã thanh toán -> hiển thị đã hoàn tiền
-    if (statusKey === 'cancelled' && rawPayStatus === 'paid') {
-      payScheme = paymentStatusColors.refunded;
+    const payKey = normalizePaymentStatusKey(rawPayStatus);
+    let payScheme =
+      paymentStatusColors[payKey] || paymentStatusColors.default;
+
+    const methodRaw = String(getPaymentMethodRaw(item) || '').toLowerCase();
+    const isOnlineMethod = ['qr', 'online', 'bank_transfer', 'bank-transfer'].includes(
+      methodRaw,
+    );
+    const payStatusLower = String(rawPayStatus || '').toLowerCase();
+    const isPaidRaw = ['paid', 'completed', 'success', 'successful'].includes(
+      payStatusLower,
+    );
+
+    if (statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw)) {
+      payScheme = paymentStatusColors.completed;
     }
 
     console.log(`${TAG}[getStatusLabelAndStyle]`, {
@@ -310,6 +446,7 @@ const DoctorBookingHistoryScreen = () => {
       rawPayStatus,
       payKey,
       payLabel: payScheme.label,
+      methodRaw,
     });
 
     return { bookScheme, payScheme };
@@ -555,16 +692,21 @@ const DoctorBookingHistoryScreen = () => {
     const elderlyName = getElderlyName(item);
     const elderlyAvatar = getElderlyAvatar(item);
     const doctorName = getDoctorName(item);
-    const slotLabel = getSlotLabel(item);
+    const packageTitle =
+      item.packageInfo?.title ||
+      item.packageRef?.title ||
+      'Gói khám sức khỏe';
     const durationLabel = getDurationLabel(item);
 
     console.log(`${TAG}[renderBookingItem]`, {
       id: item?._id,
+      code: item?.code,
       status: item?.status,
+      consultationStatus: item?.consultation?.status,
       paymentMethod: item?.paymentMethod,
       paymentStatus: item?.paymentStatus,
-      scheduledDate: item?.scheduledDate,
-      slot: item?.slot,
+      nestedPayment: item?.payment,
+      consultationPayment: item?.consultation?.payment,
       methodLabel,
       payChip: payScheme.label,
     });
@@ -614,7 +756,7 @@ const DoctorBookingHistoryScreen = () => {
                 {doctorName}
               </Text>
               <Text style={styles.personSub} numberOfLines={1}>
-                Dịch vụ tư vấn bác sĩ
+                Gói: {packageTitle}
               </Text>
             </View>
           </View>
@@ -630,10 +772,9 @@ const DoctorBookingHistoryScreen = () => {
           <View style={{ flex: 1, paddingRight: 8 }}>
             <Text style={styles.sectionLabel}>THỜI GIAN</Text>
             <Text style={styles.timeText}>{formatDateOnlyVN(startDate)}</Text>
-            <Text style={styles.timeSub}>{slotLabel}</Text>
-            <Text style={styles.timeSub}>Thời hạn hỗ trợ: {durationLabel}</Text>
+            <Text style={styles.timeSub}>{durationLabel}</Text>
             <Text style={[styles.timeSub, { marginTop: 4 }]}>
-              Thanh toán: {methodLabel}
+              Phương thức: {methodLabel}
             </Text>
           </View>
           <Chip scheme={payScheme} text={payScheme.label} />

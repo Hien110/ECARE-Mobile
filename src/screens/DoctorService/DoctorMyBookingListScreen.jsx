@@ -1,5 +1,3 @@
-// src/screens/doctorBooking/DoctorMyBookingListScreen.jsx
-
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
@@ -12,8 +10,6 @@ import {
   Image,
   RefreshControl,
   Platform,
-  Modal,
-  Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
@@ -75,7 +71,7 @@ const statusColors = {
     bg: '#E6FFFB',
     text: '#00796B',
     border: '#B2F5EA',
-    label: 'Đã xác nhận',
+    label: 'Chờ khám',
   },
   in_progress: {
     bg: '#FFFAEB',
@@ -311,12 +307,24 @@ function getStatusKeyFromItem(item) {
   return 'default';
 }
 
-// ===== Các lựa chọn lọc trạng thái =====
-const STATUS_FILTERS = [
-  { value: 'all', label: 'Tất cả' },
-  { value: 'pending', label: statusColors.pending.label },
+// ===== helper lấy ngày chính dùng để sort / hiển thị =====
+function getPrimaryDateIso(item) {
+  if (!item) return null;
+
+  return (
+    item?.consultation?.scheduledDate ||
+    item?.scheduledDate ||
+    item?.consultationDate ||
+    item?.startDate ||
+    item?.packageInfo?.startDate ||
+    item?.createdAt ||
+    null
+  );
+}
+
+// ===== Tabs lọc trạng thái (3 trạng thái chính) =====
+const STATUS_TABS = [
   { value: 'confirmed', label: statusColors.confirmed.label },
-  { value: 'in_progress', label: statusColors.in_progress.label },
   { value: 'completed', label: statusColors.completed.label },
   { value: 'canceled', label: statusColors.canceled.label },
 ];
@@ -337,10 +345,9 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
-  const [ setUserRole] = useState('unknown');
+  const [, setUserRole] = useState('unknown');
 
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('confirmed');
 
   useEffect(() => {
     let cancelled = false;
@@ -441,32 +448,24 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
     }
   }, [fetchBookings]);
 
-  const statusCounts = useMemo(() => {
-    const TAG = `${TAG_ROOT}[statusCounts]`;
-    const counts = { all: bookings.length };
-    const keys = ['pending', 'confirmed', 'in_progress', 'completed', 'canceled'];
-
-    for (const key of keys) {
-      counts[key] = 0;
-    }
-
-    bookings.forEach(b => {
-      const norm = getStatusKeyFromItem(b);
-      if (keys.includes(norm)) {
-        counts[norm] += 1;
-      }
-    });
-
-    console.log(TAG, counts);
-    return counts;
-  }, [bookings]);
-
   const filteredBookings = useMemo(() => {
-    if (filterStatus === 'all') return bookings;
-    return bookings.filter(b => {
-      const norm = getStatusKeyFromItem(b);
-      return norm === filterStatus;
-    });
+    const nowUtc = Date.now();
+
+    return bookings
+      .filter(b => getStatusKeyFromItem(b) === filterStatus)
+      .slice()
+      .sort((a, b) => {
+        const aIso = getPrimaryDateIso(a);
+        const bIso = getPrimaryDateIso(b);
+
+        const aTime = aIso ? new Date(aIso).getTime() : Number.POSITIVE_INFINITY;
+        const bTime = bIso ? new Date(bIso).getTime() : Number.POSITIVE_INFINITY;
+
+        const aDiff = Math.abs(aTime - nowUtc);
+        const bDiff = Math.abs(bTime - nowUtc);
+
+        return aDiff - bDiff;
+      });
   }, [bookings, filterStatus]);
 
   const Header = () => (
@@ -487,8 +486,8 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Danh sách lịch đặt</Text>
           <Text style={styles.headerSubtitle}>
-            {STATUS_FILTERS.find(f => f.value === filterStatus)?.label ||
-              'Tất cả'}{' '}
+            {STATUS_TABS.find(f => f.value === filterStatus)?.label ||
+              'Chờ khám'}{' '}
             • {filteredBookings.length} lịch
           </Text>
         </View>
@@ -509,23 +508,17 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
   const renderBookingItem = ({ item }) => {
     const TAG = `${TAG_ROOT}[renderItem]`;
     const id = item?._id;
-    const bookingCode = item?.code || id?.slice(-6) || '';
 
     const elderly =
       item?.elderly || item?.beneficiary || item?.elderlyProfile || null;
     const elderlyName = safeName(elderly) || '—';
     const elderlyAvatar = safeAvatar(elderly);
+    const elderlyAddress = elderly?.currentAddress || '';
 
     const creatorInfo = resolveCreatorInfo(item);
 
     // ===== CHỌN NGÀY TƯ VẤN (ưu tiên ngày bác sĩ tư vấn, không phải createdAt) =====
-    const dateIso =
-      item?.consultation?.scheduledDate ||
-      item?.scheduledDate ||
-      item?.consultationDate ||
-      item?.startDate ||
-      item?.packageInfo?.startDate ||
-      item?.createdAt;
+    const dateIso = getPrimaryDateIso(item);
 
     // Log chi tiết
     console.log(`${TAG}[DATE_SYNC]`, {
@@ -541,6 +534,14 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
 
     const formattedFull = formatDateISOToVN(dateIso);
     const [dateLabel] = formattedFull.split(' • ');
+
+    const slotRaw = item?.slot || item?.consultation?.slot || null;
+    const sessionLabel =
+      slotRaw === 'morning'
+        ? 'Buổi sáng'
+        : slotRaw === 'afternoon'
+        ? 'Buổi chiều'
+        : '';
 
     const statusKey = getStatusKeyFromItem(item);
     const statusScheme = statusColors[statusKey] || statusColors.default;
@@ -589,7 +590,7 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
       >
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            Đặt lịch #{bookingCode}
+            Lịch khám
           </Text>
           <Chip scheme={statusScheme} text={statusScheme.label} />
         </View>
@@ -606,6 +607,11 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
               <Text style={styles.personSub} numberOfLines={1}>
                 Vai trò: Người cao tuổi
               </Text>
+              {!!elderlyAddress && (
+                <Text style={styles.personSub} numberOfLines={1}>
+                  Địa chỉ: {elderlyAddress}
+                </Text>
+              )}
             </View>
           </View>
         </View>
@@ -635,8 +641,11 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
           ]}
         >
           <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text style={styles.sectionLabel}>Thời gian</Text>
-            <Text style={styles.timeText}>{dateLabel || '—'}</Text>
+            <Text style={styles.sectionLabel}>Ngày khám</Text>
+            <Text style={styles.timeText}>
+              {dateLabel || '—'}
+              {sessionLabel ? ` • ${sessionLabel}` : ''}
+            </Text>
           </View>
           <Chip scheme={payScheme} text={payScheme.label} />
         </View>
@@ -676,23 +685,32 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
     <SafeAreaView style={styles.screen}>
       <Header />
 
-      {/* Thanh filter dưới header */}
+      {/* Tabs lọc 3 trạng thái: Chờ khám / Hoàn thành / Đã hủy */}
       <View style={styles.filterBar}>
-        <Pressable
-          onPress={() => setFilterOpen(true)}
-          style={styles.filterPill}
-        >
-          <Feather name="filter" size={14} color="#1F2937" />
-          <Text style={styles.filterPillText} numberOfLines={1}>
-            {STATUS_FILTERS.find(f => f.value === filterStatus)?.label ||
-              'Tất cả'}
-          </Text>
-          <View className="badge" style={styles.filterCount}>
-            <Text style={styles.filterCountText}>
-              {statusCounts[filterStatus] ?? 0}
-            </Text>
-          </View>
-        </Pressable>
+        {STATUS_TABS.map(tab => {
+          const isActive = filterStatus === tab.value;
+          return (
+            <TouchableOpacity
+              key={tab.value}
+              style={[
+                styles.statusTab,
+                isActive && styles.statusTabActive,
+              ]}
+              activeOpacity={0.9}
+              onPress={() => setFilterStatus(tab.value)}
+            >
+              <Text
+                style={[
+                  styles.statusTabText,
+                  isActive && styles.statusTabTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {isEmpty ? (
@@ -702,12 +720,7 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
             Thử chọn trạng thái khác hoặc làm mới danh sách.
           </Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
-            <TouchableOpacity
-              onPress={() => setFilterStatus('all')}
-              style={styles.secondaryBtn}
-            >
-              <Text style={styles.secondaryBtnText}>Xóa lọc</Text>
-            </TouchableOpacity>
+           
             <TouchableOpacity onPress={fetchBookings} style={styles.primaryBtn}>
               <Text style={styles.primaryBtnText}>Làm mới</Text>
             </TouchableOpacity>
@@ -728,80 +741,6 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
         />
       )}
-
-      {/* Modal chọn trạng thái */}
-      <Modal
-        visible={filterOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFilterOpen(false)}
-      >
-        <Pressable
-          style={styles.backdrop}
-          onPress={() => setFilterOpen(false)}
-        />
-        <View style={styles.sheet}>
-          <Text style={styles.sheetTitle}>Lọc theo trạng thái</Text>
-          {STATUS_FILTERS.map(opt => {
-            const isActive = filterStatus === opt.value;
-            const count = statusCounts[opt.value] ?? 0;
-            const scheme =
-              opt.value === 'all'
-                ? null
-                : statusColors[opt.value] || statusColors.default;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.optionRow, isActive && styles.optionRowActive]}
-                activeOpacity={0.9}
-                onPress={() => {
-                  setFilterStatus(opt.value);
-                  setFilterOpen(false);
-                }}
-              >
-                <View style={styles.optionLeft}>
-                  <Text
-                    style={[
-                      styles.optionText,
-                      isActive && styles.optionTextActive,
-                    ]}
-                  >
-                    {opt.label}
-                  </Text>
-                  {scheme ? (
-                    <Chip
-                      scheme={scheme}
-                      text={scheme.label}
-                      style={{ marginLeft: 8 }}
-                    />
-                  ) : null}
-                </View>
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{count}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-
-          <View style={styles.sheetFooter}>
-            <TouchableOpacity
-              onPress={() => {
-                setFilterStatus('all');
-                setFilterOpen(false);
-              }}
-              style={[styles.footerBtn, styles.footerBtnGhost]}
-            >
-              <Text style={styles.footerBtnGhostText}>Xóa lọc</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setFilterOpen(false)}
-              style={[styles.footerBtn, styles.footerBtnPrimary]}
-            >
-              <Text style={styles.footerBtnPrimaryText}>Xong</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 };
@@ -874,9 +813,32 @@ const styles = StyleSheet.create({
     marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
     marginLeft: 16,
     marginRight: 16,
+  },
+  statusTab: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+  },
+  statusTabActive: {
+    backgroundColor: '#335CFF',
+    borderColor: '#335CFF',
+  },
+  statusTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  statusTabTextActive: {
+    color: '#FFFFFF',
   },
   filterPill: {
     flexDirection: 'row',

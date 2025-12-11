@@ -299,7 +299,7 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
       >
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle} numberOfLines={1}>
-            Lịch đặt
+            Đặt lịch #{id?.slice(-6) || ''}
           </Text>
           <Chip scheme={statusScheme} text={statusScheme.label} />
         </View>

@@ -48,14 +48,14 @@ import IntroductionCreateDoctorProfileScreen from '../screens/Doctor/Introductio
 import CreateDoctorProfileScreen from '../screens/Doctor/CreateDoctorProfileScreen.jsx';
 import ViewDoctorProfileScreen from '../screens/Doctor/ViewDoctorProfileScreen.jsx';
 import EditDoctorProfileScreen from '../screens/Doctor/EditDoctorProfileScreen.jsx';
-import CreateWorkScheduleScreen from '../screens/Doctor/CreateWorkScheduleScreen.jsx';
 import EvaluationStatisticsScreen from '../screens/Doctor/EvaluationStatisticsScreen.jsx';
 import ProfileGateScreen from '../screens/Doctor/ProfileGateScreen.jsx';
 import DoctorHomeScreen from '../screens/Site/DoctorHomeScreen.jsx';
 import ProfileDoctorScreen from '../screens/Doctor/ProfileScreen.jsx';
 import ScheduleScreen from '../screens/Doctor/ScheduleScreen.jsx';
 import ReviewsScreen from '../screens/Doctor/ReviewsScreen.jsx';
-import ConsulationSummaryScreen from '../screens/Doctor/consulationSummaryScreen.jsx';
+import ConsulationSummaryScreen from '../screens/Doctor/ConsulationSummaryScreen.jsx';
+import ListSumaryScreen from '../screens/Doctor/ListSumaryScreen.jsx';
 
 
 import SupporterBookingListFamilyScreen from '../screens/SupporterService/SupporterBookingListFamilyScreen.jsx';
@@ -453,11 +453,7 @@ const NavigationContent = ({ initialRouteName }) => {
           component={withFooter(EditDoctorProfileScreen, 'calendar')}
           options={{ headerShown: false }}
         />
-        <Stack.Screen
-          name="CreateWorkSchedule"
-          component={withFooter(CreateWorkScheduleScreen, 'calendar')}
-          options={{ headerShown: false }}
-        />
+       
         <Stack.Screen
           name="EvaluationStatistics"
           component={withFooter(EvaluationStatisticsScreen, 'calendar')}
@@ -476,6 +472,12 @@ const NavigationContent = ({ initialRouteName }) => {
         <Stack.Screen
           name="ConsulationSummary"
           component={withFooter(ConsulationSummaryScreen, 'DoctorHome')}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="ListSumary"
+          component={withFooter(ListSumaryScreen, 'DoctorHome')}
           options={{ headerShown: false }}
         />
 
