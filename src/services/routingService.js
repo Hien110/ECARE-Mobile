@@ -61,7 +61,7 @@ class RoutingService {
       }
       
     } catch (error) {
-      console.error('OSRM routing error:', error)
+      // console.error('OSRM routing error:', error)
       return {
         success: false,
         error: error.message,
@@ -90,11 +90,11 @@ class RoutingService {
   }
 
   /**
-   * Calculate distance with OSRM only
-   * No fallback to air distance - if OSRM fails, return null
+   * Calculate distance with OSRM and fallback to Haversine if needed
+   * This ensures we always return a distance value
    */
   async calculateDistanceWithFallback(startLat, startLon, endLat, endLon) {
-    // Try OSRM only
+    // Try OSRM first
     const osrmResult = await this.calculateRoute(
       startLat,
       startLon,
@@ -121,12 +121,15 @@ class RoutingService {
       };
     }
 
-    // No fallback - return null if OSRM fails
+    // Fallback to Haversine (air distance) if OSRM fails
+    console.warn('OSRM failed, falling back to Haversine distance calculation');
+    const airDistance = this.calculateAirDistance(startLat, startLon, endLat, endLon);
+    
     return {
-      distance: null,
-      duration: null,
-      method: 'failed',
-      success: false,
+      distance: airDistance,
+      duration: null, // Duration not available with Haversine
+      method: 'haversine',
+      success: true,
     };
   }
 

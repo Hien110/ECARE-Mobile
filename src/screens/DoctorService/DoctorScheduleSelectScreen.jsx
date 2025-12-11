@@ -95,8 +95,8 @@ const DoctorScheduleSelectScreen = () => {
   };
 
   const handleSelectSlot = (dateKey, slotKey) => {
-    // Lưu đúng dateKey trả về từ backend để khớp khi highlight
-    setSelectedSlot({ date: dateKey, slot: slotKey });
+    const normalizedSelectedDate = formatDate(selectedDate);
+    setSelectedSlot({ date: normalizedSelectedDate, slot: slotKey });
   };
 
   const handleConfirm = () => {
@@ -113,7 +113,7 @@ const DoctorScheduleSelectScreen = () => {
       slot: selectedSlot.slot,
       slotLabel:
         selectedSlot.slot === 'morning'
-          ? 'Sáng (08:00 - 11:00)'
+          ? 'Sáng (08:00 - 10:00)'
           : 'Chiều (14:00 - 17:00)',
     });
   };
@@ -153,7 +153,7 @@ const DoctorScheduleSelectScreen = () => {
                   styles.slotButtonTextActive,
               ]}
             >
-              Sáng (08:00h - 11:00h)
+              Sáng (08:00h - 10:00h)
             </Text>
           </TouchableOpacity>
 
@@ -434,8 +434,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#E5E7EB',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
   },
   slotButtonDisabled: {
     backgroundColor: '#E5E7EB',
@@ -443,12 +441,6 @@ const styles = StyleSheet.create({
   },
   slotButtonActive: {
     backgroundColor: '#4F7EFF',
-    borderColor: '#1D4ED8',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
   },
   slotButtonText: {
     fontSize: 13,
