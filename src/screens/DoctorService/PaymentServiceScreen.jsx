@@ -99,10 +99,20 @@ const PaymentServiceScreen = () => {
       ? new Date(registration.scheduledDate).toISOString().slice(0, 10)
       : '');
 
-  const formatDate = iso => {
-    if (!iso) return '';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso;
+  const formatDate = value => {
+    if (!value) return '';
+
+    if (typeof value === 'string') {
+      if (value.includes('/')) return value;
+
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [year, month, day] = value.split('-');
+        return `${day}/${month}/${year}`;
+      }
+    }
+
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
@@ -884,4 +894,3 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
 });
- 

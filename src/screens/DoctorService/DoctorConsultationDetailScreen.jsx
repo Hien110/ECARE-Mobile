@@ -38,7 +38,7 @@ const statusColors = {
     bg: '#E6FFFB',
     text: '#00796B',
     border: '#B2F5EA',
-    label: 'Đã xác nhận',
+    label: 'Chờ khám',
   },
   in_progress: {
     bg: '#FFFAEB',
@@ -96,7 +96,37 @@ const paymentMethodLabelMap = {
   online: 'Online',
 };
 
-// ====== helpers format ngày giờ ======
+// Trạng thái thời gian khám theo giờ UTC: 'before' | 'within' | 'after' | 'unknown'
+const getConsultationWindowStateUtc = (scheduledDate, slot) => {
+  if (!scheduledDate || !slot) return 'unknown';
+  const base = new Date(scheduledDate);
+  if (Number.isNaN(base.getTime())) return 'unknown';
+
+  const year = base.getUTCFullYear();
+  const month = base.getUTCMonth();
+  const day = base.getUTCDate();
+
+  let startHour;
+  let endHour;
+  if (slot === 'morning') {
+    startHour = 8;
+    endHour = 10;
+  } else if (slot === 'afternoon') {
+    startHour = 14;
+    endHour = 16;
+  } else {
+    return 'unknown';
+  }
+
+  const start = new Date(Date.UTC(year, month, day, startHour, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month, day, endHour, 0, 0, 0));
+  const now = new Date();
+
+  if (now.getTime() < start.getTime()) return 'before';
+  if (now.getTime() > end.getTime()) return 'after';
+  return 'within';
+};
+
 function formatDateLongVN(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -112,7 +142,6 @@ function formatDateLongVN(iso) {
   return fmt.format(d);
 }
 
-// ====== helpers bóc tên / avatar sâu nhiều tầng ======
 function safeName(obj) {
   if (!obj) return null;
   if (typeof obj === 'string') return obj;
@@ -195,29 +224,43 @@ RowItem.defaultProps = {
   right: null,
 };
 
-const AvatarLine = ({ title, name, role, avatar }) => (
+const AvatarLine = ({ title, name, role, avatar, showHistoryButton, onPressHistory }) => (
   <View style={{ marginTop: 16 }}>
     <Text style={styles.sectionLabel}>{title}</Text>
-    <View style={styles.row}>
-      <View style={styles.avatarWrap}>
-        {avatar ? (
-          <Image
-            source={{ uri: avatar }}
-            resizeMode="cover"
-            style={styles.avatarImg}
-          />
-        ) : (
-          <Feather name="user" size={24} color="#9CA3AF" />
-        )}
+    <View style={[styles.row, { alignItems: 'center', justifyContent: 'space-between' }]}>
+      <View style={styles.row}>
+        <View style={styles.avatarWrap}>
+          {avatar ? (
+            <Image
+              source={{ uri: avatar }}
+              resizeMode="cover"
+              style={styles.avatarImg}
+            />
+          ) : (
+            <Feather name="user" size={24} color="#9CA3AF" />
+          )}
+        </View>
+        <View style={{ marginLeft: 12 }}>
+          <Text style={styles.personName} numberOfLines={1}>
+            {name || '—'}
+          </Text>
+          <Text style={styles.personSub} numberOfLines={1}>
+            {role}
+          </Text>
+        </View>
       </View>
-      <View style={{ marginLeft: 12, flex: 1 }}>
-        <Text style={styles.personName} numberOfLines={1}>
-          {name || '—'}
-        </Text>
-        <Text style={styles.personSub} numberOfLines={1}>
-          {role}
-        </Text>
-      </View>
+
+      {showHistoryButton ? (
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={onPressHistory}
+          style={styles.historyBtn}
+        >
+          <Text style={styles.historyBtnText} numberOfLines={1}>
+            Lịch sử
+          </Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   </View>
 );
@@ -227,17 +270,19 @@ AvatarLine.propTypes = {
   name: PropTypes.string,
   role: PropTypes.string,
   avatar: PropTypes.string,
+  showHistoryButton: PropTypes.bool,
+  onPressHistory: PropTypes.func,
 };
 
 AvatarLine.defaultProps = {
   name: null,
-  role: '',
+  role: null,
   avatar: null,
+  showHistoryButton: false,
+  onPressHistory: undefined,
 };
 
-/**
- * ====== resolve "Người đặt lịch" chính xác ======
- */
+
 function resolveCreatorInfo(booking) {
   if (!booking) {
     return { name: '—', avatar: null, roleLabel: 'Người đặt lịch' };
@@ -317,7 +362,8 @@ function resolveCreatorInfo(booking) {
 }
 
 const DoctorConsultationDetailScreen = ({ route, navigation }) => {
-  const bookingId = route?.params?.bookingId;
+  const registrationIdFromRoute = route?.params?.registrationId || null;
+  const bookingId = route?.params?.bookingId || registrationIdFromRoute;
   const elderlyIdFromRoute = route?.params?.elderlyId || null;
   const initialBooking = route?.params?.initialBooking || null;
 
@@ -334,7 +380,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const [cancelling, setCancelling] = useState(false);
 
   // ==== trạng thái update status tư vấn (doctor) ====
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [updatingStatus] = useState(false);
 
   // ==== rating state ====
   const [ratings, setRatings] = useState([]);
@@ -407,9 +453,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     }
   }, [bookingId]);
 
-  /**
-   * Resolve conversation (chat) từ một booking đã có doctor + elderly
-   */
+ 
   const resolveConversation = useCallback(async found => {
     if (!found?.doctor) {
       setConversation(null);
@@ -449,9 +493,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     }
   }, []);
 
-  /**
-   * Lấy chi tiết booking
-   */
+
   const loadDetails = useCallback(async () => {
     if (!bookingId) {
       console.log(`${TAG}[loadDetails][ERROR] thiếu bookingId`);
@@ -596,7 +638,8 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   };
 
   // ====== logic hiển thị ======
-  const statusKey = String(booking?.status || 'pending').toLowerCase();
+  const rawStatusKey = String(booking?.status || 'pending').toLowerCase();
+  const statusKey = rawStatusKey === 'canceled' ? 'cancelled' : rawStatusKey;
   const statusScheme = statusColors[statusKey] || statusColors.default;
 
   const isDoctorRole = (userRole || '').toLowerCase() === 'doctor';
@@ -638,135 +681,9 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const paymentMethodLabel =
     paymentMethodLabelMap[paymentMethodLower] || paymentMethodLabelMap.cash;
 
-  // ✅ Kiểm tra xem có được phép hủy không (chỉ hủy trước ngày bắt đầu)
-  const now = new Date();
-  const scheduledDate = booking?.scheduledDate ? new Date(booking.scheduledDate) : null;
-  const isBeforeScheduledDate = scheduledDate ? now < scheduledDate : false;
-
   const canCancel =
-    ['confirmed'].includes(statusKey) &&
-    ['elderly', 'family'].includes((userRole || '').toLowerCase()) &&
-    isBeforeScheduledDate;
-
-  // ====== HÀM UPDATE TRẠNG THÁI TƯ VẤN (DOCTOR) ======
-  const updateConsultationStatus = async nextStatus => {
-  console.log(
-    `${TAG}[updateConsultationStatus] START`,
-    {
-      nextStatus,
-      bookingId: booking?._id,
-      bookingStatus: booking?.status,
-      consultationId: booking?.consultation?._id,
-      consultationStatus: booking?.consultation?.status,
-    },
-  );
-
-  if (!booking?._id) {
-    console.log(
-      `${TAG}[updateConsultationStatus] MISSING booking._id → KHÔNG GỌI API`,
-    );
-    return;
-  }
-
-  try {
-    setUpdatingStatus(true);
-
-    console.log(
-      `${TAG}[updateConsultationStatus] CALL API doctorBookingService.updateConsultationStatus`,
-      {
-        bookingId: booking._id,
-        nextStatus,
-      },
-    );
-
-    const res =
-      (await doctorBookingService.updateConsultationStatus?.(
-        booking._id,
-        nextStatus,
-      )) || {};
-
-    console.log(`${TAG}[updateConsultationStatus] RAW_RES =`, res);
-
-    if (res?.success) {
-      const serverData =
-        res.data && typeof res.data === 'object' ? res.data : {};
-
-      console.log(
-        `${TAG}[updateConsultationStatus] SUCCESS, serverData =`,
-        {
-          status: serverData.status,
-          consultationStatus: serverData.consultation?.status,
-          data: serverData,
-        },
-      );
-
-      setBooking(prev => {
-        const base = prev || {};
-        const merged = {
-          ...base,
-          ...serverData,
-          status: serverData.status || nextStatus,
-          consultation: {
-            ...(base?.consultation || {}),
-            ...(serverData.consultation || {}),
-            status:
-              serverData.consultation?.status ||
-              serverData.status ||
-              nextStatus,
-          },
-        };
-
-        console.log(
-          `${TAG}[updateConsultationStatus] AFTER_SET booking =`,
-          {
-            bookingId: merged?._id,
-            bookingStatus: merged?.status,
-            consultationId: merged?.consultation?._id,
-            consultationStatus: merged?.consultation?.status,
-          },
-        );
-
-        return merged;
-      });
-
-      const msg =
-        nextStatus === 'in_progress'
-          ? 'Đã chuyển sang trạng thái đang tiến hành.'
-          : 'Đã đánh dấu hoàn thành công việc.';
-      showToast(msg);
-    } else {
-      console.log(
-        `${TAG}[updateConsultationStatus] FAIL res.success != true`,
-        {
-          message: res?.message,
-          res,
-        },
-      );
-
-      showToast(
-        res?.message ||
-          'Cập nhật trạng thái thất bại, vui lòng thử lại.',
-        'error',
-      );
-    }
-  } catch (e) {
-    console.log(
-      `${TAG}[updateConsultationStatus][ERROR]`,
-      {
-        message: e?.message,
-        responseStatus: e?.response?.status,
-        responseData: e?.response?.data,
-      },
-    );
-    showToast(
-      'Cập nhật trạng thái thất bại, vui lòng thử lại.',
-      'error',
-    );
-  } finally {
-    console.log(`${TAG}[updateConsultationStatus] END (finally)`);
-    setUpdatingStatus(false);
-  }
-};
+    ['pending', 'confirmed'].includes(statusKey) &&
+    ['elderly', 'family'].includes((userRole || '').toLowerCase());
 
   const onCancelBooking = async () => {
     if (!bookingId) return;
@@ -817,6 +734,54 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     });
   };
 
+  const goToConsultationSummary = () => {
+    if (!booking?._id) return;
+
+    const elderly = booking?.elderly || booking?.beneficiary || null;
+
+    const patientName = elderly?.fullName || elderly?.name || '';
+    const patientGender = elderly?.gender || '';
+    const patientDob = elderly?.dateOfBirth || null;
+
+    const scheduledDateForSummary =
+      booking?.consultation?.scheduledDate ||
+      booking?.scheduledDate ||
+      booking?.consultationDate ||
+      null;
+
+    const slotForSummary = booking?.slot || booking?.consultation?.slot || null;
+
+    navigation.navigate('ConsulationSummary', {
+      registrationId: String(booking._id),
+      patientName,
+      patientGender,
+      patientDob,
+      scheduledDate: scheduledDateForSummary,
+      slot: slotForSummary,
+    });
+  };
+
+  const goToHistoryList = () => {
+    const elderly = booking?.elderly || booking?.beneficiary || null;
+    const elderlyId = elderly?._id || elderly?.user?._id || null;
+    const elderlyName =
+      elderly?.fullName ||
+      elderly?.name ||
+      booking?.beneficiary?.fullName ||
+      booking?.beneficiary?.name ||
+      '';
+
+    if (!elderlyId) {
+      showToast('Không tìm thấy thông tin người cao tuổi.', 'error');
+      return;
+    }
+
+    navigation.navigate('ListSumary', {
+      elderlyId,
+      elderlyName,
+    });
+  };
+
   const priceText =
     typeof booking?.price === 'number'
       ? `${booking.price.toLocaleString('vi-VN')} đ`
@@ -842,17 +807,44 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
 
   const dateLabel = formatDateLongVN(dateIso);
 
+  const slotRaw = booking?.slot || booking?.consultation?.slot || null;
+  const sessionLabel =
+    slotRaw === 'morning'
+      ? 'Buổi sáng'
+      : slotRaw === 'afternoon'
+      ? 'Buổi chiều'
+      : '';
+
   const timeRaw =
     booking?.consultationTime ||
     booking?.appointmentTime ||
     booking?.scheduleTime ||
     null;
 
-  const timeDisplay = dateLabel
-    ? `${dateLabel}${timeRaw ? `\nLúc ${timeRaw}` : ''}`
+  const dateDisplay = dateLabel
+    ? `${dateLabel}${sessionLabel ? ` • ${sessionLabel}` : ''}`
     : '—';
 
+  const timeOnlyDisplay =
+    timeRaw ||
+    (slotRaw === 'morning'
+      ? '8h - 11h'
+      : slotRaw === 'afternoon'
+      ? '14h - 16h'
+      : '—');
+
+  const timeDisplay = dateDisplay;
+
   const creatorInfo = resolveCreatorInfo(booking);
+
+  const consultationWindowState = getConsultationWindowStateUtc(
+    booking?.consultation?.scheduledDate || booking?.scheduledDate || null,
+    booking?.slot || booking?.consultation?.slot || null,
+  );
+  const isWithinConsultationWindow = consultationWindowState === 'within';
+  const summaryButtonLabel = isWithinConsultationWindow
+    ? 'Điền phiếu khám'
+    : 'Xem phiếu khám';
 
   // ==== quyền đánh giá ====
   const isBookingReviewer =
@@ -1052,7 +1044,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         >
           <Text style={styles.backText}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chi tiết lịch khám</Text>
+        <Text style={styles.headerTitle}>Chi tiết tư vấn</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -1073,10 +1065,9 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
           }
         >
           <View style={styles.card}>
-            {/* mã tư vấn + trạng thái */}
             <View style={styles.rowBetween}>
               <Text style={styles.cardTitle}>
-                Lịch khám
+                Tư vấn 
               </Text>
               <Chip scheme={statusScheme} text={statusScheme.label} />
             </View>
@@ -1099,7 +1090,22 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               }
               role="Người được tư vấn"
               avatar={booking?.elderly?.avatar || booking?.beneficiary?.avatar}
+              showHistoryButton
+              onPressHistory={goToHistoryList}
             />
+
+            {!!(
+              booking?.elderly?.currentAddress ||
+              booking?.beneficiary?.currentAddress
+            ) && (
+              <View style={{ marginTop: 8 }}>
+                <Text style={styles.itemLabel}>Địa chỉ hiện tại</Text>
+                <Text style={styles.itemValue}>
+                  {booking?.elderly?.currentAddress ||
+                    booking?.beneficiary?.currentAddress}
+                </Text>
+              </View>
+            )}
 
             {/* Người đặt lịch */}
             <AvatarLine
@@ -1112,12 +1118,8 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             <View style={{ height: 16 }} />
 
             <RowItem label="Thời gian tư vấn" value={timeDisplay} />
+            <RowItem label="Giờ" value={timeOnlyDisplay} />
 
-            <RowItem
-              label="Địa chỉ tư vấn"
-              value={booking?.beneficiary?.currentAddress || '—'}
-            />
- 
             <RowItem
               label="Thanh toán"
               value={`${paymentMethodLabel} • ${payScheme.label}`}
@@ -1137,12 +1139,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               </View>
             )}
 
-            <View style={{ marginTop: 16 }}>
-              <Text style={styles.sectionLabel}>Ghi chú</Text>
-              <Text style={styles.noteText}>
-                {booking?.notes || 'Không có ghi chú'}
-              </Text>
-            </View>
+          
 
             {/* nút đánh giá (chưa có rating) */}
             {canReview && ratings.length === 0 && (
@@ -1202,58 +1199,49 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             </View>
           )}
 
-          {/* Buttons cho DOCTOR: Liên hệ + Tiến hành / Đã hoàn thành */}
+          {/* Buttons cho NON-DOCTOR: chỉ 1 nút chat như cũ */}
           {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
             conversation &&
-            isDoctorRole && (
-              <View style={{ marginTop: 20 }}>
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={goToChat}
-                  disabled={updatingStatus}
-                >
-                  <Text style={styles.primaryBtnText}>Liên hệ</Text>
-                </TouchableOpacity>
-
-                {statusKey === 'confirmed' && (
-                  <TouchableOpacity
-                    style={[
-                      styles.primaryBtn,
-                      { marginTop: 12, backgroundColor: '#0EA5E9' },
-                    ]}
-                    onPress={() => updateConsultationStatus('in_progress')}
-                    disabled={updatingStatus}
-                  >
-                    {updatingStatus ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.primaryBtnText}>
-                        Tiến hành làm việc
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-
-                {statusKey === 'in_progress' && (
-                  <TouchableOpacity
-                    style={[
-                      styles.primaryBtn,
-                      { marginTop: 12, backgroundColor: '#16A34A' },
-                    ]}
-                    onPress={() => updateConsultationStatus('completed')}
-                    disabled={updatingStatus}
-                  >
-                    {updatingStatus ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.primaryBtnText}>
-                        Đã hoàn thành công việc
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
+            !isDoctorRole && (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { marginTop: 20 }]}
+                onPress={goToChat}
+              >
+                <Text style={styles.primaryBtnText}>Nhắn tin với bác sĩ</Text>
+              </TouchableOpacity>
             )}
+
+          {/* Buttons cho DOCTOR: Liên hệ + phiếu khám */}
+          {isDoctorRole && booking && (
+            <View style={{ marginTop: 20 }}>
+              {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
+                conversation && (
+                  <TouchableOpacity
+                    style={styles.primaryBtn}
+                    onPress={goToChat}
+                    disabled={updatingStatus}
+                  >
+                    <Text style={styles.primaryBtnText}>Liên hệ</Text>
+                  </TouchableOpacity>
+                )}
+
+              <TouchableOpacity
+                style={[
+                  styles.primaryBtn,
+                  {
+                    marginTop:
+                      (statusKey === 'confirmed' || statusKey === 'in_progress') &&
+                      conversation
+                        ? 12
+                        : 0,
+                  },
+                ]}
+                onPress={goToConsultationSummary}
+              >
+                <Text style={styles.primaryBtnText}>{summaryButtonLabel}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {canCancel && (
             <TouchableOpacity
@@ -1435,6 +1423,7 @@ DoctorConsultationDetailScreen.propTypes = {
   route: PropTypes.shape({
     params: PropTypes.shape({
       bookingId: PropTypes.string,
+      registrationId: PropTypes.string,
       elderlyId: PropTypes.string,
       initialBooking: PropTypes.object,
     }),
@@ -1511,6 +1500,17 @@ const styles = StyleSheet.create({
   },
   personName: { fontSize: 15, fontWeight: '600', color: '#111827' },
   personSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  historyBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#16A34A',
+  },
+  historyBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 
   itemLabel: { fontSize: 12, color: '#64748B', marginBottom: 4 },
   itemValue: { fontSize: 15, color: '#0F172A', fontWeight: '600' },
