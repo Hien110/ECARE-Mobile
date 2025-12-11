@@ -456,7 +456,7 @@ const DoctorHomeScreen = () => {
                   {a.name?.charAt(0)?.toUpperCase()}
                 </Text>
               </View>
-            </View>
+             </View>
             <View style={{ flex: 1 }}>
               <View style={styles.rowBetween}>
                 <Text style={styles.apptName} numberOfLines={1}>

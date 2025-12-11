@@ -159,7 +159,7 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
       </View>
     );
   };
-
+ 
   const EmptyState = () => (
     <View style={styles.emptyWrap}>
       <Text style={styles.emptyTitle}>Chưa có hồ sơ bác sĩ</Text>

@@ -13,6 +13,38 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState(null);
   const displayName = doctorName || profile?.user?.fullName || 'Bác sĩ';
 
+  const specializationText = useMemo(() => {
+    if (Array.isArray(profile?.specializations) && profile.specializations.length) {
+      return profile.specializations.join(', ');
+    }
+    if (profile?.doctorProfile?.specializations && Array.isArray(profile.doctorProfile.specializations) && profile.doctorProfile.specializations.length) {
+      return profile.doctorProfile.specializations.join(', ');
+    }
+    return 'Bác sĩ chuyên khoa';
+  }, [profile]);
+
+  const ratingStats = useMemo(() => {
+    return profile?.ratingStats || profile?.doctorProfile?.ratingStats || null;
+  }, [profile]);
+
+  const averageRatingText = useMemo(() => {
+    const avg = ratingStats?.averageRating;
+    if (typeof avg === 'number') return avg.toFixed(1);
+    return '—';
+  }, [ratingStats]);
+ 
+  const ratingCountText = useMemo(() => {
+    const total = ratingStats?.totalReviews || ratingStats?.count || ratingStats?.total;
+    if (typeof total === 'number' && total > 0) return `(${total} đánh giá)`;
+    return '(Chưa có đánh giá)';
+  }, [ratingStats]);
+
+  const experienceYears = useMemo(() => {
+    if (typeof profile?.experience === 'number') return profile.experience;
+    if (typeof profile?.doctorProfile?.experience === 'number') return profile.doctorProfile.experience;
+    return null;
+  }, [profile]);
+
   // Simple mapper: convert hospitalName to approximate coordinates
   // Mapping function removed since map is hidden
 

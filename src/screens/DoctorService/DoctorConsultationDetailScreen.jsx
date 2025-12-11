@@ -1117,7 +1117,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               label="Địa chỉ tư vấn"
               value={booking?.beneficiary?.currentAddress || '—'}
             />
-
+ 
             <RowItem
               label="Thanh toán"
               value={`${paymentMethodLabel} • ${payScheme.label}`}

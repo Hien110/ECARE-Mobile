@@ -62,6 +62,26 @@ const ConsulationSummaryScreen = () => {
 	);
 	const isEditable = consultationState === 'within' || consultationState === 'unknown';
 
+	const buildConsultationDateLabel = (dateRaw, slot) => {
+		if (!dateRaw) return '—';
+		try {
+			const d = new Date(dateRaw);
+			if (Number.isNaN(d.getTime())) return '—';
+			const dateStr = d.toLocaleDateString('vi-VN');
+			let slotLabel = '';
+			if (slot === 'morning') slotLabel = 'Buổi sáng';
+			else if (slot === 'afternoon') slotLabel = 'Buổi chiều';
+			return slotLabel ? `${dateStr} • ${slotLabel}` : dateStr;
+		} catch (e) {
+			return '—';
+		}
+	};
+ 
+	const consultationDateLabel = buildConsultationDateLabel(
+		scheduledDate,
+		scheduledSlot,
+	);
+
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState('');

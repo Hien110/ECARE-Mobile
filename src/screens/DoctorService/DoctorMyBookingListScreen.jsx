@@ -215,7 +215,7 @@ function resolveCreatorInfo(booking) {
 
   let creator = null;
   let roleLabel = 'Người đặt lịch';
-
+ 
   if (createdBy) {
     creator = createdBy;
 
