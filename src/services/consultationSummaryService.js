@@ -103,6 +103,34 @@ export const consultationSummaryService = {
 			};
 		}
 	},
+
+	getSummariesByElderly: async (elderlyId) => {
+		if (!elderlyId) {
+			return { success: false, data: [], message: 'Thiếu elderlyId' };
+		}
+
+		try {
+			const res = await api.get(
+				`/consultation-summaries/by-elderly/${elderlyId}`,
+			);
+
+			return {
+				success: true,
+				data: Array.isArray(res.data?.data) ? res.data.data : [],
+				message:
+					res.data?.message || 'Lấy lịch sử phiếu khám thành công',
+			};
+		} catch (error) {
+			return {
+				success: false,
+				data: [],
+				message:
+					error?.response?.data?.message ||
+					error.message ||
+					'Không lấy được lịch sử phiếu khám',
+			};
+		}
+	},
 };
 
 export default consultationSummaryService;
