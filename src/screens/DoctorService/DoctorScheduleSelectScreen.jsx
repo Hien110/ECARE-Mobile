@@ -104,7 +104,7 @@ const DoctorScheduleSelectScreen = () => {
       Alert.alert('Thông báo', 'Vui lòng chọn ngày và buổi khám.');
       return;
     }
-
+ 
     navigation.navigate('PaymentServiceScreen', {
       elderly,
       family,

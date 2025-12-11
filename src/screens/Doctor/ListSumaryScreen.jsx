@@ -12,7 +12,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 import consultationSummaryService from '../../services/consultationSummaryService';
-
+ 
 const ListSumaryScreen = () => {
 	const navigation = useNavigation();
 	const route = useRoute();

@@ -556,7 +556,7 @@ const DoctorHomeScreen = () => {
                   </View>
                 </View>
               </View>
-
+ 
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Người đặt lịch</Text>
                 <View style={styles.row}>

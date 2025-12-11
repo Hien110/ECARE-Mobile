@@ -76,7 +76,7 @@ const ConsulationSummaryScreen = () => {
 			return '—';
 		}
 	};
-
+ 
 	const consultationDateLabel = buildConsultationDateLabel(
 		scheduledDate,
 		scheduledSlot,

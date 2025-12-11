@@ -33,7 +33,7 @@ export default function ProfileScreen() {
     if (typeof avg === 'number') return avg.toFixed(1);
     return '—';
   }, [ratingStats]);
-
+ 
   const ratingCountText = useMemo(() => {
     const total = ratingStats?.totalReviews || ratingStats?.count || ratingStats?.total;
     if (typeof total === 'number' && total > 0) return `(${total} đánh giá)`;

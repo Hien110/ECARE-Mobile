@@ -74,7 +74,7 @@ export const consultationSummaryService = {
 			};
 		}
 	},
-
+ 
 	getParticipants: async (registrationId) => {
 		if (!registrationId) {
 			return { success: false, data: null, message: 'Thiếu registrationId' };

@@ -1119,7 +1119,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
 
             <RowItem label="Thời gian tư vấn" value={timeDisplay} />
             <RowItem label="Giờ" value={timeOnlyDisplay} />
-
+ 
             <RowItem
               label="Thanh toán"
               value={`${paymentMethodLabel} • ${payScheme.label}`}
