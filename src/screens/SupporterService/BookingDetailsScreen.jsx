@@ -27,18 +27,6 @@ import ratingService from '../../services/ratingService';
 
 const VN_TZ = 'Asia/Ho_Chi_Minh';
 
-const scheduleTimeMap = {
-  morning: 'Buổi sáng: 8h–12h',
-  afternoon: 'Buổi chiều: 13h–17h',
-  evening: 'Buổi tối: 18h–21h',
-};
-
-const bookingTypeLabelMap = {
-  session: 'Theo buổi',
-  day: 'Theo ngày',
-  month: 'Theo tháng',
-};
-
 const statusColors = {
   pending: {
     bg: '#FFF7E6',
@@ -151,44 +139,29 @@ function formatVNDateLong(iso, { includeTime = false } = {}) {
   return `${weekday}, ngày ${dd} tháng ${mm} năm ${yyyy}${time}`;
 }
 
-// 🔧 format hiển thị thời gian theo bookingType + field mới
+// 🔧 format hiển thị thời gian từ startDate và endDate (chỉ ngày, không có giờ)
 function renderBookingTime(booking) {
   if (!booking) return '—';
-  const type = booking.bookingType || 'session';
-
-  if (type === 'session') {
-    const date = formatVNDateLong(booking.scheduleDate);
-    const timeLabel = booking.scheduleTime
-      ? scheduleTimeMap[booking.scheduleTime] || booking.scheduleTime
-      : '';
-    if (date && timeLabel) return `${date}\n${timeLabel}`;
-    if (date) return date;
-    if (timeLabel) return timeLabel;
-    return '—';
+  
+  const startDate = booking?.startDate;
+  const endDate = booking?.endDate;
+  
+  if (!startDate || !endDate) return '—';
+  
+  const startFormatted = formatVNDateLong(startDate);
+  const endFormatted = formatVNDateLong(endDate);
+  
+  // Kiểm tra xem cùng ngày không
+  const startDay = new Date(startDate).toLocaleDateString('vi-VN', { timeZone: VN_TZ });
+  const endDay = new Date(endDate).toLocaleDateString('vi-VN', { timeZone: VN_TZ });
+  
+  if (startDay === endDay) {
+    // Cùng ngày: chỉ hiển thị ngày
+    return startFormatted;
+  } else {
+    // Khác ngày: hiển thị khoảng ngày
+    return `Từ: ${startFormatted}\nĐến: ${endFormatted}`;
   }
-
-  if (type === 'day') {
-    const date = formatVNDateLong(booking.scheduleDate);
-    return date || '—';
-  }
-
-  if (type === 'month') {
-    const start = booking.monthStart
-      ? formatVNDateLong(booking.monthStart)
-      : '';
-    const end = booking.monthEnd ? formatVNDateLong(booking.monthEnd) : '';
-    const range = start && end ? `${start}\nđến\n${end}` : start || end || '';
-    const sessions =
-      Array.isArray(booking.monthSessionsPerDay) &&
-      booking.monthSessionsPerDay.length
-        ? `Buổi trong ngày: ${booking.monthSessionsPerDay
-            .map(s => scheduleTimeMap[s] || s)
-            .join(', ')}`
-        : '';
-    return [range, sessions].filter(Boolean).join('\n');
-  }
-
-  return '—';
 }
 
 const Chip = ({ scheme, text, style }) => {
@@ -437,7 +410,24 @@ const BookingDetailScreen = ({ route, navigation }) => {
               console.log('Lỗi ngắt kết nối supporter - elderly', e);
             }
 
-            // Xóa conversation khi hoàn thành
+            // Ngắt kết nối với người đặt lịch (registrant) nếu không phải là elderly
+            if (booking?.registrant?._id && booking?.registrant?._id !== booking?.elderly?._id) {
+              try {
+                const res = await relationshipService.cancelByElderlyAndFamily(
+                  booking?.registrant?._id,
+                  booking?.supporter?._id,
+                );
+                if (res?.success) {
+                  console.log('Ngắt kết nối supporter - registrant thành công');
+                } else {
+                  console.log('Ngắt kết nối supporter - registrant thất bại');
+                }
+              } catch (e) {
+                console.log('Lỗi ngắt kết nối supporter - registrant', e);
+              }
+            }
+
+            // Xóa conversation với elderly
             if (conversationArg?._id) {
               console.log(conversationArg._id);
 
@@ -450,7 +440,27 @@ const BookingDetailScreen = ({ route, navigation }) => {
                   setConversation(null);
                 }
               } catch (e) {
-                console.log('Lỗi xóa conversation', e);
+                console.log('Lỗi xóa conversation với elderly', e);
+              }
+            }
+
+            // Xóa conversation với registrant nếu khác elderly
+            if (booking?.registrant?._id && booking?.registrant?._id !== booking?.elderly?._id) {
+              try {
+                const respConv = await conversationService.getConversationByParticipants(
+                  booking?.supporter?._id,
+                  booking?.registrant?._id,
+                );
+                if (respConv?.success && respConv?.data?._id) {
+                  const res = await conversationService.deleteConversationAndMessages(
+                    respConv.data._id,
+                  );
+                  if (res?.success) {
+                    console.log('Xóa conversation với registrant thành công');
+                  }
+                }
+              } catch (e) {
+                console.log('Lỗi xóa conversation với registrant', e);
               }
             }
           }
@@ -524,26 +534,26 @@ const BookingDetailScreen = ({ route, navigation }) => {
   const isBookingReviewer =
     !!currentUser?._id &&
     (currentUser._id === booking?.elderly?._id ||
-      currentUser._id === booking?.createdBy?._id);
+      currentUser._id === booking?.registrant?._id);
 
-  // Elderly/Family: hủy giống cũ (trừ khi canceled/completed/in_progress)
-  const disabledCancelBase = ['canceled', 'completed', 'in_progress'].includes(
-    statusKey,
-  );
+  // Kiểm tra xem có được phép hủy không (chỉ hủy trước ngày bắt đầu)
+  const now = new Date();
+  const startDate = booking?.startDate ? new Date(booking.startDate) : null;
+  const isBeforeStartDate = startDate ? now < startDate : false;
+  
+  const disabledCancelBase = ['canceled', 'completed'].includes(statusKey);
+  
   const canCancel =
     isElderly || isFamily
-      ? !disabledCancelBase
+      ? !disabledCancelBase && isBeforeStartDate
       : isSupporter
-      ? statusKey === 'pending'
+      ? statusKey === 'pending' && isBeforeStartDate
       : false;
 
   // Supporter flow buttons
   const canAccept = isSupporter && statusKey === 'pending';
   const canStart = isSupporter && statusKey === 'confirmed';
   const canComplete = isSupporter && statusKey === 'in_progress';
-
-  const bookingTypeLabel =
-    bookingTypeLabelMap[booking?.bookingType] || 'Không xác định';
 
   const priceText =
     typeof booking?.priceAtBooking === 'number'
@@ -747,7 +757,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
           <View style={styles.card}>
             <View style={styles.rowBetween}>
               <Text style={styles.cardTitle}>
-                Đặt lịch #{booking?._id?.slice(-6) || ''}
+                Lịch khám 
               </Text>
               <Chip scheme={statusScheme} text={statusScheme.label} />
             </View>
@@ -768,18 +778,18 @@ const BookingDetailScreen = ({ route, navigation }) => {
 
             <AvatarLine
               title="Người đặt lịch"
-              name={booking?.createdBy?.fullName}
+              name={booking?.registrant?.fullName}
               role="Vai trò: Người đặt lịch"
-              avatar={booking?.createdBy?.avatar}
+              avatar={booking?.registrant?.avatar}
             />
 
             <View style={{ height: 16 }} />
 
-            <RowItem label="Loại đặt lịch" value={bookingTypeLabel} />
             <RowItem label="Thời gian" value={renderBookingTime(booking)} />
-            <RowItem
-              label="Địa chỉ hỗ trợ"
-              value={`${booking?.address || '—'}`}
+            
+            <RowItem 
+              label="Địa chỉ hỗ trợ" 
+              value={booking?.elderly?.currentAddress || '—'} 
             />
 
             <RowItem
@@ -928,51 +938,20 @@ const BookingDetailScreen = ({ route, navigation }) => {
               )}
 
               {canStart && (
-                <View style={{ flex: 1, flexDirection: 'row', gap: 12 }}>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={onGoToChat}
-                    disabled={starting}
-                    style={{
-                      backgroundColor: '#FFFFFF',
-                      paddingVertical: 14,
-                      borderRadius: 12,
-                      alignItems: 'center',
-                      flex: 1,
-                      marginRight: 12,
-                      borderWidth: 1,
-                      borderColor: '#2563EB',
-                    }}
-                  >
-                    {starting ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text
-                        style={{
-                          backgroundColor: 'transparent',
-                          color: '#2563EB',
-                          fontWeight: '800',
-                        }}
-                      >
-                        Liên hệ
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={onStartWorking}
-                    disabled={starting}
-                    style={[styles.primaryBtn, starting && { opacity: 0.6 }]}
-                  >
-                    {starting ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.primaryBtnText}>
-                        Tiến hành làm việc
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={onStartWorking}
+                  disabled={starting}
+                  style={[styles.primaryBtn, starting && { opacity: 0.6 }]}
+                >
+                  {starting ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>
+                      Tiến hành làm việc
+                    </Text>
+                  )}
+                </TouchableOpacity>
               )}
 
               {canComplete && (

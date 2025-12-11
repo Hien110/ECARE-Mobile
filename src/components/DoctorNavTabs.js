@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 const TABS = [
   { key: 'profile', label: 'Hồ sơ' },
+  { key: 'schedule', label: 'Lịch làm việc' },
   { key: 'statistics', label: 'Thống kê' },
 ];
  

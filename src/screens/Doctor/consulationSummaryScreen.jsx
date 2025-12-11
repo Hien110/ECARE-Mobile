@@ -28,7 +28,7 @@ const getConsultationWindowStateUtc = (scheduledDate, slot) => {
 	let endHour;
 	if (slot === 'morning') {
 		startHour = 8;
-		endHour = 11;
+		endHour = 10;
 	} else if (slot === 'afternoon') {
 		startHour = 14;
 		endHour = 16;
@@ -102,27 +102,6 @@ const ConsulationSummaryScreen = () => {
 		bloodSugar: '',
 		note: '',
 	});
-
-	const handleOpenHistory = () => {
-		const elderlyId = patientInfo?._id;
-		const name =
-			patientInfo?.fullName ||
-			fallbackPatientName ||
-			'Người bệnh';
-
-		if (!elderlyId) {
-			Alert.alert(
-				'Lỗi',
-				'Chưa có thông tin người được khám để xem lịch sử phiếu khám.',
-			);
-			return;
-		}
-
-		navigation.navigate('ListSumary', {
-			elderlyId,
-			elderlyName: name,
-		});
-	};
 
 	const updateField = (key, value) => {
 		setForm((prev) => ({ ...prev, [key]: value }));
@@ -320,14 +299,7 @@ const ConsulationSummaryScreen = () => {
 				<Text style={styles.headerTitle} numberOfLines={1}>
 					Phiếu theo dõi sức khỏe
 				</Text>
-				<TouchableOpacity
-					style={styles.headerHistory}
-					onPress={handleOpenHistory}
-					activeOpacity={0.7}
-				>
-					<Ionicons name="time-outline" size={18} color="#bbf7d0" />
-					<Text style={styles.headerHistoryText}>Lịch sử</Text>
-				</TouchableOpacity>
+				<View style={{ width: 40 }} />
 			</View>
 
 			{loading ? (
@@ -360,13 +332,7 @@ const ConsulationSummaryScreen = () => {
 					)}
 
 					<View style={styles.card}>
-						<View style={styles.cardHeaderRow}>
-							<Text style={styles.sectionTitle}>Thông tin bệnh nhân</Text>
-							<View style={styles.visitDateWrap}>
-								<Text style={styles.visitDateLabel}>Ngày khám</Text>
-								<Text style={styles.visitDateValue}>{consultationDateLabel}</Text>
-							</View>
-						</View>
+						<Text style={styles.sectionTitle}>Thông tin bệnh nhân</Text>
 						<Text style={styles.label}>Người khám (bác sĩ)</Text>
 						<Text style={styles.patientName}>
 							{doctorInfo?.fullName || '—'}
@@ -375,10 +341,6 @@ const ConsulationSummaryScreen = () => {
 						<Text style={styles.label}>Họ tên</Text>
 						<Text style={styles.patientName}>
 							{patientInfo?.fullName || fallbackPatientName || 'Người bệnh'}
-						</Text>
-						<Text style={styles.label}>Địa chỉ hiện tại</Text>
-						<Text style={styles.patientInfoValue}>
-							{patientInfo?.currentAddress || '—'}
 						</Text>
 						<Text style={styles.label}>Giới tính</Text>
 						<Text style={styles.patientInfoValue}>
@@ -647,21 +609,6 @@ const styles = StyleSheet.create({
 		fontWeight: '700',
 		fontSize: 16,
 	},
-	headerHistory: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		justifyContent: 'center',
-		paddingHorizontal: 10,
-		paddingVertical: 6,
-		borderRadius: 999,
-		backgroundColor: '#16a34a',
-	},
-	headerHistoryText: {
-		marginLeft: 4,
-		color: '#ecfdf5',
-		fontSize: 13,
-		fontWeight: '600',
-	},
 	container: {
 		flex: 1,
 		paddingHorizontal: 16,
@@ -701,31 +648,11 @@ const styles = StyleSheet.create({
 		padding: 12,
 		marginBottom: 12,
 	},
-	cardHeaderRow: {
-		flexDirection: 'row',
-		alignItems: 'flex-start',
-		justifyContent: 'space-between',
-		marginBottom: 4,
-	},
 	sectionTitle: {
 		fontWeight: '700',
 		fontSize: 15,
 		marginBottom: 8,
 		color: '#111827',
-	},
-	visitDateWrap: {
-		alignItems: 'flex-end',
-		marginLeft: 8,
-	},
-	visitDateLabel: {
-		fontSize: 11,
-		color: '#6b7280',
-		marginBottom: 2,
-	},
-	visitDateValue: {
-		fontSize: 13,
-		color: '#111827',
-		fontWeight: '600',
 	},
 	subSectionHeading: {
 		marginTop: 10,

@@ -1,7 +1,7 @@
 // src/screens/DoctorHomeScreen.jsx
 import React, { useCallback, useMemo, useState  } from "react";
 import {
-
+  SafeAreaView,
   View,
   Text,
   Image,
@@ -18,7 +18,6 @@ import logo from "../../assets/logoBrand.png";
 import { doctorService } from "../../services/doctorService";
 import userService from "../../services/userService";
 import doctorBookingService from "../../services/doctorBookingService";
-import {SafeAreaView} from "react-native-safe-area-context";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const isSmall = SCREEN_W < 360;
@@ -94,63 +93,6 @@ const StatItem = ({
   );
 };
 
-const normalizeStatusKey = (rawStatus) => {
-  const raw = (rawStatus || "")
-    .toString()
-    .toLowerCase()
-    .trim();
-
-  if (!raw) return "pending";
-  if (["pending", "wait", "waiting", "unconfirmed"].includes(raw)) return "pending";
-  if (["confirmed", "accepted", "xacnhan", "xac_nhan"].includes(raw)) return "confirmed";
-  if (["in_progress", "in-progress", "ongoing"].includes(raw)) return "in_progress";
-  if (["completed", "done", "finished"].includes(raw)) return "completed";
-  if (["canceled", "cancelled", "huy"].includes(raw)) return "canceled";
-  return "default";
-};
-
-const getStatusInfo = (rawStatus) => {
-  const key = normalizeStatusKey(rawStatus);
-  switch (key) {
-    case "pending":
-      return { key, label: "Chờ xác nhận", tagType: "blue" };
-    case "confirmed":
-      return { key, label: "Chờ khám", tagType: "success" };
-    case "in_progress":
-      return { key, label: "Đang tiến hành", tagType: "info" };
-    case "completed":
-      return { key, label: "Hoàn thành", tagType: "success" };
-    case "canceled":
-      return { key, label: "Đã hủy", tagType: "danger" };
-    default:
-      return { key, label: "Khác", tagType: "gray" };
-  }
-};
-
-const getPaymentInfoFromBooking = (booking) => {
-  const rawMethod = (
-    booking?.paymentMethod ||
-    booking?.payment?.method ||
-    booking?.payment?.paymentMethod ||
-    booking?.consultation?.payment?.method ||
-    ""
-  )
-    .toString()
-    .toLowerCase();
-
-  if (!rawMethod) return { label: null, tagType: "gray" };
-
-  if (["qr", "online", "bank_transfer", "bank-transfer"].includes(rawMethod)) {
-    return { label: "Đã trả trước", tagType: "info" };
-  }
-
-  if (["cash", "tienmat", "tiền mặt"].includes(rawMethod)) {
-    return { label: "Tiền mặt", tagType: "primary" };
-  }
-
-  return { label: "Khác", tagType: "gray" };
-};
-
 const DoctorHomeScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -208,16 +150,19 @@ const DoctorHomeScreen = () => {
 
           let timeLabel = "--:--";
           if (b.slot === "morning") {
-            timeLabel = "8h - 11h";
+            timeLabel = "8h - 10h";
           } else if (b.slot === "afternoon") {
             timeLabel = "14h - 16h";
           }
 
-          const { key: statusKey, label: statusLabel, tagType: statusTagType } =
-            getStatusInfo(b.status);
-
-          const { label: paymentLabel, tagType: paymentTagType } =
-            getPaymentInfoFromBooking(b);
+          const statusLabel =
+            b.status === "completed"
+              ? "Hoàn thành"
+              : b.status === "confirmed"
+              ? "Chờ khám"
+              : b.status === "cancelled"
+              ? "Đã hủy"
+              : "Đã đặt";
 
           const dob = b.beneficiary?.dateOfBirth
             ? new Date(b.beneficiary.dateOfBirth)
@@ -226,24 +171,9 @@ const DoctorHomeScreen = () => {
             ? new Date().getFullYear() - dob.getFullYear()
             : "";
 
-          const idStr = String(b._id || "");
-          const bookingCode = idStr ? idStr.slice(-6) : "";
-
-          const elderlyName = b.beneficiary?.fullName || "Người cao tuổi";
-          const elderlyAddress = b.beneficiary?.currentAddress || "";
-          const registrantName =
-            b.registrant?.fullName || b.registrant?.name || "Người đặt lịch";
-
-          const dateLabel = when.toLocaleDateString("vi-VN");
-
           const item = {
-            id: idStr,
-            bookingCode,
-            elderlyName,
-            registrantName,
-            elderlyAvatar: b.beneficiary?.avatar || null,
-            registrantAvatar: b.registrant?.avatar || null,
-            elderlyAddress,
+            id: String(b._id),
+            name: b.beneficiary?.fullName || "Người bệnh",
             age: computedAge,
             gender: b.beneficiary?.gender || "",
             dob: b.beneficiary?.dateOfBirth || null,
@@ -251,12 +181,7 @@ const DoctorHomeScreen = () => {
             slot: b.slot || null,
             type: b.slot === "morning" ? "Buổi sáng" : b.slot === "afternoon" ? "Buổi chiều" : "",
             time: timeLabel,
-            dateLabel,
             status: statusLabel,
-            statusKey,
-            statusTagType,
-            paymentLabel,
-            paymentTagType,
           };
 
           if (isToday) {
@@ -317,10 +242,8 @@ const DoctorHomeScreen = () => {
 
   const statsToday = {
     total: appointmentsToday.length,
-    done: appointmentsToday.filter((a) => a.statusKey === "completed").length,
-    processing: appointmentsToday.filter((a) =>
-      ["pending", "confirmed", "in_progress"].includes(a.statusKey)
-    ).length,
+    done: appointmentsToday.filter((a) => a.status === "Hoàn thành").length,
+    canceled: appointmentsToday.filter((a) => a.status === "Chờ khám").length,
     workingHours: workingHourStr,
   };
 
@@ -417,7 +340,7 @@ const DoctorHomeScreen = () => {
             />
             <StatItem
               icon="🕒"
-              value={statsToday.processing}
+              value={statsToday.canceled}
               label="Chờ xử lý"
               bgColor="#FF8A34"
               textColor="#0f172a"
@@ -484,7 +407,16 @@ const DoctorHomeScreen = () => {
           )}
         </View>
 
-       
+        <View style={styles.legend}>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: "#e8f7ff" }]} />
+            <Text style={styles.legendText}>Trống</Text>
+          </View>
+          <View style={styles.legendRow}>
+            <View style={[styles.legendDot, { backgroundColor: "#ffe9e9" }]} />
+            <Text style={styles.legendText}>Đã chặn</Text>
+          </View>
+        </View>
 
         <View style={styles.sectionHeader}>
           <View style={{ flexDirection: "row" }}>
@@ -508,9 +440,9 @@ const DoctorHomeScreen = () => {
             style={styles.apptCard}
             activeOpacity={0.8}
             onPress={() =>
-              navigate.navigate('DoctorConsultationDetailScreen', {
+              navigate.navigate('ConsulationSummary', {
                 registrationId: a.id,
-                patientName: a.elderlyName,
+                patientName: a.name,
                 patientGender: a.gender,
                 patientDob: a.dob,
                 scheduledDate: a.scheduledDate,
@@ -518,92 +450,31 @@ const DoctorHomeScreen = () => {
               })
             }
           >
-            <View style={{ width: "100%" }}>
+            <View style={styles.apptLeft}>
+              <View style={styles.circleAvatar}>
+                <Text style={styles.circleAvatarText}>
+                  {a.name?.charAt(0)?.toUpperCase()}
+                </Text>
+              </View>
+             </View>
+            <View style={{ flex: 1 }}>
               <View style={styles.rowBetween}>
-                
-                <Tag size="sm" type={a.statusTagType || "blue"}>
-                  {a.status || "—"}
-                </Tag>
+                <Text style={styles.apptName} numberOfLines={1}>
+                  {a.name}
+                </Text>
+                <Text style={styles.apptTime}>{a.time}</Text>
               </View>
-
-              <View style={styles.section}>
-                <Text style={styles.sectionLabel}>Người cao tuổi</Text>
-                <View style={styles.row}>
-                  <View style={styles.circleAvatar}>
-                    {a.elderlyAvatar ? (
-                      <Image
-                        source={{ uri: a.elderlyAvatar }}
-                        style={styles.circleAvatarImg}
-                      />
-                    ) : (
-                      <Text style={styles.circleAvatarText}>
-                        {a.elderlyName?.charAt(0)?.toUpperCase() || "N"}
-                      </Text>
-                    )}
-                  </View>
-                  <View style={styles.personInfo}>
-                    <Text style={styles.personName} numberOfLines={1}>
-                      {a.elderlyName}
-                    </Text>
-                    <Text style={styles.personSub} numberOfLines={1}>
-                      Vai trò: Người cao tuổi
-                    </Text>
-                    {!!a.elderlyAddress && (
-                      <Text style={styles.personSub} numberOfLines={1}>
-                        Địa chỉ: {a.elderlyAddress}
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              </View>
- 
-              <View style={styles.section}>
-                <Text style={styles.sectionLabel}>Người đặt lịch</Text>
-                <View style={styles.row}>
-                  <View style={styles.circleAvatar}>
-                    {a.registrantAvatar ? (
-                      <Image
-                        source={{ uri: a.registrantAvatar }}
-                        style={styles.circleAvatarImg}
-                      />
-                    ) : (
-                      <Text style={styles.circleAvatarText}>
-                        {a.registrantName?.charAt(0)?.toUpperCase() || "N"}
-                      </Text>
-                    )}
-                  </View>
-                  <View style={styles.personInfo}>
-                    <Text style={styles.personName} numberOfLines={1}>
-                      {a.registrantName}
-                    </Text>
-                    <Text style={styles.personSub} numberOfLines={1}>
-                      Vai trò: Người thân đặt lịch
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View
-                style={[
-                  styles.section,
-                  styles.rowBetween,
-                  { alignItems: "flex-start" },
-                ]}
-              >
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={styles.sectionLabel}>Ngày khám</Text>
-                  <Text style={styles.timeText}>
-                    {a.dateLabel || "—"}
-                    {a.type ? " • " + a.type : ""}
-                  </Text>
-                </View>
-                {a.paymentLabel ? (
-                  <Tag size="sm" type={a.paymentTagType || "primary"}>
-                    {a.paymentLabel}
-                  </Tag>
-                ) : null}
+              <Text style={styles.apptMeta}>{a.age} tuổi • {a.type}</Text>
+              <View style={{ flexDirection: "row", marginTop: 8 }}>
+                {a.status === "Hoàn thành" && <Tag size="sm" type="success">Hoàn thành</Tag>}
+                {a.status === "Sắp đến" && <Tag size="sm" type="blue">Sắp đến</Tag>}
+                {a.status === "Đã đặt" && <Tag size="sm" type="primary">Đã đặt</Tag>}
+                {a.status === "Chờ khám" && <Tag size="sm" type="warn">Chờ khám</Tag>}
               </View>
             </View>
+            <TouchableOpacity style={styles.moreBtn} activeOpacity={0.7}>
+              <Text style={styles.moreBtnText}>⋯</Text>
+            </TouchableOpacity>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -648,7 +519,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   row: { flexDirection: "row", alignItems: "center" },
-  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
+  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 
   avatar: {
     width: 56, height: 56, borderRadius: 12,
@@ -754,12 +625,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
-  apptTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 2,
-  },
   apptLeft: { paddingRight: 12 },
   circleAvatar: {
     width: 36,
@@ -769,22 +634,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  circleAvatarImg: { width: "100%", height: "100%", borderRadius: 18 },
   circleAvatarText: { fontWeight: "700", color: "#234", fontSize: 14 },
+  apptName: { fontWeight: "700", fontSize: 14, color: "#0f172a" },
   apptTime: { color: "#0b5fff", fontWeight: "700" },
-  section: { marginTop: 14 },
-  sectionLabel: {
-    fontSize: 12,
-    color: "#64748B",
-    marginBottom: 8,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  personInfo: { marginLeft: 12, flex: 1 },
-  personName: { fontSize: 15, fontWeight: "600", color: "#111827" },
-  personSub: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  timeText: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  apptMeta: { color: "#6b7280", marginTop: 2 },
+  moreBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
+  moreBtnText: { fontSize: 18, color: "#94a3b8" },
 
   tagBase: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   tagText: { color: "#0f172a", fontWeight: "700", fontSize: 12 },

@@ -1,6 +1,5 @@
 // src/screens/Doctor/ProfileScreen.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import PropTypes from "prop-types";
 import { useRoute } from '@react-navigation/native';
 import doctorService from '../../services/doctorService';
 import { SafeAreaView, ScrollView, View, Text, Image } from "react-native";
@@ -94,13 +93,18 @@ export default function ProfileScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: "#fff", fontWeight: "800", fontSize: 20 }}>{displayName}</Text>
-                <Text style={{ color: "#DBEAFE", marginTop: 2 }}>{specializationText}</Text>
+                <Text style={{ color: "#DBEAFE", marginTop: 2 }}>{profile?.specializations?.join(', ') || 'Bác sĩ chuyên khoa'}</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
                   <Star size={16} color="#FACC15" fill="#FACC15" />
-                  <Text style={{ color: "#fff", fontWeight: "700" }}>{averageRatingText}</Text>
-                  <Text style={{ color: "#DBEAFE", fontSize: 12 }}>{ratingCountText}</Text>
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>4.8</Text>
+                  <Text style={{ color: "#DBEAFE", fontSize: 12 }}>(302 đánh giá)</Text>
                 </View>
               </View>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+              <PriceBox icon={<Calendar color="#fff" size={16} />} label="Tư vấn online" value="121,211đ" />
+              <PriceBox icon={<MapPin color="#fff" size={16} />} label="Tại phòng khám" value="2,121,212đ" />
             </View>
           </LinearGradient>
         </Card>
@@ -116,17 +120,17 @@ export default function ProfileScreen() {
           </View>
 
           <View style={{ gap: 12 }}>
-            <RowDot title="Lĩnh vực chuyên môn" subtitle={specializationText} />
+            <RowDot title="Lĩnh vực chuyên môn" subtitle="Chuyên ngành tim" />
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
               <RowIcon
                 icon={<Clock color="#6B7280" size={16} />}
                 title="Kinh nghiệm"
-                subtitle={experienceYears != null ? `${experienceYears} năm` : 'Đang cập nhật'}
+                subtitle="10 năm"
               />
               <RowIcon
                 icon={<Heart color="#EF4444" size={16} />}
                 title=""
-                subtitle="Nhiều bệnh nhân đã tin tưởng"
+                subtitle="43,194 bệnh nhân"
                 right
               />
             </View>
@@ -219,12 +223,6 @@ function PriceBox({ icon, label, value }) {
   );
 }
 
-PriceBox.propTypes = {
-  icon: PropTypes.node.isRequired,
-  label: PropTypes.string.isRequired,
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
-};
-
 function RowDot({ title, subtitle }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -237,11 +235,6 @@ function RowDot({ title, subtitle }) {
   );
 }
 
-RowDot.propTypes = {
-  title: PropTypes.string.isRequired,
-  subtitle: PropTypes.string.isRequired,
-};
-
 function RowIcon({ icon, title, subtitle, right }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -253,15 +246,3 @@ function RowIcon({ icon, title, subtitle, right }) {
     </View>
   );
 }
-
-RowIcon.propTypes = {
-  icon: PropTypes.node.isRequired,
-  title: PropTypes.string,
-  subtitle: PropTypes.string.isRequired,
-  right: PropTypes.bool,
-};
-
-RowIcon.defaultProps = {
-  title: '',
-  right: false,
-};
