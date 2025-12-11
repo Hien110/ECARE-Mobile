@@ -2,7 +2,7 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import userService from "../userService";
 
-export const BASE_URL = "http://172.26.5.233:3000/api";
+export const BASE_URL = "http://172.26.5.23:3000/api";
 
 // ===== Token storage (in-memory + AsyncStorage) =====
 const TOKEN_KEY = "ecare_token";
