@@ -638,9 +638,15 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const paymentMethodLabel =
     paymentMethodLabelMap[paymentMethodLower] || paymentMethodLabelMap.cash;
 
+  // ✅ Kiểm tra xem có được phép hủy không (chỉ hủy trước ngày bắt đầu)
+  const now = new Date();
+  const scheduledDate = booking?.scheduledDate ? new Date(booking.scheduledDate) : null;
+  const isBeforeScheduledDate = scheduledDate ? now < scheduledDate : false;
+
   const canCancel =
-    ['pending', 'confirmed'].includes(statusKey) &&
-    ['elderly', 'family'].includes((userRole || '').toLowerCase());
+    ['confirmed'].includes(statusKey) &&
+    ['elderly', 'family'].includes((userRole || '').toLowerCase()) &&
+    isBeforeScheduledDate;
 
   // ====== HÀM UPDATE TRẠNG THÁI TƯ VẤN (DOCTOR) ======
   const updateConsultationStatus = async nextStatus => {
@@ -1046,7 +1052,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         >
           <Text style={styles.backText}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chi tiết tư vấn</Text>
+        <Text style={styles.headerTitle}>Chi tiết lịch khám</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -1070,7 +1076,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             {/* mã tư vấn + trạng thái */}
             <View style={styles.rowBetween}>
               <Text style={styles.cardTitle}>
-                Tư vấn #{booking?._id?.slice(-6) || ''}
+                Lịch khám
               </Text>
               <Chip scheme={statusScheme} text={statusScheme.label} />
             </View>
@@ -1106,6 +1112,11 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             <View style={{ height: 16 }} />
 
             <RowItem label="Thời gian tư vấn" value={timeDisplay} />
+
+            <RowItem
+              label="Địa chỉ tư vấn"
+              value={booking?.beneficiary?.currentAddress || '—'}
+            />
 
             <RowItem
               label="Thanh toán"
@@ -1190,18 +1201,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               </View>
             </View>
           )}
-
-          {/* Buttons cho NON-DOCTOR: chỉ 1 nút chat như cũ */}
-          {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
-            conversation &&
-            !isDoctorRole && (
-              <TouchableOpacity
-                style={[styles.primaryBtn, { marginTop: 20 }]}
-                onPress={goToChat}
-              >
-                <Text style={styles.primaryBtnText}>Nhắn tin với bác sĩ</Text>
-              </TouchableOpacity>
-            )}
 
           {/* Buttons cho DOCTOR: Liên hệ + Tiến hành / Đã hoàn thành */}
           {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
