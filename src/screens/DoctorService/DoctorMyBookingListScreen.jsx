@@ -578,6 +578,8 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
     }
     const payScheme = paymentColors[paymentKey] || paymentColors.default;
 
+    const cancelReasonSafe = (item?.cancelReason || '').toString().trim();
+
     return (
       <TouchableOpacity
         activeOpacity={0.85}
@@ -594,6 +596,15 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
           </Text>
           <Chip scheme={statusScheme} text={statusScheme.label} />
         </View>
+
+        {statusKey === 'canceled' && !!cancelReasonSafe && (
+          <View style={styles.cancelReasonBox}>
+            <Text style={styles.cancelReasonLabel}>Lý do hủy</Text>
+            <Text style={styles.cancelReasonText} numberOfLines={2}>
+              {cancelReasonSafe}
+            </Text>
+          </View>
+        )}
 
         {/* Người cao tuổi */}
         <View style={styles.section}>
@@ -646,6 +657,11 @@ const DoctorMyBookingListScreen = ({ navigation }) => {
               {dateLabel || '—'}
               {sessionLabel ? ` • ${sessionLabel}` : ''}
             </Text>
+            {!!item?.note && (
+              <Text style={styles.noteText} numberOfLines={2}>
+                Ghi chú: {item.note}
+              </Text>
+            )}
           </View>
           <Chip scheme={payScheme} text={payScheme.label} />
         </View>
@@ -906,6 +922,26 @@ const styles = StyleSheet.create({
   personName: { fontSize: 15, fontWeight: '600', color: '#111827' },
   personSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
   timeText: { fontSize: 14, fontWeight: '600', color: '#111827' },
+  noteText: { fontSize: 12, color: '#374151', marginTop: 4 },
+  cancelReasonBox: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cancelReasonLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#991B1B',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  cancelReasonText: {
+    fontSize: 13,
+    color: '#7F1D1D',
+  },
 
   // States
   center: {

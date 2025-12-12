@@ -99,7 +99,6 @@ const normalizeStatusKey = (rawStatus) => {
     .toString()
     .toLowerCase()
     .trim();
-
   if (!raw) return "pending";
   if (["pending", "wait", "waiting", "unconfirmed"].includes(raw)) return "pending";
   if (["confirmed", "accepted", "xacnhan", "xac_nhan"].includes(raw)) return "confirmed";
@@ -257,6 +256,8 @@ const DoctorHomeScreen = () => {
             statusTagType,
             paymentLabel,
             paymentTagType,
+            cancelReason: (b.cancelReason || "").toString().trim(),
+            note: (b.note || "").toString().trim(),
           };
 
           if (isToday) {
@@ -526,6 +527,15 @@ const DoctorHomeScreen = () => {
                 </Tag>
               </View>
 
+              {a.statusKey === "canceled" && !!a.cancelReason && (
+                <View style={styles.cancelReasonBox}>
+                  <Text style={styles.cancelReasonLabel}>Lý do hủy</Text>
+                  <Text style={styles.cancelReasonText} numberOfLines={2}>
+                    {a.cancelReason}
+                  </Text>
+                </View>
+              )}
+
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Người cao tuổi</Text>
                 <View style={styles.row}>
@@ -596,6 +606,11 @@ const DoctorHomeScreen = () => {
                     {a.dateLabel || "—"}
                     {a.type ? " • " + a.type : ""}
                   </Text>
+                  {!!a.note && (
+                    <Text style={styles.noteText} numberOfLines={2}>
+                      Ghi chú: {a.note}
+                    </Text>
+                  )}
                 </View>
                 {a.paymentLabel ? (
                   <Tag size="sm" type={a.paymentTagType || "primary"}>
@@ -785,6 +800,26 @@ const styles = StyleSheet.create({
   personName: { fontSize: 15, fontWeight: "600", color: "#111827" },
   personSub: { fontSize: 12, color: "#6B7280", marginTop: 2 },
   timeText: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  noteText: { fontSize: 12, color: "#374151", marginTop: 4 },
+  cancelReasonBox: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  cancelReasonLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#991B1B",
+    marginBottom: 2,
+    textTransform: "uppercase",
+  },
+  cancelReasonText: {
+    fontSize: 12,
+    color: "#7F1D1D",
+  },
 
   tagBase: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   tagText: { color: "#0f172a", fontWeight: "700", fontSize: 12 },

@@ -14,6 +14,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import DoctorNavTabs from '../../components/DoctorNavTabs';
 import { doctorService } from '../../services/doctorService';
+import { userService } from '../../services/userService';
 
 const { width } = Dimensions.get('window');
 
@@ -22,6 +23,7 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [stats, setStats] = useState(null);
+  const [doctorUserId, setDoctorUserId] = useState(null);
 
   // --- Fetch rating stats from API ---
   useEffect(() => {
@@ -46,6 +48,15 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
       }
     })();
     return () => { mounted = false; };
+  }, []);
+
+  // Lấy userId của bác sĩ hiện tại để dùng cho điều hướng sang màn tất cả đánh giá
+  useEffect(() => {
+    (async () => {
+      const res = await userService.getUser();
+      const id = res?.data?._id || null;
+      setDoctorUserId(id);
+    })();
   }, []);
 
   // --- Normalize data from backend to UI shape ---
@@ -123,9 +134,12 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
     totalReviews ? Math.round((starCounts[5] / totalReviews) * 100) : 0
   ), [starCounts, totalReviews]);
 
-  const fourUpPct = useMemo(() => {
-    const fourUp = (starCounts[4] || 0) + (starCounts[5] || 0);
-    return totalReviews ? Math.round((fourUp / totalReviews) * 100) : 0;
+  const belowFourPct = useMemo(() => {
+    const belowFour =
+      (starCounts[1] || 0) +
+      (starCounts[2] || 0) +
+      (starCounts[3] || 0);
+    return totalReviews ? Math.round((belowFour / totalReviews) * 100) : 0;
   }, [starCounts, totalReviews]);
 
   // --- UI helpers ---
@@ -185,7 +199,7 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
 
   const percentStats = [
     { value: `${fiveStarPct}%`, label: 'Tỉ lệ 5★', icon: 'thumbs-up-outline', color: '#4CAF50' },
-    { value: `${fourUpPct}%`, label: '≥ 4★', icon: 'trending-up-outline', color: '#9C27B0' },
+    { value: `${belowFourPct}%`, label: 'Dưới 4★', icon: 'trending-down-outline', color: '#9C27B0' },
   ];
 
   return (
@@ -275,13 +289,27 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
 
             <View style={styles.statsGrid}>
               {activityStats.map((stat, index) => (
-                <View key={index} style={styles.statCard}>
+                <TouchableOpacity
+                  key={index}
+                  style={styles.statCard}
+                  activeOpacity={index === 0 ? 0.8 : 1}
+                  onPress={
+                    index === 0 && doctorUserId
+                      ? () =>
+                          navigation?.navigate?.('DoctorReviews', {
+                            userId: String(doctorUserId),
+                            avgRating: averageRating,
+                            totalRatings: totalReviews,
+                          })
+                      : undefined
+                  }
+                >
                   <View style={[styles.statIcon, { backgroundColor: `${stat.color}20` }]}>
                     <Icon name={stat.icon} size={20} color={stat.color} />
                   </View>
                   <Text style={styles.statValue}>{stat.value}</Text>
                   <Text style={styles.statLabel}>{stat.label}</Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
             <View style={styles.persGrid}>

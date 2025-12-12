@@ -15,10 +15,21 @@ export default function ProfileScreen() {
   const displayName = doctorName || profile?.user?.fullName || 'Bác sĩ';
 
   const specializationText = useMemo(() => {
+    // Ưu tiên trường specialization (string) mới trên DoctorProfile
+    const directSpec = (profile?.specialization || profile?.doctorProfile?.specialization || '')
+      .toString()
+      .trim();
+
+    if (directSpec) return directSpec;
+
     if (Array.isArray(profile?.specializations) && profile.specializations.length) {
       return profile.specializations.join(', ');
     }
-    if (profile?.doctorProfile?.specializations && Array.isArray(profile.doctorProfile.specializations) && profile.doctorProfile.specializations.length) {
+    if (
+      profile?.doctorProfile?.specializations &&
+      Array.isArray(profile.doctorProfile.specializations) &&
+      profile.doctorProfile.specializations.length
+    ) {
       return profile.doctorProfile.specializations.join(', ');
     }
     return 'Bác sĩ chuyên khoa';

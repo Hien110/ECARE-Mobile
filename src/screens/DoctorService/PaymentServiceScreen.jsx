@@ -8,6 +8,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -47,6 +48,7 @@ const PaymentServiceScreen = () => {
   const [loadingQR, setLoadingQR] = useState(false);
   const [qrError, setQrError] = useState('');
   const [defaultPrice, setDefaultPrice] = useState(null);
+  const [note, setNote] = useState('');
 
   useEffect(() => {
     const fetchDefaultPriceIfNeeded = async () => {
@@ -362,6 +364,7 @@ const PaymentServiceScreen = () => {
         elderlyId,
         scheduledDate: scheduledDateIso,
         slot: slot || 'morning',
+        note: note?.trim() || '',
         paymentMethod: backendPaymentMethod,
       };
 
@@ -465,6 +468,21 @@ const PaymentServiceScreen = () => {
             <Text style={styles.priceValue}>
               {displayPrice ? `${displayPrice} đ` : '—'}
             </Text>
+          </View>
+
+          <Text style={styles.noteLabel}>
+            Ghi chú cho bác sĩ (không bắt buộc)
+          </Text>
+          <View style={styles.noteInputWrapper}>
+            <TextInput
+              style={styles.noteInput}
+              multiline
+              numberOfLines={3}
+              placeholder="Ví dụ: Bác hay khó thở về đêm, bác sĩ lưu ý giúp."
+              placeholderTextColor="#9CA3AF"
+              value={note}
+              onChangeText={setNote}
+            />
           </View>
 
         </View>

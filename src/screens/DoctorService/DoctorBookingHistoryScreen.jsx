@@ -569,6 +569,10 @@ const DoctorBookingHistoryScreen = () => {
       payChip: payScheme.label,
     });
 
+    const canRate =
+      (item?.status || '').toLowerCase() === 'completed' &&
+      (item?.canRateDoctor === true || item?.alreadyRatedDoctor !== true);
+
     return (
       <TouchableOpacity
         activeOpacity={0.85}
@@ -636,8 +640,24 @@ const DoctorBookingHistoryScreen = () => {
               Thanh toán: {methodLabel}
             </Text>
           </View>
-          <Chip scheme={payScheme} text={payScheme.label} />
+          <View style={{ alignItems: 'flex-end' }}>
+            <Chip scheme={payScheme} text={payScheme.label} />
+          </View>
         </View>
+
+        {canRate && (
+          <View style={styles.completedNotice}>
+            <Feather
+              name="check-circle"
+              size={16}
+              color="#16A34A"
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.completedNoticeText}>
+              Dịch vụ tư vấn của bạn đã hoàn thành. Nhấn vào chi tiết để đánh giá.
+            </Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -954,5 +974,19 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     color: '#FFFFFF',
     fontWeight: '700',
+  },
+  completedNotice: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF3',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  completedNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#166534',
   },
 });

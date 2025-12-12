@@ -1,121 +1,197 @@
-import React, { useState } from "react";
-import { SafeAreaView, ScrollView, View, Text, TextInput, TouchableOpacity } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  SafeAreaView,
+  ScrollView,
+  View,
+  Text,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
 import LinearGradient from "react-native-linear-gradient";
-import { Star, UserRound, Users, Clock3, Wallet } from "lucide-react-native";
+import { Star, ChevronLeft } from "lucide-react-native";
 import Card from "../../components/Cart";
+import doctorService from "../../services/doctorService";
+import { userService } from "../../services/userService";
 
-const initial = [
-  {
-    id: "1",
-    author: "Lê Minh Châu",
-    date: "20/12/2024",
-    rating: 5,
-    content:
-      "Bác sĩ rất tận tình và hiền thị. Mẹ tôi 78 tuổi, bác sĩ giải thích rất kỹ và dễ hiểu. Sau 3 buổi tư vấn, tinh thần mẹ đã tích cực hơn rất nhiều.",
-    tags: ["Chuyên nghiệp", "Kiên Nhẫn", "Quan tâm"],
-  },
-  {
-    id: "2",
-    author: "Người dùng ẩn danh",
-    date: "18/12/2024",
-    rating: 5,
-    content:
-      "Cảm ơn bác sĩ đã giúp gia đình tôi vượt qua giai đoạn khó khăn. Ông nội 82 tuổi sau khi mất bà nội rất buồn, bác sĩ đã hướng dẫn cả gia đình chăm sóc tâm lý.",
-    tags: ["Hiệu quả", "Quan tâm", "Giải thích rõ ràng"],
-  },
-];
+export default function ReviewsScreen({ route, navigation }) {
+  const passedUserId = route?.params?.userId || null;
+  const passedAvg = route?.params?.avgRating;
+  const passedTotal = route?.params?.totalRatings;
 
-export default function ReviewsScreen() {
-  const [reviews, setReviews] = useState(initial);
-  const [rating, setRating] = useState(0);
-  const [text, setText] = useState("");
+  const [doctorUserId, setDoctorUserId] = useState(passedUserId);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
-  const submit = () => {
-    if (!rating || !text.trim()) return;
-    setReviews((prev) => [
-      {
-        id: String(Date.now()),
-        author: "Bạn",
-        date: new Date().toLocaleDateString("vi-VN"),
-        rating,
-        content: text,
-        tags: [],
-      },
-      ...prev,
-    ]);
-    setRating(0);
-    setText("");
+  useEffect(() => {
+    if (passedUserId) {
+      setDoctorUserId(passedUserId);
+      return;
+    }
+    (async () => {
+      const res = await userService.getUser();
+      const id = res?.data?._id || null;
+      setDoctorUserId(id);
+    })();
+  }, [passedUserId]);
+
+  const loadReviews = useCallback(async () => {
+    if (!doctorUserId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await doctorService.getDoctorReviews(doctorUserId, {
+        limit: 100,
+      });
+      if (res?.success) {
+        const items = res.data?.items || [];
+        setReviews(items);
+      } else {
+        setError(res?.message || "Không thể tải danh sách đánh giá");
+      }
+    } catch (e) {
+      setError("Không thể tải danh sách đánh giá");
+    } finally {
+      setLoading(false);
+    }
+  }, [doctorUserId]);
+
+  useEffect(() => {
+    if (doctorUserId) {
+      loadReviews();
+    }
+  }, [doctorUserId, loadReviews]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadReviews();
+    setRefreshing(false);
   };
+
+  const computedAvg =
+    reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
+      : 0;
+  const displayAvg =
+    typeof passedAvg === "number" && passedAvg > 0 ? passedAvg : computedAvg;
+  const displayTotal =
+    typeof passedTotal === "number" && passedTotal >= 0
+      ? passedTotal
+      : reviews.length;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }}>
-      <LinearGradient colors={["#2563EB", "#3B82F6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingVertical: 12, paddingHorizontal: 16 }}>
-        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}>Thống kê đánh giá</Text>
-      </LinearGradient>
-
-      <ScrollView contentContainerStyle={{ padding: 16 }}>
-        {/* Tổng quan đánh giá */}
-        <Card style={{ padding: 16 }}>
-          <Text style={{ fontWeight: "700", color: "#111827", marginBottom: 8 }}>Thống kê đánh giá</Text>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: 28, fontWeight: "800", color: "#111827" }}>4.8</Text>
-              <Star size={18} color="#F59E0B" fill="#F59E0B" />
-            </View>
-            <Text style={{ textAlign: "right", fontWeight: "700", color: "#111827" }}>
-              247{"\n"}
-              <Text style={{ color: "#6B7280", fontSize: 12 }}>Lượt đánh giá</Text>
+      <LinearGradient
+        colors={["#2563EB", "#3B82F6"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={{ paddingVertical: 12, paddingHorizontal: 16 }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+          }}
+        >
+          <ChevronLeft
+            size={24}
+            color="#FFFFFF"
+            style={{ marginRight: 8 }}
+            onPress={() => navigation?.goBack?.()}
+          />
+          <View style={{ flex: 1 }}>
+            <Text
+              style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}
+            >
+              Tất cả đánh giá
+            </Text>
+            <Text
+              style={{ color: "#E0F2FE", marginTop: 2, fontSize: 13 }}
+            >
+              Mới nhất hiển thị trước
             </Text>
           </View>
+        </View>
+      </LinearGradient>
 
-          {[5, 4, 3, 2, 1].map((r) => (
-            <Bar key={r} label={r} value={[173, 49, 17, 5, 3][5 - r]} max={173} />
-          ))}
-          <Text style={{ color: "#6B7280", fontSize: 12, marginTop: 8 }}>Đánh giá gần nhất: 15/01/2024</Text>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        <Card style={{ padding: 16 }}>
+          <Text
+            style={{
+              fontWeight: "700",
+              color: "#111827",
+              marginBottom: 8,
+            }}
+          >
+            Thống kê tổng quan
+          </Text>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 4,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text
+                style={{ fontSize: 28, fontWeight: "800", color: "#111827" }}
+              >
+                {displayAvg.toFixed(1)}
+              </Text>
+              <Star size={18} color="#F59E0B" fill="#F59E0B" />
+            </View>
+            <Text
+              style={{ textAlign: "right", fontWeight: "700", color: "#111827" }}
+            >
+              {displayTotal}
+              {"\n"}
+              <Text style={{ color: "#6B7280", fontSize: 12 }}>
+                Lượt đánh giá
+              </Text>
+            </Text>
+          </View>
         </Card>
 
-        {/* Thống kê hoạt động */}
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 12 }}>
-          <Stat value="1,247" label="Lượt tư vấn" color="#2563EB" bg="#EFF6FF" icon={<UserRound color="#2563EB" />} />
-          <Stat value="892" label="Bệnh nhân" color="#F97316" bg="#FFF7ED" icon={<Users color="#F97316" />} />
-          <Stat value="32" label="Phút/buổi TB" color="#10B981" bg="#ECFDF5" icon={<Clock3 color="#10B981" />} />
-          <Stat value="285M" label="Tổng doanh thu" color="#8B5CF6" bg="#F5F3FF" icon={<Wallet color="#8B5CF6" />} />
-        </View>
-
-        {/* Viết đánh giá */}
-        <Card style={{ padding: 16, marginTop: 12 }}>
-          <Text style={{ fontWeight: "700", color: "#111827", marginBottom: 8 }}>Viết đánh giá</Text>
-          <Text style={{ color: "#111827", fontWeight: "600" }}>Đánh giá tổng thể</Text>
-          <View style={{ flexDirection: "row", gap: 8, marginVertical: 8 }}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <TouchableOpacity key={n} onPress={() => setRating(n)}>
-                <Star size={24} color={n <= rating ? "#F59E0B" : "#D1D5DB"} fill={n <= rating ? "#F59E0B" : "transparent"} />
-              </TouchableOpacity>
+        {loading ? (
+          <View
+            style={{
+              marginTop: 24,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <ActivityIndicator size="large" color="#2563EB" />
+            <Text style={{ marginTop: 8, color: "#64748B" }}>
+              Đang tải danh sách đánh giá...
+            </Text>
+          </View>
+        ) : error ? (
+          <View style={{ marginTop: 24, alignItems: "center" }}>
+            <Text style={{ color: "#B91C1C" }}>{error}</Text>
+          </View>
+        ) : reviews.length === 0 ? (
+          <View style={{ marginTop: 24, alignItems: "center" }}>
+            <Text style={{ color: "#6B7280" }}>
+              Chưa có đánh giá nào.
+            </Text>
+          </View>
+        ) : (
+          <View style={{ marginTop: 16 }}>
+            {reviews.map((rv) => (
+              <ReviewItem key={rv.id} {...rv} />
             ))}
           </View>
-          <Text style={{ color: "#6B7280", marginBottom: 8 }}>{rating ? `${rating}/5` : "Chưa đánh giá"}</Text>
-          <Text style={{ color: "#111827", fontWeight: "600" }}>Chi tiết đánh giá</Text>
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            multiline
-            maxLength={500}
-            placeholder="Chia sẻ kinh nghiệm của bạn để giúp đỡ những người khác..."
-            placeholderTextColor="#9CA3AF"
-            style={{ marginTop: 8, minHeight: 110, borderRadius: 10, backgroundColor: "#F3F4F6", padding: 12, color: "#111827" }}
-          />
-          <Text style={{ color: "#6B7280", marginTop: 6, fontSize: 12 }}>{text.length}/500 ký tự</Text>
-          <TouchableOpacity onPress={submit} activeOpacity={0.9} style={{ marginTop: 12, backgroundColor: "#FB923C", borderRadius: 10, paddingVertical: 12, alignItems: "center" }}>
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Gửi đánh giá</Text>
-          </TouchableOpacity>
-        </Card>
-
-        {/* Danh sách đánh giá */}
-        <View style={{ marginTop: 12 }}>
-          {reviews.map((rv) => (
-            <ReviewItem key={rv.id} {...rv} />
-          ))}
-        </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -134,22 +210,23 @@ function Bar({ label, value, max }) {
   );
 }
 
-function Stat({ value, label, color, bg, icon }) {
-  return (
-    <Card style={{ paddingVertical: 16, borderWidth: 0, backgroundColor: bg, alignItems: "center", flexGrow: 1, minWidth: "46" + "%" }}>
-      {icon}
-      <Text style={{ fontSize: 20, fontWeight: "800", color, marginTop: 6 }}>{value}</Text>
-      <Text style={{ color: "#6B7280" }}>{label}</Text>
-    </Card>
-  );
-}
-
-function ReviewItem({ author, date, rating, content, tags }) {
+function ReviewItem({ author, date, rating, content, authorAvatar, tags }) {
   return (
     <Card style={{ padding: 14, marginBottom: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: "#E0E7FF", alignItems: "center", justifyContent: "center" }}>
-          <Text style={{ color: "#1D4ED8", fontWeight: "800" }}>{(author?.[0] || "?").toUpperCase()}</Text>
+        <View
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 17,
+            backgroundColor: "#E0E7FF",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: "#1D4ED8", fontWeight: "800" }}>
+            {(author?.[0] || "?").toUpperCase()}
+          </Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontWeight: "700", color: "#111827" }}>{author || "Người dùng ẩn danh"}</Text>
