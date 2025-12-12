@@ -410,24 +410,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
               console.log('Lỗi ngắt kết nối supporter - elderly', e);
             }
 
-            // Ngắt kết nối với người đặt lịch (registrant) nếu không phải là elderly
-            if (booking?.registrant?._id && booking?.registrant?._id !== booking?.elderly?._id) {
-              try {
-                const res = await relationshipService.cancelByElderlyAndFamily(
-                  booking?.registrant?._id,
-                  booking?.supporter?._id,
-                );
-                if (res?.success) {
-                  console.log('Ngắt kết nối supporter - registrant thành công');
-                } else {
-                  console.log('Ngắt kết nối supporter - registrant thất bại');
-                }
-              } catch (e) {
-                console.log('Lỗi ngắt kết nối supporter - registrant', e);
-              }
-            }
-
-            // Xóa conversation với elderly
+            // Xóa conversation khi hoàn thành
             if (conversationArg?._id) {
               console.log(conversationArg._id);
 
@@ -440,28 +423,69 @@ const BookingDetailScreen = ({ route, navigation }) => {
                   setConversation(null);
                 }
               } catch (e) {
-                console.log('Lỗi xóa conversation với elderly', e);
+                console.log('Lỗi xóa conversation', e);
               }
             }
+          }
 
-            // Xóa conversation với registrant nếu khác elderly
-            if (booking?.registrant?._id && booking?.registrant?._id !== booking?.elderly?._id) {
+          // ✅ Hủy đặt lịch: xóa conversation + đổi relationship thành cancelled
+          if (nextStatus === 'canceled') {
+            try {
+              // Xóa conversation giữa supporter và elderly
+              if (conversationArg?._id) {
+                try {
+                  await conversationService.deleteConversationAndMessages(
+                    conversationArg._id,
+                  );
+                  setConversation(null);
+                  console.log('Xóa conversation supporter - elderly thành công');
+                } catch (e) {
+                  console.log('Lỗi xóa conversation supporter - elderly', e);
+                }
+              }
+
+              // Xóa conversation giữa supporter và registrant
               try {
-                const respConv = await conversationService.getConversationByParticipants(
-                  booking?.supporter?._id,
-                  booking?.registrant?._id,
-                );
+                const respConv =
+                  await conversationService.getConversationByParticipants(
+                    booking?.supporter?._id,
+                    booking?.registrant?._id,
+                  );
                 if (respConv?.success && respConv?.data?._id) {
-                  const res = await conversationService.deleteConversationAndMessages(
+                  await conversationService.deleteConversationAndMessages(
                     respConv.data._id,
                   );
-                  if (res?.success) {
-                    console.log('Xóa conversation với registrant thành công');
-                  }
+                  console.log('Xóa conversation supporter - registrant thành công');
                 }
               } catch (e) {
-                console.log('Lỗi xóa conversation với registrant', e);
+                console.log('Lỗi xóa conversation supporter - registrant', e);
               }
+
+              // Đổi relationship với elderly thành cancelled
+              try {
+                await relationshipService.cancelByElderlyAndFamily(
+                  booking?.elderly?._id,
+                  booking?.supporter?._id,
+                );
+                console.log('Đổi relationship supporter - elderly thành cancelled');
+              } catch (e) {
+                console.log('Lỗi đổi relationship supporter - elderly', e);
+              }
+
+              // Đổi relationship với registrant thành cancelled
+              try {
+                await relationshipService.cancelByElderlyAndFamily(
+                  booking?.registrant?._id,
+                  booking?.supporter?._id,
+                );
+                console.log('Đổi relationship supporter - registrant thành cancelled');
+              } catch (e) {
+                console.log('Lỗi đổi relationship supporter - registrant', e);
+              }
+
+              console.log('Hủy lịch: xóa conversation + đổi relationship hoàn thành');
+            } catch (e) {
+              console.log('Lỗi xử lý hủy lịch', e);
             }
           }
 
@@ -757,7 +781,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
           <View style={styles.card}>
             <View style={styles.rowBetween}>
               <Text style={styles.cardTitle}>
-                Lịch khám 
+                Lịch hỗ trợ
               </Text>
               <Chip scheme={statusScheme} text={statusScheme.label} />
             </View>
@@ -938,20 +962,51 @@ const BookingDetailScreen = ({ route, navigation }) => {
               )}
 
               {canStart && (
-                <TouchableOpacity
-                  activeOpacity={0.9}
-                  onPress={onStartWorking}
-                  disabled={starting}
-                  style={[styles.primaryBtn, starting && { opacity: 0.6 }]}
-                >
-                  {starting ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.primaryBtnText}>
-                      Tiến hành làm việc
-                    </Text>
-                  )}
-                </TouchableOpacity>
+                <View style={{ flex: 1, flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={onGoToChat}
+                    disabled={starting}
+                    style={{
+                      backgroundColor: '#FFFFFF',
+                      paddingVertical: 14,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      flex: 1,
+                      marginRight: 12,
+                      borderWidth: 1,
+                      borderColor: '#2563EB',
+                    }}
+                  >
+                    {starting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text
+                        style={{
+                          backgroundColor: 'transparent',
+                          color: '#2563EB',
+                          fontWeight: '800',
+                        }}
+                      >
+                        Liên hệ
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={onStartWorking}
+                    disabled={starting}
+                    style={[styles.primaryBtn, starting && { opacity: 0.6 }]}
+                  >
+                    {starting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.primaryBtnText}>
+                        Tiến hành làm việc
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
               )}
 
               {canComplete && (
