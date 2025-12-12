@@ -130,7 +130,25 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
   const avatarUrlRaw = pickAvatarUrl(profile, userNode) || DEFAULT_AVATAR;
   const avatarUri = avatarFailed ? DEFAULT_AVATAR : avatarUrlRaw;
 
-  const specialty = profile?.specializations || '—';
+  // Lĩnh vực chuyên môn: ưu tiên trường specialization (string) mới
+  const specialty = (() => {
+    const directSpec = (profile?.specialization || profile?.doctorProfile?.specialization || '')
+      .toString()
+      .trim();
+    if (directSpec) return directSpec;
+
+    if (Array.isArray(profile?.specializations) && profile.specializations.length) {
+      return profile.specializations.join(', ');
+    }
+    if (
+      profile?.doctorProfile?.specializations &&
+      Array.isArray(profile.doctorProfile.specializations) &&
+      profile.doctorProfile.specializations.length
+    ) {
+      return profile.doctorProfile.specializations.join(', ');
+    }
+    return '—';
+  })();
   const experienceYears = Number.isFinite(profile?.experience) ? `${profile.experience} năm` : '—';
   const hospitalName = profile?.hospitalName || '—';
 
@@ -306,13 +324,25 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
                 <Text style={styles.statLabel}>Đánh giá TB</Text>
               </View>
 
-              <View style={styles.statItem}>
+              <TouchableOpacity
+                style={styles.statItem}
+                activeOpacity={0.8}
+                onPress={() => {
+                  const doctorUserId = userNode?._id;
+                  if (!doctorUserId) return;
+                  navigation?.navigate?.('DoctorReviews', {
+                    userId: String(doctorUserId),
+                    avgRating: rating,
+                    totalRatings,
+                  });
+                }}
+              >
                 <View style={styles.statIcon}>
                   <MaterialIcons name="assignment" size={24} color="#4CAF50" />
                 </View>
                 <Text style={styles.statNumber}>{totalRatings}</Text>
                 <Text style={styles.statLabel}>Lượt đánh giá</Text>
-              </View>
+              </TouchableOpacity>
 
               <View style={styles.statItem}>
                 <View style={styles.statIcon}>

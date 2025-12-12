@@ -183,6 +183,66 @@ deleteSchedule: async (payload) => {
     };
   }
 },
+
+  // Lấy danh sách đánh giá hồ sơ bác sĩ (doctor_profile)
+  getDoctorReviews: async (userId, params = {}) => {
+    try {
+      if (!userId) {
+        return { success: false, message: 'Thiếu userId' };
+      }
+      const response = await api.get(`/doctors/${userId}/reviews`, { params });
+      return {
+        success: true,
+        data: response.data?.data,
+        message: response.data?.message || 'Lấy đánh giá bác sĩ thành công',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || error.message,
+      };
+    }
+  },
+
+  // Tạo đánh giá hồ sơ bác sĩ (doctor_profile)
+  createDoctorReview: async (userId, payload) => {
+    try {
+      if (!userId) {
+        return { success: false, message: 'Thiếu userId' };
+      }
+      const response = await api.post(`/doctors/${userId}/reviews`, payload);
+      return {
+        success: true,
+        data: response.data?.data,
+        message: response.data?.message || 'Tạo đánh giá bác sĩ thành công',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || error.message,
+      };
+    }
+  },
+
+  // Thống kê rating bác sĩ public
+  getDoctorRatingSummary: async (userId) => {
+    try {
+      if (!userId) {
+        return { success: false, message: 'Thiếu userId' };
+      }
+      const response = await api.get(`/doctors/${userId}/ratings/summary`);
+      return {
+        success: true,
+        data: response.data?.data,
+        message: response.data?.message || 'Lấy thống kê đánh giá bác sĩ thành công',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || error.message,
+      };
+    }
+  },
 };
 
 export default doctorService;

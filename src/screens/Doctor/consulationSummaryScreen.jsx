@@ -14,7 +14,6 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import consultationSummaryService from '../../services/consultationSummaryService';
 
-// Trạng thái thời gian khám theo giờ UTC: 'before' | 'within' | 'after' | 'unknown'
 const getConsultationWindowStateUtc = (scheduledDate, slot) => {
 	if (!scheduledDate || !slot) return 'unknown';
 	const base = new Date(scheduledDate);
