@@ -442,7 +442,7 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
         <View style={styles.rowBetween}>
           <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
             <Text style={styles.cardTitle} numberOfLines={1}>
-              Lịch khám
+              Lịch đặt
             </Text>
           </View>
           <Chip scheme={statusScheme} text={statusScheme.label} />
