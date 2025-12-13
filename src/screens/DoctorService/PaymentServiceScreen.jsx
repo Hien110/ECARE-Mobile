@@ -194,13 +194,11 @@ const PaymentServiceScreen = () => {
       try {
         setFetchingAddress(true);
         const res = await userService.getUserById(elderlyId);
-        console.log('[PaymentServiceScreen] getUserById result:', res);
         if (mounted && res?.success && res.data) {
           const addr = res.data.currentAddress || '';
           setFetchedElderlyAddress(addr);
         }
       } catch (e) {
-        console.log('[PaymentServiceScreen] getUserById error:', e);
       } finally {
         if (mounted) setFetchingAddress(false);
       }
