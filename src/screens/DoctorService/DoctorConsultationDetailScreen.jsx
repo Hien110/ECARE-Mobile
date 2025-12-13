@@ -22,7 +22,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { doctorBookingService } from '../../services/doctorBookingService';
 import userService from '../../services/userService';
 import conversationService from '../../services/conversationService';
-import ratingService from '../../services/ratingService';
+import doctorService from '../../services/doctorService';
 
 const TAG = '[DoctorConsultationDetail]';
 const VN_TZ = 'Asia/Ho_Chi_Minh';
@@ -38,7 +38,7 @@ const statusColors = {
     bg: '#E6FFFB',
     text: '#00796B',
     border: '#B2F5EA',
-    label: 'Đã xác nhận',
+    label: 'Chờ khám',
   },
   in_progress: {
     bg: '#FFFAEB',
@@ -96,7 +96,37 @@ const paymentMethodLabelMap = {
   online: 'Online',
 };
 
-// ====== helpers format ngày giờ ======
+// Trạng thái thời gian khám theo giờ UTC: 'before' | 'within' | 'after' | 'unknown'
+const getConsultationWindowStateUtc = (scheduledDate, slot) => {
+  if (!scheduledDate || !slot) return 'unknown';
+  const base = new Date(scheduledDate);
+  if (Number.isNaN(base.getTime())) return 'unknown';
+
+  const year = base.getUTCFullYear();
+  const month = base.getUTCMonth();
+  const day = base.getUTCDate();
+
+  let startHour;
+  let endHour;
+  if (slot === 'morning') {
+    startHour = 8;
+    endHour = 10;
+  } else if (slot === 'afternoon') {
+    startHour = 14;
+    endHour = 16;
+  } else {
+    return 'unknown';
+  }
+
+  const start = new Date(Date.UTC(year, month, day, startHour, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month, day, endHour, 0, 0, 0));
+  const now = new Date();
+
+  if (now.getTime() < start.getTime()) return 'before';
+  if (now.getTime() > end.getTime()) return 'after';
+  return 'within';
+};
+
 function formatDateLongVN(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -112,7 +142,6 @@ function formatDateLongVN(iso) {
   return fmt.format(d);
 }
 
-// ====== helpers bóc tên / avatar sâu nhiều tầng ======
 function safeName(obj) {
   if (!obj) return null;
   if (typeof obj === 'string') return obj;
@@ -195,29 +224,43 @@ RowItem.defaultProps = {
   right: null,
 };
 
-const AvatarLine = ({ title, name, role, avatar }) => (
+const AvatarLine = ({ title, name, role, avatar, showHistoryButton, onPressHistory }) => (
   <View style={{ marginTop: 16 }}>
     <Text style={styles.sectionLabel}>{title}</Text>
-    <View style={styles.row}>
-      <View style={styles.avatarWrap}>
-        {avatar ? (
-          <Image
-            source={{ uri: avatar }}
-            resizeMode="cover"
-            style={styles.avatarImg}
-          />
-        ) : (
-          <Feather name="user" size={24} color="#9CA3AF" />
-        )}
+    <View style={[styles.row, { alignItems: 'center', justifyContent: 'space-between' }]}>
+      <View style={styles.row}>
+        <View style={styles.avatarWrap}>
+          {avatar ? (
+            <Image
+              source={{ uri: avatar }}
+              resizeMode="cover"
+              style={styles.avatarImg}
+            />
+          ) : (
+            <Feather name="user" size={24} color="#9CA3AF" />
+          )}
+        </View>
+        <View style={{ marginLeft: 12 }}>
+          <Text style={styles.personName} numberOfLines={1}>
+            {name || '—'}
+          </Text>
+          <Text style={styles.personSub} numberOfLines={1}>
+            {role}
+          </Text>
+        </View>
       </View>
-      <View style={{ marginLeft: 12, flex: 1 }}>
-        <Text style={styles.personName} numberOfLines={1}>
-          {name || '—'}
-        </Text>
-        <Text style={styles.personSub} numberOfLines={1}>
-          {role}
-        </Text>
-      </View>
+
+      {showHistoryButton ? (
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={onPressHistory}
+          style={styles.historyBtn}
+        >
+          <Text style={styles.historyBtnText} numberOfLines={1}>
+            Lịch sử
+          </Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   </View>
 );
@@ -227,17 +270,19 @@ AvatarLine.propTypes = {
   name: PropTypes.string,
   role: PropTypes.string,
   avatar: PropTypes.string,
+  showHistoryButton: PropTypes.bool,
+  onPressHistory: PropTypes.func,
 };
 
 AvatarLine.defaultProps = {
   name: null,
-  role: '',
+  role: null,
   avatar: null,
+  showHistoryButton: false,
+  onPressHistory: undefined,
 };
 
-/**
- * ====== resolve "Người đặt lịch" chính xác ======
- */
+
 function resolveCreatorInfo(booking) {
   if (!booking) {
     return { name: '—', avatar: null, roleLabel: 'Người đặt lịch' };
@@ -317,7 +362,8 @@ function resolveCreatorInfo(booking) {
 }
 
 const DoctorConsultationDetailScreen = ({ route, navigation }) => {
-  const bookingId = route?.params?.bookingId;
+  const registrationIdFromRoute = route?.params?.registrationId || null;
+  const bookingId = route?.params?.bookingId || registrationIdFromRoute;
   const elderlyIdFromRoute = route?.params?.elderlyId || null;
   const initialBooking = route?.params?.initialBooking || null;
 
@@ -334,19 +380,15 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const [cancelling, setCancelling] = useState(false);
 
   // ==== trạng thái update status tư vấn (doctor) ====
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [updatingStatus] = useState(false);
 
   // ==== rating state ====
-  const [ratings, setRatings] = useState([]);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
-  const [editingRating, setEditingRating] = useState(null);
-  const [deleteRatingModalVisible, setDeleteRatingModalVisible] =
-    useState(false);
-  const [deletingRating, setDeletingRating] = useState(null);
-  const [deletingRatingLoading, setDeletingRatingLoading] = useState(false);
+  const [hasRatedDoctor, setHasRatedDoctor] = useState(false);
+  const [myDoctorReview, setMyDoctorReview] = useState(null);
 
   // toast
   const [toastVisible, setToastVisible] = useState(false);
@@ -387,29 +429,9 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     }
   }, []);
 
-  const loadRatings = useCallback(async () => {
-    if (!bookingId) return;
-    try {
-      const currentUserRes = await userService.getUser();
-      const res =
-        await ratingService.getRatingsByServiceSupportIdAndReviewer(
-          bookingId,
-          currentUserRes.data._id,
-        );
-      if (res?.success && Array.isArray(res.data)) {
-        setRatings(res.data);
-      } else {
-        setRatings([]);
-      }
-    } catch (e) {
-      console.log(`${TAG}[loadRatings][ERROR]`, e?.message || e);
-      setRatings([]);
-    }
-  }, [bookingId]);
+  // doctor ratings cho màn chi tiết sẽ dùng API doctorService.createDoctorReview.
+  // Hiện tại không load lại danh sách "đánh giá của bạn" theo booking, nên bỏ loadRatings cũ.
 
-  /**
-   * Resolve conversation (chat) từ một booking đã có doctor + elderly
-   */
   const resolveConversation = useCallback(async found => {
     if (!found?.doctor) {
       setConversation(null);
@@ -449,9 +471,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     }
   }, []);
 
-  /**
-   * Lấy chi tiết booking
-   */
+
   const loadDetails = useCallback(async () => {
     if (!bookingId) {
       console.log(`${TAG}[loadDetails][ERROR] thiếu bookingId`);
@@ -485,7 +505,9 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
           `${TAG}[loadDetails] registration detail data.status =`,
           detailRes.data.status,
         );
-        setBooking(detailRes.data);
+
+        // Gộp với booking hiện tại để giữ các flag như canRateDoctor từ list
+        setBooking(prev => ({ ...(prev || {}), ...detailRes.data }));
         await resolveConversation(detailRes.data);
 
         console.log(
@@ -522,7 +544,8 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               found?.status,
             );
             if (found) {
-              setBooking(found);
+              // Gộp để giữ lại các field có sẵn nếu cần
+              setBooking(prev => ({ ...(prev || {}), ...found }));
               await resolveConversation(found);
               return;
             }
@@ -553,7 +576,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         );
 
         if (found) {
-          setBooking(found);
+          setBooking(prev => ({ ...(prev || {}), ...found }));
           if (found.status && found.status !== 'pending') {
             await resolveConversation(found);
           } else {
@@ -586,18 +609,19 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     console.log(`${TAG}[useEffect] route.params =`, route?.params);
     loadUserRole();
     loadDetails();
-    loadRatings();
-  }, [loadUserRole, loadDetails, loadRatings, route?.params]);
+  }, [loadUserRole, loadDetails, route?.params]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadUserRole(), loadDetails(), loadRatings()]);
+    await Promise.all([loadUserRole(), loadDetails()]);
     setRefreshing(false);
   };
 
   // ====== logic hiển thị ======
-  const statusKey = String(booking?.status || 'pending').toLowerCase();
+  const rawStatusKey = String(booking?.status || 'pending').toLowerCase();
+  const statusKey = rawStatusKey === 'canceled' ? 'cancelled' : rawStatusKey;
   const statusScheme = statusColors[statusKey] || statusColors.default;
+	const cancelReasonSafe = (booking?.cancelReason || '').trim();
 
   const isDoctorRole = (userRole || '').toLowerCase() === 'doctor';
 
@@ -641,126 +665,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const canCancel =
     ['pending', 'confirmed'].includes(statusKey) &&
     ['elderly', 'family'].includes((userRole || '').toLowerCase());
-
-  // ====== HÀM UPDATE TRẠNG THÁI TƯ VẤN (DOCTOR) ======
-  const updateConsultationStatus = async nextStatus => {
-  console.log(
-    `${TAG}[updateConsultationStatus] START`,
-    {
-      nextStatus,
-      bookingId: booking?._id,
-      bookingStatus: booking?.status,
-      consultationId: booking?.consultation?._id,
-      consultationStatus: booking?.consultation?.status,
-    },
-  );
-
-  if (!booking?._id) {
-    console.log(
-      `${TAG}[updateConsultationStatus] MISSING booking._id → KHÔNG GỌI API`,
-    );
-    return;
-  }
-
-  try {
-    setUpdatingStatus(true);
-
-    console.log(
-      `${TAG}[updateConsultationStatus] CALL API doctorBookingService.updateConsultationStatus`,
-      {
-        bookingId: booking._id,
-        nextStatus,
-      },
-    );
-
-    const res =
-      (await doctorBookingService.updateConsultationStatus?.(
-        booking._id,
-        nextStatus,
-      )) || {};
-
-    console.log(`${TAG}[updateConsultationStatus] RAW_RES =`, res);
-
-    if (res?.success) {
-      const serverData =
-        res.data && typeof res.data === 'object' ? res.data : {};
-
-      console.log(
-        `${TAG}[updateConsultationStatus] SUCCESS, serverData =`,
-        {
-          status: serverData.status,
-          consultationStatus: serverData.consultation?.status,
-          data: serverData,
-        },
-      );
-
-      setBooking(prev => {
-        const base = prev || {};
-        const merged = {
-          ...base,
-          ...serverData,
-          status: serverData.status || nextStatus,
-          consultation: {
-            ...(base?.consultation || {}),
-            ...(serverData.consultation || {}),
-            status:
-              serverData.consultation?.status ||
-              serverData.status ||
-              nextStatus,
-          },
-        };
-
-        console.log(
-          `${TAG}[updateConsultationStatus] AFTER_SET booking =`,
-          {
-            bookingId: merged?._id,
-            bookingStatus: merged?.status,
-            consultationId: merged?.consultation?._id,
-            consultationStatus: merged?.consultation?.status,
-          },
-        );
-
-        return merged;
-      });
-
-      const msg =
-        nextStatus === 'in_progress'
-          ? 'Đã chuyển sang trạng thái đang tiến hành.'
-          : 'Đã đánh dấu hoàn thành công việc.';
-      showToast(msg);
-    } else {
-      console.log(
-        `${TAG}[updateConsultationStatus] FAIL res.success != true`,
-        {
-          message: res?.message,
-          res,
-        },
-      );
-
-      showToast(
-        res?.message ||
-          'Cập nhật trạng thái thất bại, vui lòng thử lại.',
-        'error',
-      );
-    }
-  } catch (e) {
-    console.log(
-      `${TAG}[updateConsultationStatus][ERROR]`,
-      {
-        message: e?.message,
-        responseStatus: e?.response?.status,
-        responseData: e?.response?.data,
-      },
-    );
-    showToast(
-      'Cập nhật trạng thái thất bại, vui lòng thử lại.',
-      'error',
-    );
-  } finally {
-    console.log(`${TAG}[updateConsultationStatus] END (finally)`);
-    setUpdatingStatus(false);
-  }
-};
 
   const onCancelBooking = async () => {
     if (!bookingId) return;
@@ -811,6 +715,54 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     });
   };
 
+  const goToConsultationSummary = () => {
+    if (!booking?._id) return;
+
+    const elderly = booking?.elderly || booking?.beneficiary || null;
+
+    const patientName = elderly?.fullName || elderly?.name || '';
+    const patientGender = elderly?.gender || '';
+    const patientDob = elderly?.dateOfBirth || null;
+
+    const scheduledDateForSummary =
+      booking?.consultation?.scheduledDate ||
+      booking?.scheduledDate ||
+      booking?.consultationDate ||
+      null;
+
+    const slotForSummary = booking?.slot || booking?.consultation?.slot || null;
+
+    navigation.navigate('ConsulationSummary', {
+      registrationId: String(booking._id),
+      patientName,
+      patientGender,
+      patientDob,
+      scheduledDate: scheduledDateForSummary,
+      slot: slotForSummary,
+    });
+  };
+
+  const goToHistoryList = () => {
+    const elderly = booking?.elderly || booking?.beneficiary || null;
+    const elderlyId = elderly?._id || elderly?.user?._id || null;
+    const elderlyName =
+      elderly?.fullName ||
+      elderly?.name ||
+      booking?.beneficiary?.fullName ||
+      booking?.beneficiary?.name ||
+      '';
+
+    if (!elderlyId) {
+      showToast('Không tìm thấy thông tin người cao tuổi.', 'error');
+      return;
+    }
+
+    navigation.navigate('ListSumary', {
+      elderlyId,
+      elderlyName,
+    });
+  };
+
   const priceText =
     typeof booking?.price === 'number'
       ? `${booking.price.toLocaleString('vi-VN')} đ`
@@ -836,17 +788,44 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
 
   const dateLabel = formatDateLongVN(dateIso);
 
+  const slotRaw = booking?.slot || booking?.consultation?.slot || null;
+  const sessionLabel =
+    slotRaw === 'morning'
+      ? 'Buổi sáng'
+      : slotRaw === 'afternoon'
+      ? 'Buổi chiều'
+      : '';
+
   const timeRaw =
     booking?.consultationTime ||
     booking?.appointmentTime ||
     booking?.scheduleTime ||
     null;
 
-  const timeDisplay = dateLabel
-    ? `${dateLabel}${timeRaw ? `\nLúc ${timeRaw}` : ''}`
+  const dateDisplay = dateLabel
+    ? `${dateLabel}${sessionLabel ? ` • ${sessionLabel}` : ''}`
     : '—';
 
+  const timeOnlyDisplay =
+    timeRaw ||
+    (slotRaw === 'morning'
+      ? '8h - 11h'
+      : slotRaw === 'afternoon'
+      ? '14h - 16h'
+      : '—');
+
+  const timeDisplay = dateDisplay;
+
   const creatorInfo = resolveCreatorInfo(booking);
+
+  const consultationWindowState = getConsultationWindowStateUtc(
+    booking?.consultation?.scheduledDate || booking?.scheduledDate || null,
+    booking?.slot || booking?.consultation?.slot || null,
+  );
+  const isWithinConsultationWindow = consultationWindowState === 'within';
+  const summaryButtonLabel = isWithinConsultationWindow
+    ? 'Điền phiếu khám'
+    : 'Xem phiếu khám';
 
   // ==== quyền đánh giá ====
   const isBookingReviewer =
@@ -869,10 +848,13 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         ));
 
   const canReview =
-    booking && booking.status === 'completed' && isBookingReviewer;
+    !!booking &&
+    (
+      booking.canRateDoctor === true ||
+      (booking.status === 'completed' && isBookingReviewer)
+    );
 
   const openReviewModal = () => {
-    setEditingRating(null);
     setRating(0);
     setComment('');
     setReviewModalVisible(true);
@@ -881,7 +863,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const closeReviewModal = () => {
     if (!submittingReview) {
       setReviewModalVisible(false);
-      setEditingRating(null);
     }
   };
 
@@ -907,53 +888,42 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     try {
       setSubmittingReview(true);
 
-      let result;
+      const doctorUserId =
+        booking?.doctor?.user?._id || booking?.doctor?._id;
 
-      if (editingRating) {
-        result = await ratingService.updateRatingById(
-          editingRating._id,
-          rating,
-          comment,
-        );
-      } else {
-        const fromUserId = currentUser._id;
-        const toUserId = booking.doctor._id || booking.doctor.user._id;
-
-        result = await ratingService.createRating(
-          fromUserId,
-          toUserId,
-          'support_service',
-          rating,
-          comment,
-          bookingId,
-        );
-      }
-
-      if (!result?.success) {
-        console.log(
-          `${TAG}[handleSubmitReview][ERROR_RES]`,
-          result?.message,
-          result,
-        );
-        showToast(
-          result?.message ||
-            'Đã có lỗi xảy ra khi gửi đánh giá. Vui lòng thử lại sau.',
-          'error',
-        );
+      if (!doctorUserId) {
+        showToast('Không tìm thấy bác sĩ để đánh giá.', 'error');
         return;
       }
 
-      showToast(
-        editingRating
-          ? 'Bạn đã cập nhật đánh giá.'
-          : 'Bạn đã đánh giá dịch vụ tư vấn.',
-        'success',
-      );
+      const res = await doctorService.createDoctorReview(doctorUserId, {
+        rating,
+        comment,
+      });
+
+      if (!res?.success) {
+        showToast(
+          res?.message ||
+            'Đã có lỗi xảy ra khi gửi đánh giá. Vui lòng thử lại sau.',
+          'error',
+        );
+
+        // Nếu backend báo đã đánh giá rồi, ẩn nút trong phiên hiện tại
+        if (
+          typeof res?.message === 'string' &&
+          res.message.toLowerCase().includes('đánh giá bác sĩ này rồi')
+        ) {
+          setHasRatedDoctor(true);
+        }
+        return;
+      }
+
+      setHasRatedDoctor(true);
+      setMyDoctorReview({ rating, comment });
+
+      showToast('Bạn đã đánh giá bác sĩ.', 'success');
 
       setReviewModalVisible(false);
-      setEditingRating(null);
-
-      await loadRatings();
     } catch (e) {
       console.log(
         `${TAG}[handleSubmitReview][ERROR]`,
@@ -965,58 +935,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       );
     } finally {
       setSubmittingReview(false);
-    }
-  };
-
-  const onEditRating = r => {
-    setEditingRating(r);
-    setRating(r.rating);
-    setComment(r.comment || '');
-    setReviewModalVisible(true);
-  };
-
-  const onDeleteRating = r => {
-    setDeletingRating(r);
-    setDeleteRatingModalVisible(true);
-  };
-
-  const closeDeleteRatingModal = () => {
-    if (!deletingRatingLoading) {
-      setDeleteRatingModalVisible(false);
-      setDeletingRating(null);
-    }
-  };
-
-  const confirmDeleteRating = async () => {
-    if (!deletingRating?._id) {
-      showToast('Không tìm thấy đánh giá để xóa.', 'error');
-      return;
-    }
-
-    try {
-      setDeletingRatingLoading(true);
-      const res = await ratingService.deleteRatingById(deletingRating._id);
-
-      if (!res?.success) {
-        showToast(
-          res?.message || 'Xóa đánh giá thất bại. Vui lòng thử lại sau.',
-          'error',
-        );
-        return;
-      }
-
-      showToast('Đã xóa đánh giá.', 'success');
-      await loadRatings();
-      setDeleteRatingModalVisible(false);
-      setDeletingRating(null);
-    } catch (e) {
-      console.error(`${TAG}[confirmDeleteRating][ERROR]`, e);
-      showToast(
-        'Đã có lỗi xảy ra khi xóa đánh giá. Vui lòng thử lại sau.',
-        'error',
-      );
-    } finally {
-      setDeletingRatingLoading(false);
     }
   };
 
@@ -1067,13 +985,19 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
           }
         >
           <View style={styles.card}>
-            {/* mã tư vấn + trạng thái */}
             <View style={styles.rowBetween}>
               <Text style={styles.cardTitle}>
-                Tư vấn #{booking?._id?.slice(-6) || ''}
+                Tư vấn 
               </Text>
               <Chip scheme={statusScheme} text={statusScheme.label} />
             </View>
+
+				{statusKey === 'cancelled' && cancelReasonSafe && (
+					<View style={styles.cancelReasonBox}>
+						<Text style={styles.cancelReasonLabel}>Lý do hủy</Text>
+						<Text style={styles.cancelReasonText}>{cancelReasonSafe}</Text>
+					</View>
+				)}
 
             {/* Bác sĩ */}
             <AvatarLine
@@ -1093,7 +1017,22 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               }
               role="Người được tư vấn"
               avatar={booking?.elderly?.avatar || booking?.beneficiary?.avatar}
+              showHistoryButton
+              onPressHistory={goToHistoryList}
             />
+
+            {!!(
+              booking?.elderly?.currentAddress ||
+              booking?.beneficiary?.currentAddress
+            ) && (
+              <View style={{ marginTop: 8 }}>
+                <Text style={styles.itemLabel}>Địa chỉ hiện tại</Text>
+                <Text style={styles.itemValue}>
+                  {booking?.elderly?.currentAddress ||
+                    booking?.beneficiary?.currentAddress}
+                </Text>
+              </View>
+            )}
 
             {/* Người đặt lịch */}
             <AvatarLine
@@ -1106,6 +1045,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             <View style={{ height: 16 }} />
 
             <RowItem label="Thời gian tư vấn" value={timeDisplay} />
+            <RowItem label="Giờ" value={timeOnlyDisplay} />
 
             <RowItem
               label="Thanh toán"
@@ -1114,6 +1054,13 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             />
 
             {priceText ? <RowItem label="Chi phí" value={priceText} /> : null}
+
+            {!!booking?.note && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.sectionLabel}>Ghi chú từ người đặt lịch</Text>
+                <Text style={styles.noteText}>{booking.note}</Text>
+              </View>
+            )}
 
             {showRefundNotice && (
               <View style={styles.refundNotice}>
@@ -1126,15 +1073,8 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               </View>
             )}
 
-            <View style={{ marginTop: 16 }}>
-              <Text style={styles.sectionLabel}>Ghi chú</Text>
-              <Text style={styles.noteText}>
-                {booking?.notes || 'Không có ghi chú'}
-              </Text>
-            </View>
-
-            {/* nút đánh giá (chưa có rating) */}
-            {canReview && ratings.length === 0 && (
+            {/* Nút đánh giá bác sĩ (giống flow supporter) */}
+            {canReview && !hasRatedDoctor && (
               <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={openReviewModal}
@@ -1145,51 +1085,30 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.primaryBtnText}>
-                    Đánh giá người hỗ trợ
+                    Đánh giá bác sĩ
                   </Text>
                 )}
               </TouchableOpacity>
             )}
-          </View>
 
-          {/* Card hiển thị đánh giá của bạn */}
-          {isBookingReviewer && ratings.length > 0 && (
-            <View style={[styles.card, { marginTop: 16, padding: 16 }]}>
-              <View style={{ marginTop: 20 }}>
-                <Text style={styles.sectionLabel}>Đánh giá của bạn</Text>
-
-                {ratings.map((r, index) => (
-                  <View key={r._id || index} style={styles.ratingBox}>
-                    <View style={styles.rowBetween}>
-                      <Text style={styles.ratingScore}>{r.rating} ★</Text>
-
-                      <View style={styles.ratingActions}>
-                        <TouchableOpacity
-                          style={styles.editBtn}
-                          onPress={() => onEditRating(r)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.editBtnText}>Chỉnh sửa</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={styles.deleteBtn}
-                          onPress={() => onDeleteRating(r)}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.deleteBtnText}>Xóa</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    <Text style={styles.ratingComment}>
-                      {r.comment || 'Không có nhận xét'}
-                    </Text>
-                  </View>
-                ))}
+            {/* Hiển thị ngay đánh giá vừa gửi */}
+            {myDoctorReview && (
+              <View style={[styles.ratingBox, { marginTop: 16 }]}
+              >
+                <View style={styles.rowBetween}>
+                  <Text style={styles.sectionLabel}>Đánh giá của bạn</Text>
+                  <Text style={styles.ratingScore}>
+                    {myDoctorReview.rating} ★
+                  </Text>
+                </View>
+                {myDoctorReview.comment ? (
+                  <Text style={styles.ratingComment}>
+                    {myDoctorReview.comment}
+                  </Text>
+                ) : null}
               </View>
-            </View>
-          )}
+            )}
+          </View>
 
           {/* Buttons cho NON-DOCTOR: chỉ 1 nút chat như cũ */}
           {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
@@ -1203,58 +1122,47 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             )}
 
-          {/* Buttons cho DOCTOR: Liên hệ + Tiến hành / Đã hoàn thành */}
-          {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
-            conversation &&
-            isDoctorRole && (
-              <View style={{ marginTop: 20 }}>
-                <TouchableOpacity
-                  style={styles.primaryBtn}
-                  onPress={goToChat}
-                  disabled={updatingStatus}
-                >
-                  <Text style={styles.primaryBtnText}>Liên hệ</Text>
-                </TouchableOpacity>
+          {/* Nút xem phiếu khám cho phía family/elderly */}
+          {!isDoctorRole && booking && (
+            <TouchableOpacity
+              style={[styles.primaryBtn, { marginTop: 12 }]}
+              onPress={goToConsultationSummary}
+            >
+              <Text style={styles.primaryBtnText}>Xem phiếu khám</Text>
+            </TouchableOpacity>
+          )}
 
-                {statusKey === 'confirmed' && (
+          {/* Buttons cho DOCTOR: Liên hệ + phiếu khám */}
+          {isDoctorRole && booking && (
+            <View style={{ marginTop: 20 }}>
+              {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
+                conversation && (
                   <TouchableOpacity
-                    style={[
-                      styles.primaryBtn,
-                      { marginTop: 12, backgroundColor: '#0EA5E9' },
-                    ]}
-                    onPress={() => updateConsultationStatus('in_progress')}
+                    style={styles.primaryBtn}
+                    onPress={goToChat}
                     disabled={updatingStatus}
                   >
-                    {updatingStatus ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.primaryBtnText}>
-                        Tiến hành làm việc
-                      </Text>
-                    )}
+                    <Text style={styles.primaryBtnText}>Liên hệ</Text>
                   </TouchableOpacity>
                 )}
 
-                {statusKey === 'in_progress' && (
-                  <TouchableOpacity
-                    style={[
-                      styles.primaryBtn,
-                      { marginTop: 12, backgroundColor: '#16A34A' },
-                    ]}
-                    onPress={() => updateConsultationStatus('completed')}
-                    disabled={updatingStatus}
-                  >
-                    {updatingStatus ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.primaryBtnText}>
-                        Đã hoàn thành công việc
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
+              <TouchableOpacity
+                style={[
+                  styles.primaryBtn,
+                  {
+                    marginTop:
+                      (statusKey === 'confirmed' || statusKey === 'in_progress') &&
+                      conversation
+                        ? 12
+                        : 0,
+                  },
+                ]}
+                onPress={goToConsultationSummary}
+              >
+                <Text style={styles.primaryBtnText}>{summaryButtonLabel}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {canCancel && (
             <TouchableOpacity
@@ -1315,51 +1223,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         </View>
       </Modal>
 
-      {/* Modal xác nhận xóa đánh giá */}
-      <Modal
-        transparent
-        visible={deleteRatingModalVisible}
-        animationType="fade"
-        onRequestClose={closeDeleteRatingModal}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={closeDeleteRatingModal}
-        />
-        <View style={styles.modalSheetWrap}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Xóa đánh giá</Text>
-            <Text style={styles.modalSub}>
-              Bạn có chắc chắn muốn xóa đánh giá không?
-            </Text>
-
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={closeDeleteRatingModal}
-                disabled={deletingRatingLoading}
-                style={[styles.modalBtn, styles.modalBtnGhost]}
-              >
-                <Text style={styles.modalBtnGhostText}>Hủy</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={confirmDeleteRating}
-                disabled={deletingRatingLoading}
-                style={[styles.modalBtn, styles.modalBtnDanger]}
-              >
-                {deletingRatingLoading ? (
-                  <ActivityIndicator />
-                ) : (
-                  <Text style={styles.modalBtnDangerText}>Xóa</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* Modal đánh giá */}
       <Modal
         transparent
@@ -1370,7 +1233,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         <Pressable style={styles.modalBackdrop} onPress={closeReviewModal} />
         <View style={styles.modalSheetWrap}>
           <View style={styles.reviewSheet}>
-            <Text style={styles.reviewTitle}>Đánh giá người hỗ trợ</Text>
+              <Text style={styles.reviewTitle}>Đánh giá bác sĩ</Text>
 
             <Text style={styles.reviewLabel}>Số sao</Text>
             <View style={styles.reviewStarsRow}>
@@ -1436,6 +1299,7 @@ DoctorConsultationDetailScreen.propTypes = {
   route: PropTypes.shape({
     params: PropTypes.shape({
       bookingId: PropTypes.string,
+      registrationId: PropTypes.string,
       elderlyId: PropTypes.string,
       initialBooking: PropTypes.object,
     }),
@@ -1512,6 +1376,17 @@ const styles = StyleSheet.create({
   },
   personName: { fontSize: 15, fontWeight: '600', color: '#111827' },
   personSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  historyBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#16A34A',
+  },
+  historyBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
 
   itemLabel: { fontSize: 12, color: '#64748B', marginBottom: 4 },
   itemValue: { fontSize: 15, color: '#0F172A', fontWeight: '600' },
@@ -1529,6 +1404,25 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
+  },
+
+  cancelReasonBox: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cancelReasonLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#991B1B',
+    marginBottom: 4,
+  },
+  cancelReasonText: {
+    fontSize: 13,
+    color: '#7F1D1D',
   },
 
   primaryBtn: {

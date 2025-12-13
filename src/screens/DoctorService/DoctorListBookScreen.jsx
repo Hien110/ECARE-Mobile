@@ -80,10 +80,56 @@ const DoctorListBookScreen = () => {
 
   const renderDoctorCard = doctor => {
     const name = doctor?.fullName || 'Bác sĩ';
+    const specialization = doctor?.specialization || '';
+    const experience = typeof doctor?.experience === 'number' ? doctor.experience : null;
+    const avgRating =
+      typeof doctor?.ratingStats?.averageRating === 'number'
+        ? doctor.ratingStats.averageRating
+        : 0;
+    const totalRatings =
+      typeof doctor?.ratingStats?.totalRatings === 'number'
+        ? doctor.ratingStats.totalRatings
+        : 0;
+    const hasRating = totalRatings > 0;
 
     return (
       <View key={doctor?.doctorId || doctor?._id} style={styles.packageCard}>
         <Text style={styles.packageTitle}>{name}</Text>
+
+        {/* Chuyên khoa + kinh nghiệm */}
+        {(specialization || experience) && (
+          <View style={styles.metaContainer}>
+            {specialization ? (
+              <Text style={styles.metaText} numberOfLines={1}>
+                Chuyên khoa: <Text style={styles.metaHighlight}>{specialization}</Text>
+              </Text>
+            ) : null}
+            {typeof experience === 'number' ? (
+              <Text style={styles.metaText}>
+                Kinh nghiệm: <Text style={styles.metaHighlight}>{experience} năm</Text>
+              </Text>
+            ) : null}
+          </View>
+        )}
+
+        {/* Đánh giá */}
+        <View style={styles.ratingRow}>
+          <Icon
+            name="star"
+            size={16}
+            color={hasRating ? '#FBBF24' : '#D1D5DB'}
+            style={{ marginRight: 4 }}
+          />
+          {hasRating ? (
+            <Text style={styles.ratingText}>
+              <Text style={styles.ratingScore}>{avgRating.toFixed(1)}</Text>
+              <Text style={styles.ratingSlash}> / 5</Text>
+              <Text style={styles.ratingCount}> · {totalRatings} lượt đánh giá</Text>
+            </Text>
+          ) : (
+            <Text style={styles.ratingText}>Chưa có đánh giá</Text>
+          )}
+        </View>
 
         <TouchableOpacity
           style={styles.primaryButton}
@@ -240,6 +286,37 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     marginBottom: 6,
+  },
+  metaContainer: {
+    marginBottom: 8,
+  },
+  metaText: {
+    fontSize: 13,
+    color: '#4B5563',
+    marginBottom: 2,
+  },
+  metaHighlight: {
+    fontWeight: '600',
+    color: '#1D4ED8',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  ratingText: {
+    fontSize: 13,
+    color: '#4B5563',
+  },
+  ratingScore: {
+    fontWeight: '700',
+    color: '#111827',
+  },
+  ratingSlash: {
+    color: '#6B7280',
+  },
+  ratingCount: {
+    color: '#6B7280',
   },
   packageDescription: {
     fontSize: 13,

@@ -27,18 +27,6 @@ import ratingService from '../../services/ratingService';
 
 const VN_TZ = 'Asia/Ho_Chi_Minh';
 
-const scheduleTimeMap = {
-  morning: 'Buổi sáng: 8h–12h',
-  afternoon: 'Buổi chiều: 13h–17h',
-  evening: 'Buổi tối: 18h–21h',
-};
-
-const bookingTypeLabelMap = {
-  session: 'Theo buổi',
-  day: 'Theo ngày',
-  month: 'Theo tháng',
-};
-
 const statusColors = {
   pending: {
     bg: '#FFF7E6',
@@ -151,44 +139,29 @@ function formatVNDateLong(iso, { includeTime = false } = {}) {
   return `${weekday}, ngày ${dd} tháng ${mm} năm ${yyyy}${time}`;
 }
 
-// 🔧 format hiển thị thời gian theo bookingType + field mới
+// 🔧 format hiển thị thời gian từ startDate và endDate (chỉ ngày, không có giờ)
 function renderBookingTime(booking) {
   if (!booking) return '—';
-  const type = booking.bookingType || 'session';
-
-  if (type === 'session') {
-    const date = formatVNDateLong(booking.scheduleDate);
-    const timeLabel = booking.scheduleTime
-      ? scheduleTimeMap[booking.scheduleTime] || booking.scheduleTime
-      : '';
-    if (date && timeLabel) return `${date}\n${timeLabel}`;
-    if (date) return date;
-    if (timeLabel) return timeLabel;
-    return '—';
+  
+  const startDate = booking?.startDate;
+  const endDate = booking?.endDate;
+  
+  if (!startDate || !endDate) return '—';
+  
+  const startFormatted = formatVNDateLong(startDate);
+  const endFormatted = formatVNDateLong(endDate);
+  
+  // Kiểm tra xem cùng ngày không
+  const startDay = new Date(startDate).toLocaleDateString('vi-VN', { timeZone: VN_TZ });
+  const endDay = new Date(endDate).toLocaleDateString('vi-VN', { timeZone: VN_TZ });
+  
+  if (startDay === endDay) {
+    // Cùng ngày: chỉ hiển thị ngày
+    return startFormatted;
+  } else {
+    // Khác ngày: hiển thị khoảng ngày
+    return `Từ: ${startFormatted}\nĐến: ${endFormatted}`;
   }
-
-  if (type === 'day') {
-    const date = formatVNDateLong(booking.scheduleDate);
-    return date || '—';
-  }
-
-  if (type === 'month') {
-    const start = booking.monthStart
-      ? formatVNDateLong(booking.monthStart)
-      : '';
-    const end = booking.monthEnd ? formatVNDateLong(booking.monthEnd) : '';
-    const range = start && end ? `${start}\nđến\n${end}` : start || end || '';
-    const sessions =
-      Array.isArray(booking.monthSessionsPerDay) &&
-      booking.monthSessionsPerDay.length
-        ? `Buổi trong ngày: ${booking.monthSessionsPerDay
-            .map(s => scheduleTimeMap[s] || s)
-            .join(', ')}`
-        : '';
-    return [range, sessions].filter(Boolean).join('\n');
-  }
-
-  return '—';
 }
 
 const Chip = ({ scheme, text, style }) => {
@@ -455,6 +428,67 @@ const BookingDetailScreen = ({ route, navigation }) => {
             }
           }
 
+          // ✅ Hủy đặt lịch: xóa conversation + đổi relationship thành cancelled
+          if (nextStatus === 'canceled') {
+            try {
+              // Xóa conversation giữa supporter và elderly
+              if (conversationArg?._id) {
+                try {
+                  await conversationService.deleteConversationAndMessages(
+                    conversationArg._id,
+                  );
+                  setConversation(null);
+                  console.log('Xóa conversation supporter - elderly thành công');
+                } catch (e) {
+                  console.log('Lỗi xóa conversation supporter - elderly', e);
+                }
+              }
+
+              // Xóa conversation giữa supporter và registrant
+              try {
+                const respConv =
+                  await conversationService.getConversationByParticipants(
+                    booking?.supporter?._id,
+                    booking?.registrant?._id,
+                  );
+                if (respConv?.success && respConv?.data?._id) {
+                  await conversationService.deleteConversationAndMessages(
+                    respConv.data._id,
+                  );
+                  console.log('Xóa conversation supporter - registrant thành công');
+                }
+              } catch (e) {
+                console.log('Lỗi xóa conversation supporter - registrant', e);
+              }
+
+              // Đổi relationship với elderly thành cancelled
+              try {
+                await relationshipService.cancelByElderlyAndFamily(
+                  booking?.elderly?._id,
+                  booking?.supporter?._id,
+                );
+                console.log('Đổi relationship supporter - elderly thành cancelled');
+              } catch (e) {
+                console.log('Lỗi đổi relationship supporter - elderly', e);
+              }
+
+              // Đổi relationship với registrant thành cancelled
+              try {
+                await relationshipService.cancelByElderlyAndFamily(
+                  booking?.registrant?._id,
+                  booking?.supporter?._id,
+                );
+                console.log('Đổi relationship supporter - registrant thành cancelled');
+              } catch (e) {
+                console.log('Lỗi đổi relationship supporter - registrant', e);
+              }
+
+              console.log('Hủy lịch: xóa conversation + đổi relationship hoàn thành');
+            } catch (e) {
+              console.log('Lỗi xử lý hủy lịch', e);
+            }
+          }
+
           // tạo kết nối khi accept booking
           if (nextStatus === 'confirmed' && !conversationArg) {
             try {
@@ -524,26 +558,32 @@ const BookingDetailScreen = ({ route, navigation }) => {
   const isBookingReviewer =
     !!currentUser?._id &&
     (currentUser._id === booking?.elderly?._id ||
-      currentUser._id === booking?.createdBy?._id);
+      currentUser._id === booking?.registrant?._id);
 
-  // Elderly/Family: hủy giống cũ (trừ khi canceled/completed/in_progress)
-  const disabledCancelBase = ['canceled', 'completed', 'in_progress'].includes(
-    statusKey,
-  );
+  // Kiểm tra xem có được phép hủy không (chỉ hủy trước ngày bắt đầu)
+  const now = new Date();
+  const startDate = booking?.startDate ? new Date(booking.startDate) : null;
+  const endDate = booking?.endDate ? new Date(booking.endDate) : null;
+  const isBeforeStartDate = startDate ? now < startDate : false;
+  
+  // Kiểm tra xem ngày hôm nay có phải ngày endDate không (chỉ hoàn thành khi bằng endDate)
+  const isSameEndDate = endDate ? 
+    (now.toLocaleDateString('vi-VN', { timeZone: VN_TZ }) === 
+     endDate.toLocaleDateString('vi-VN', { timeZone: VN_TZ })) : false;
+  
+  const disabledCancelBase = ['canceled', 'completed'].includes(statusKey);
+  
   const canCancel =
     isElderly || isFamily
-      ? !disabledCancelBase
+      ? !disabledCancelBase && isBeforeStartDate
       : isSupporter
-      ? statusKey === 'pending'
+      ? statusKey === 'pending' && isBeforeStartDate
       : false;
 
   // Supporter flow buttons
   const canAccept = isSupporter && statusKey === 'pending';
   const canStart = isSupporter && statusKey === 'confirmed';
-  const canComplete = isSupporter && statusKey === 'in_progress';
-
-  const bookingTypeLabel =
-    bookingTypeLabelMap[booking?.bookingType] || 'Không xác định';
+  const canComplete = isSupporter && statusKey === 'in_progress' && isSameEndDate;
 
   const priceText =
     typeof booking?.priceAtBooking === 'number'
@@ -747,7 +787,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
           <View style={styles.card}>
             <View style={styles.rowBetween}>
               <Text style={styles.cardTitle}>
-                Đặt lịch #{booking?._id?.slice(-6) || ''}
+                Lịch hỗ trợ
               </Text>
               <Chip scheme={statusScheme} text={statusScheme.label} />
             </View>
@@ -768,18 +808,18 @@ const BookingDetailScreen = ({ route, navigation }) => {
 
             <AvatarLine
               title="Người đặt lịch"
-              name={booking?.createdBy?.fullName}
+              name={booking?.registrant?.fullName}
               role="Vai trò: Người đặt lịch"
-              avatar={booking?.createdBy?.avatar}
+              avatar={booking?.registrant?.avatar}
             />
 
             <View style={{ height: 16 }} />
 
-            <RowItem label="Loại đặt lịch" value={bookingTypeLabel} />
             <RowItem label="Thời gian" value={renderBookingTime(booking)} />
-            <RowItem
-              label="Địa chỉ hỗ trợ"
-              value={`${booking?.address || '—'}`}
+            
+            <RowItem 
+              label="Địa chỉ hỗ trợ" 
+              value={booking?.elderly?.currentAddress || '—'} 
             />
 
             <RowItem
@@ -972,6 +1012,23 @@ const BookingDetailScreen = ({ route, navigation }) => {
                       </Text>
                     )}
                   </TouchableOpacity>
+                </View>
+              )}
+
+              {isSupporter && statusKey === 'in_progress' && !isSameEndDate && (
+                <View
+                  style={{
+                    backgroundColor: '#FEF3C7',
+                    borderColor: '#FCD34D',
+                    borderWidth: 1,
+                    padding: 12,
+                    borderRadius: 12,
+                    marginTop: 20,
+                  }}
+                >
+                  <Text style={{ color: '#92400E', fontSize: 14 }}>
+                    Bạn chỉ có thể hoàn thành công việc vào ngày {endDate ? formatVNDateLong(endDate) : '—'}
+                  </Text>
                 </View>
               )}
 

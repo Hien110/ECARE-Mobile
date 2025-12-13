@@ -1,7 +1,7 @@
 // src/screens/DoctorHomeScreen.jsx
 import React, { useCallback, useMemo, useState  } from "react";
 import {
-  SafeAreaView,
+
   View,
   Text,
   Image,
@@ -17,21 +17,20 @@ import { useNavigation } from "@react-navigation/native";
 import logo from "../../assets/logoBrand.png";
 import { doctorService } from "../../services/doctorService";
 import userService from "../../services/userService";
+import doctorBookingService from "../../services/doctorBookingService";
+import {SafeAreaView} from "react-native-safe-area-context";
 
-// ---------- helpers ----------
 const { width: SCREEN_W } = Dimensions.get("window");
 const isSmall = SCREEN_W < 360;
 
 function mapJsDayToSchema(dayIdx) {
-  // JS: 0..6 (Sun..Sat) -> Schema: 2..8 (Mon..Sun)
   if (dayIdx === 0) return 8;
-  return dayIdx + 1; // 1..6 -> 2..7
+  return dayIdx + 1;
 }
 function timeRangeStr(slot) {
   return `${slot?.start || "--:--"} - ${slot?.end || "--:--"}`;
 }
 
-// Tag hỗ trợ size nhỏ (sm) để tránh tràn
 const Tag = ({ children, type = "primary", size = "md" }) => {
   const map = {
     primary: styles.tagPrimary,
@@ -50,7 +49,6 @@ const Tag = ({ children, type = "primary", size = "md" }) => {
   );
 };
 
-// ---- Stats helpers ----
 const CompletionBar = ({ total, done }) => {
   const safePercent =
     total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
@@ -96,7 +94,62 @@ const StatItem = ({
   );
 };
 
-// ---------- main screen ----------
+const normalizeStatusKey = (rawStatus) => {
+  const raw = (rawStatus || "")
+    .toString()
+    .toLowerCase()
+    .trim();
+  if (!raw) return "pending";
+  if (["pending", "wait", "waiting", "unconfirmed"].includes(raw)) return "pending";
+  if (["confirmed", "accepted", "xacnhan", "xac_nhan"].includes(raw)) return "confirmed";
+  if (["in_progress", "in-progress", "ongoing"].includes(raw)) return "in_progress";
+  if (["completed", "done", "finished"].includes(raw)) return "completed";
+  if (["canceled", "cancelled", "huy"].includes(raw)) return "canceled";
+  return "default";
+};
+
+const getStatusInfo = (rawStatus) => {
+  const key = normalizeStatusKey(rawStatus);
+  switch (key) {
+    case "pending":
+      return { key, label: "Chờ xác nhận", tagType: "blue" };
+    case "confirmed":
+      return { key, label: "Chờ khám", tagType: "success" };
+    case "in_progress":
+      return { key, label: "Đang tiến hành", tagType: "info" };
+    case "completed":
+      return { key, label: "Hoàn thành", tagType: "success" };
+    case "canceled":
+      return { key, label: "Đã hủy", tagType: "danger" };
+    default:
+      return { key, label: "Khác", tagType: "gray" };
+  }
+};
+
+const getPaymentInfoFromBooking = (booking) => {
+  const rawMethod = (
+    booking?.paymentMethod ||
+    booking?.payment?.method ||
+    booking?.payment?.paymentMethod ||
+    booking?.consultation?.payment?.method ||
+    ""
+  )
+    .toString()
+    .toLowerCase();
+
+  if (!rawMethod) return { label: null, tagType: "gray" };
+
+  if (["qr", "online", "bank_transfer", "bank-transfer"].includes(rawMethod)) {
+    return { label: "Đã trả trước", tagType: "info" };
+  }
+
+  if (["cash", "tienmat", "tiền mặt"].includes(rawMethod)) {
+    return { label: "Tiền mặt", tagType: "primary" };
+  }
+
+  return { label: "Khác", tagType: "gray" };
+};
+
 const DoctorHomeScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -104,26 +157,17 @@ const DoctorHomeScreen = () => {
   const [rating, setRating] = useState({ averageRating: 0, totalRatings: 0 });
   const [activeApptTab, setActiveApptTab] = useState("today");
   const [errorMsg, setErrorMsg] = useState("");
+  const [appointmentsToday, setAppointmentsToday] = useState([]);
+  const [appointmentsUpcoming, setAppointmentsUpcoming] = useState([]);
   const navigate = useNavigation();
 
-  // Demo data lịch hẹn (thay bằng API của bạn sau)
-  const sampleApptsToday = [
-    { id: "1", name: "Nguyễn Thị Mai", age: 68, time: "09:00", type: "Video call", status: "Hoàn thành" },
-    { id: "2", name: "Trần Văn Hùng", age: 72, time: "10:30", type: "Tư vấn trực tiếp", status: "Hoàn thành" },
-    { id: "3", name: "Lê Thị Hoa", age: 75, time: "14:00", type: "Khám tổng quát", status: "Sắp đến" },
-    { id: "4", name: "Phạm Minh Tuấn", age: 72, time: "15:30", type: "Tư vấn dinh dưỡng", status: "Đã đặt" },
-    { id: "5", name: "Võ Thị Lan", age: 69, time: "16:00", type: "Đau khớp", status: "Chờ khám" },
-  ];
-  const sampleApptsUpcoming = [
-    { id: "6", name: "Phạm Thị Bình", age: 70, time: "08:30 ngày mai", type: "Video call", status: "Sắp tới" },
-    { id: "7", name: "Đỗ Văn Long", age: 74, time: "10:00 ngày mai", type: "Tư vấn trực tiếp", status: "Sắp tới" },
-  ];
+ 
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      let user = await userService.getUser(); // { success, data }
+      let user = await userService.getUser();
       const userId = user?.data?._id;
       const role = user?.data?.role;
 
@@ -138,16 +182,97 @@ const DoctorHomeScreen = () => {
         return;
       }
 
-      // Gọi API: /doctors/by-user/:userId (public) + /doctors/ratings/stats (auth)
       const [p, r] = await Promise.all([
         doctorService.getProfileByUserId(userId),
         doctorService.getMyRatingStats(),
       ]);
-
       if (p?.success) setProfile(p.data);
       else setErrorMsg(p?.message || "Không thể tải hồ sơ bác sĩ.");
 
       if (r?.success) setRating(r.data || { averageRating: 0, totalRatings: 0 });
+
+      const bookingsRes = await doctorBookingService.getMyBookings();
+      if (bookingsRes?.success && Array.isArray(bookingsRes.data)) {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        const today = [];
+        const upcoming = [];
+
+        bookingsRes.data.forEach((b) => {
+          const when = b.scheduledDate ? new Date(b.scheduledDate) : null;
+          if (!when) return;
+
+          const isToday = when >= startOfToday && when <= endOfToday;
+
+          let timeLabel = "--:--";
+          if (b.slot === "morning") {
+            timeLabel = "8h - 11h";
+          } else if (b.slot === "afternoon") {
+            timeLabel = "14h - 16h";
+          }
+
+          const { key: statusKey, label: statusLabel, tagType: statusTagType } =
+            getStatusInfo(b.status);
+
+          const { label: paymentLabel, tagType: paymentTagType } =
+            getPaymentInfoFromBooking(b);
+
+          const dob = b.beneficiary?.dateOfBirth
+            ? new Date(b.beneficiary.dateOfBirth)
+            : null;
+          const computedAge = dob
+            ? new Date().getFullYear() - dob.getFullYear()
+            : "";
+
+          const idStr = String(b._id || "");
+          const bookingCode = idStr ? idStr.slice(-6) : "";
+
+          const elderlyName = b.beneficiary?.fullName || "Người cao tuổi";
+          const elderlyAddress = b.beneficiary?.currentAddress || "";
+          const registrantName =
+            b.registrant?.fullName || b.registrant?.name || "Người đặt lịch";
+
+          const dateLabel = when.toLocaleDateString("vi-VN");
+
+          const item = {
+            id: idStr,
+            bookingCode,
+            elderlyName,
+            registrantName,
+            elderlyAvatar: b.beneficiary?.avatar || null,
+            registrantAvatar: b.registrant?.avatar || null,
+            elderlyAddress,
+            age: computedAge,
+            gender: b.beneficiary?.gender || "",
+            dob: b.beneficiary?.dateOfBirth || null,
+            scheduledDate: b.scheduledDate || null,
+            slot: b.slot || null,
+            type: b.slot === "morning" ? "Buổi sáng" : b.slot === "afternoon" ? "Buổi chiều" : "",
+            time: timeLabel,
+            dateLabel,
+            status: statusLabel,
+            statusKey,
+            statusTagType,
+            paymentLabel,
+            paymentTagType,
+            cancelReason: (b.cancelReason || "").toString().trim(),
+            note: (b.note || "").toString().trim(),
+          };
+
+          if (isToday) {
+            today.push(item);
+          } else if (when > endOfToday) {
+            upcoming.push(item);
+          }
+        });
+
+        setAppointmentsToday(today);
+        setAppointmentsUpcoming(upcoming);
+      } else {
+        setAppointmentsToday([]);
+        setAppointmentsUpcoming([]);
+      }
     } catch (e) {
       setErrorMsg(e?.message || "Đã xảy ra lỗi không xác định.");
     } finally {
@@ -192,10 +317,12 @@ const DoctorHomeScreen = () => {
   const expYears = profile?.experience ?? 0;
 
   const statsToday = {
-    total: sampleApptsToday.length,
-    done: sampleApptsToday.filter((a) => a.status === "Hoàn thành").length,
-    canceled: 0, // hoặc số "chờ xử lý" thực tế
-    workingHours: workingHourStr, // ví dụ: "8:00 - 17:00"
+    total: appointmentsToday.length,
+    done: appointmentsToday.filter((a) => a.statusKey === "completed").length,
+    processing: appointmentsToday.filter((a) =>
+      ["pending", "confirmed", "in_progress"].includes(a.statusKey)
+    ).length,
+    workingHours: workingHourStr,
   };
 
   return (
@@ -215,14 +342,12 @@ const DoctorHomeScreen = () => {
         contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Error / Empty states */}
         {!!errorMsg && (
           <View style={[styles.card, { backgroundColor: "#fff3f2" }]}>
             <Text style={{ color: "#9b1c1c", fontWeight: "700" }}>{errorMsg}</Text>
           </View>
         )}
 
-        {/* Doctor card */}
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.avatar}>
@@ -244,7 +369,6 @@ const DoctorHomeScreen = () => {
                 {specialization} • {hospital}
               </Text>
 
-              {/* Hàng meta: wrap + pill nhỏ để không tràn */}
               <View style={styles.metaRow}>
                 <View style={styles.metaItem}>
                   <Tag size="sm" type="success">
@@ -264,7 +388,6 @@ const DoctorHomeScreen = () => {
           </View>
         </View>
 
-        {/* Thống kê hôm nay - layout 2x2 */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Thông kê hôm nay</Text>
           <View style={styles.sectionRight}>
@@ -295,7 +418,7 @@ const DoctorHomeScreen = () => {
             />
             <StatItem
               icon="🕒"
-              value={statsToday.canceled}
+              value={statsToday.processing}
               label="Chờ xử lý"
               bgColor="#FF8A34"
               textColor="#0f172a"
@@ -310,7 +433,6 @@ const DoctorHomeScreen = () => {
           </View>
         </View>
 
-        {/* Schedule today */}
         <View style={styles.sectionHeader}>
           <Text  style={styles.sectionTitle}>Lịch làm việc hôm nay</Text>
           <TouchableOpacity activeOpacity={0.7} onPress={() => navigate.navigate('CreateWorkSchedule')}> 
@@ -363,63 +485,141 @@ const DoctorHomeScreen = () => {
           )}
         </View>
 
-        {/* Legend */}
-        <View style={styles.legend}>
-          <View style={styles.legendRow}>
-            <View style={[styles.legendDot, { backgroundColor: "#e8f7ff" }]} />
-            <Text style={styles.legendText}>Trống</Text>
-          </View>
-          <View style={styles.legendRow}>
-            <View style={[styles.legendDot, { backgroundColor: "#ffe9e9" }]} />
-            <Text style={styles.legendText}>Đã chặn</Text>
-          </View>
-        </View>
+       
 
-        {/* Appointments list */}
         <View style={styles.sectionHeader}>
           <View style={{ flexDirection: "row" }}>
             <TouchableOpacity onPress={() => setActiveApptTab("today")}>
               <Text style={[styles.tab, activeApptTab === "today" && styles.tabActive]}>
-                Hôm nay ({sampleApptsToday.length})
+                Hôm nay ({appointmentsToday.length})
               </Text>
             </TouchableOpacity>
             <View style={{ width: 12 }} />
             <TouchableOpacity onPress={() => setActiveApptTab("upcoming")}>
               <Text style={[styles.tab, activeApptTab === "upcoming" && styles.tabActive]}>
-                Sắp tới ({sampleApptsUpcoming.length})
+                Sắp tới ({appointmentsUpcoming.length})
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {(activeApptTab === "today" ? sampleApptsToday : sampleApptsUpcoming).map((a) => (
-          <View key={a.id} style={styles.apptCard}>
-            <View style={styles.apptLeft}>
-              <View style={styles.circleAvatar}>
-                <Text style={styles.circleAvatarText}>
-                  {a.name?.charAt(0)?.toUpperCase()}
-                </Text>
-              </View>
-            </View>
-            <View style={{ flex: 1 }}>
+        {(activeApptTab === "today" ? appointmentsToday : appointmentsUpcoming).map((a) => (
+          <TouchableOpacity
+            key={a.id}
+            style={styles.apptCard}
+            activeOpacity={0.8}
+            onPress={() =>
+              navigate.navigate('DoctorConsultationDetailScreen', {
+                registrationId: a.id,
+                patientName: a.elderlyName,
+                patientGender: a.gender,
+                patientDob: a.dob,
+                scheduledDate: a.scheduledDate,
+                slot: a.slot,
+              })
+            }
+          >
+            <View style={{ width: "100%" }}>
               <View style={styles.rowBetween}>
-                <Text style={styles.apptName} numberOfLines={1}>
-                  {a.name}
-                </Text>
-                <Text style={styles.apptTime}>{a.time}</Text>
+                
+                <Tag size="sm" type={a.statusTagType || "blue"}>
+                  {a.status || "—"}
+                </Tag>
               </View>
-              <Text style={styles.apptMeta}>{a.age} tuổi • {a.type}</Text>
-              <View style={{ flexDirection: "row", marginTop: 8 }}>
-                {a.status === "Hoàn thành" && <Tag size="sm" type="success">Hoàn thành</Tag>}
-                {a.status === "Sắp đến" && <Tag size="sm" type="blue">Sắp đến</Tag>}
-                {a.status === "Đã đặt" && <Tag size="sm" type="primary">Đã đặt</Tag>}
-                {a.status === "Chờ khám" && <Tag size="sm" type="warn">Chờ khám</Tag>}
+
+              {a.statusKey === "canceled" && !!a.cancelReason && (
+                <View style={styles.cancelReasonBox}>
+                  <Text style={styles.cancelReasonLabel}>Lý do hủy</Text>
+                  <Text style={styles.cancelReasonText} numberOfLines={2}>
+                    {a.cancelReason}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Người cao tuổi</Text>
+                <View style={styles.row}>
+                  <View style={styles.circleAvatar}>
+                    {a.elderlyAvatar ? (
+                      <Image
+                        source={{ uri: a.elderlyAvatar }}
+                        style={styles.circleAvatarImg}
+                      />
+                    ) : (
+                      <Text style={styles.circleAvatarText}>
+                        {a.elderlyName?.charAt(0)?.toUpperCase() || "N"}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.personInfo}>
+                    <Text style={styles.personName} numberOfLines={1}>
+                      {a.elderlyName}
+                    </Text>
+                    <Text style={styles.personSub} numberOfLines={1}>
+                      Vai trò: Người cao tuổi
+                    </Text>
+                    {!!a.elderlyAddress && (
+                      <Text style={styles.personSub} numberOfLines={1}>
+                        Địa chỉ: {a.elderlyAddress}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>Người đặt lịch</Text>
+                <View style={styles.row}>
+                  <View style={styles.circleAvatar}>
+                    {a.registrantAvatar ? (
+                      <Image
+                        source={{ uri: a.registrantAvatar }}
+                        style={styles.circleAvatarImg}
+                      />
+                    ) : (
+                      <Text style={styles.circleAvatarText}>
+                        {a.registrantName?.charAt(0)?.toUpperCase() || "N"}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.personInfo}>
+                    <Text style={styles.personName} numberOfLines={1}>
+                      {a.registrantName}
+                    </Text>
+                    <Text style={styles.personSub} numberOfLines={1}>
+                      Vai trò: Người thân đặt lịch
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.section,
+                  styles.rowBetween,
+                  { alignItems: "flex-start" },
+                ]}
+              >
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={styles.sectionLabel}>Ngày khám</Text>
+                  <Text style={styles.timeText}>
+                    {a.dateLabel || "—"}
+                    {a.type ? " • " + a.type : ""}
+                  </Text>
+                  {!!a.note && (
+                    <Text style={styles.noteText} numberOfLines={2}>
+                      Ghi chú: {a.note}
+                    </Text>
+                  )}
+                </View>
+                {a.paymentLabel ? (
+                  <Tag size="sm" type={a.paymentTagType || "primary"}>
+                    {a.paymentLabel}
+                  </Tag>
+                ) : null}
               </View>
             </View>
-            <TouchableOpacity style={styles.moreBtn} activeOpacity={0.7}>
-              <Text style={styles.moreBtnText}>⋯</Text>
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         ))}
       </ScrollView>
     </SafeAreaView>
@@ -428,7 +628,6 @@ const DoctorHomeScreen = () => {
 
 export default DoctorHomeScreen;
 
-// ---------- styles ----------
 const CARD_BG = "#ffffff";
 const SURFACE = "#f6f7fb";
 
@@ -464,7 +663,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   row: { flexDirection: "row", alignItems: "center" },
-  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
 
   avatar: {
     width: 56, height: 56, borderRadius: 12,
@@ -480,7 +679,6 @@ const styles = StyleSheet.create({
   doctorName: { fontSize: isSmall ? 16 : 18, fontWeight: "700", color: "#111827" },
   doctorSub: { color: "#4b5563", marginTop: 2 },
 
-  // Hàng meta cho ⭐ / đánh giá / năm KN (wrap để không tràn)
   metaRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: 8 },
   metaItem: { marginRight: 8, marginBottom: 6 },
 
@@ -495,7 +693,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: isSmall ? 15 : 16, fontWeight: "700", color: "#0f172a" },
   sectionRight: { flexDirection: "row", alignItems: "center" },
 
-  // ----- Stats (2x2) -----
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -572,6 +769,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
+  apptTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0f172a",
+    marginBottom: 2,
+  },
   apptLeft: { paddingRight: 12 },
   circleAvatar: {
     width: 36,
@@ -581,14 +784,43 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  circleAvatarImg: { width: "100%", height: "100%", borderRadius: 18 },
   circleAvatarText: { fontWeight: "700", color: "#234", fontSize: 14 },
-  apptName: { fontWeight: "700", fontSize: 14, color: "#0f172a" },
   apptTime: { color: "#0b5fff", fontWeight: "700" },
-  apptMeta: { color: "#6b7280", marginTop: 2 },
-  moreBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center" },
-  moreBtnText: { fontSize: 18, color: "#94a3b8" },
+  section: { marginTop: 14 },
+  sectionLabel: {
+    fontSize: 12,
+    color: "#64748B",
+    marginBottom: 8,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  personInfo: { marginLeft: 12, flex: 1 },
+  personName: { fontSize: 15, fontWeight: "600", color: "#111827" },
+  personSub: { fontSize: 12, color: "#6B7280", marginTop: 2 },
+  timeText: { fontSize: 14, fontWeight: "600", color: "#111827" },
+  noteText: { fontSize: 12, color: "#374151", marginTop: 4 },
+  cancelReasonBox: {
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FECACA",
+  },
+  cancelReasonLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#991B1B",
+    marginBottom: 2,
+    textTransform: "uppercase",
+  },
+  cancelReasonText: {
+    fontSize: 12,
+    color: "#7F1D1D",
+  },
 
-  // Tags
   tagBase: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   tagText: { color: "#0f172a", fontWeight: "700", fontSize: 12 },
   tagBaseSm: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },

@@ -1,5 +1,5 @@
-// src/screens/Doctor/ViewDoctorProfileScreen.jsx
 import React, { useCallback, useEffect, useState } from 'react';
+import PropTypes from 'prop-types';
 import {
   ActivityIndicator,
   Image,
@@ -72,11 +72,6 @@ const pickDisplayName = (p, u) =>
     (u?.email && String(u.email).split('@')[0])
   );
 
-const formatVND = (v) => {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return '—';
-  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.') + 'đ';
-};
 /* -------------------------------------------------------------- */
 
 const DEFAULT_AVATAR =
@@ -85,7 +80,7 @@ const DEFAULT_AVATAR =
 const ViewDoctorProfileScreen = ({ navigation, route }) => {
   const profileId = route?.params?.profileId || null;
 
-  const [selectedTab, setSelectedTab] = useState('profile');
+  const [selectedTab] = useState('profile');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -135,13 +130,27 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
   const avatarUrlRaw = pickAvatarUrl(profile, userNode) || DEFAULT_AVATAR;
   const avatarUri = avatarFailed ? DEFAULT_AVATAR : avatarUrlRaw;
 
-  const specialty = profile?.specializations || '—';
+  // Lĩnh vực chuyên môn: ưu tiên trường specialization (string) mới
+  const specialty = (() => {
+    const directSpec = (profile?.specialization || profile?.doctorProfile?.specialization || '')
+      .toString()
+      .trim();
+    if (directSpec) return directSpec;
+
+    if (Array.isArray(profile?.specializations) && profile.specializations.length) {
+      return profile.specializations.join(', ');
+    }
+    if (
+      profile?.doctorProfile?.specializations &&
+      Array.isArray(profile.doctorProfile.specializations) &&
+      profile.doctorProfile.specializations.length
+    ) {
+      return profile.doctorProfile.specializations.join(', ');
+    }
+    return '—';
+  })();
   const experienceYears = Number.isFinite(profile?.experience) ? `${profile.experience} năm` : '—';
   const hospitalName = profile?.hospitalName || '—';
-  const address = profile?.address || '—';
-
-  const onlineFee = formatVND(profile?.consultationFees?.online);
-  const offlineFee = formatVND(profile?.consultationFees?.offline);
 
   const renderStars = (val = 0) => {
     const full = Math.floor(val);
@@ -261,27 +270,7 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
                 </TouchableOpacity>
               </View>
 
-              {/* Fees */}
-              <View style={styles.feesContainer}>
-                <View style={styles.feeItem}>
-                  <View style={styles.feeIcon}>
-                    <Icon name="videocam-outline" size={20} color="#ffffff" />
-                  </View>
-                  <Text style={styles.feeLabel}>Tư vấn Online</Text>
-                  <Text style={styles.feeAmount}>{onlineFee}</Text>
-                </View>
-
-                <View style={styles.feeItem}>
-                  <View style={styles.feeIcon}>
-                    <MaterialIcons name="local-hospital" size={20} color="#ffffff" />
-                  </View>
-                  <Text style={styles.feeLabel}>Tại phòng khám</Text>
-                  <Text style={styles.feeAmount}>{offlineFee}</Text>
-                </View>
-              </View>
             </View>
-
-
 
             {/* Professional */}
             <View style={styles.section}>
@@ -324,20 +313,6 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
               </View>
             </View>
 
-            {/* Workplace */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <View style={[styles.sectionIcon, { backgroundColor: '#FFF3E0' }]}>
-                  <MaterialIcons name="location-on" size={20} color="#FF9800" />
-                </View>
-                <View style={styles.sectionTitleContainer}>
-                  <Text style={styles.sectionTitle}>Nơi làm việc hiện tại</Text>
-                  <Text style={styles.sectionSubtitle}>Thông tin cơ sở y tế</Text>
-                </View>
-              </View>
-
-              <Text style={styles.workplaceName}>{hospitalName}</Text>
-            </View>
 
             {/* Statistics */}
             <View style={styles.statisticsContainer}>
@@ -349,13 +324,25 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
                 <Text style={styles.statLabel}>Đánh giá TB</Text>
               </View>
 
-              <View style={styles.statItem}>
+              <TouchableOpacity
+                style={styles.statItem}
+                activeOpacity={0.8}
+                onPress={() => {
+                  const doctorUserId = userNode?._id;
+                  if (!doctorUserId) return;
+                  navigation?.navigate?.('DoctorReviews', {
+                    userId: String(doctorUserId),
+                    avgRating: rating,
+                    totalRatings,
+                  });
+                }}
+              >
                 <View style={styles.statIcon}>
                   <MaterialIcons name="assignment" size={24} color="#4CAF50" />
                 </View>
                 <Text style={styles.statNumber}>{totalRatings}</Text>
                 <Text style={styles.statLabel}>Lượt đánh giá</Text>
-              </View>
+              </TouchableOpacity>
 
               <View style={styles.statItem}>
                 <View style={styles.statIcon}>
@@ -378,6 +365,7 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </>
         )}
+        
       </ScrollView>
     </SafeAreaView>
   );
@@ -513,5 +501,17 @@ const styles = StyleSheet.create({
   statNumber: { fontSize: 20, fontWeight: '700', color: '#000000', marginBottom: 4 },
   statLabel: { fontSize: 12, color: '#666666', textAlign: 'center' },
 });
+
+ViewDoctorProfileScreen.propTypes = {
+  navigation: PropTypes.shape({
+    navigate: PropTypes.func,
+    goBack: PropTypes.func,
+  }).isRequired,
+  route: PropTypes.shape({
+    params: PropTypes.shape({
+      profileId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    }),
+  }).isRequired,
+};
 
 export default ViewDoctorProfileScreen;

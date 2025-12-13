@@ -55,6 +55,8 @@ import DoctorHomeScreen from '../screens/Site/DoctorHomeScreen.jsx';
 import ProfileDoctorScreen from '../screens/Doctor/ProfileScreen.jsx';
 import ScheduleScreen from '../screens/Doctor/ScheduleScreen.jsx';
 import ReviewsScreen from '../screens/Doctor/ReviewsScreen.jsx';
+import ConsulationSummaryScreen from '../screens/Doctor/ConsulationSummaryScreen.jsx';
+import ListSumaryScreen from '../screens/Doctor/ListSumaryScreen.jsx';
 
 
 import SupporterBookingListFamilyScreen from '../screens/SupporterService/SupporterBookingListFamilyScreen.jsx';
@@ -78,7 +80,7 @@ import DoctorMyBookingListScreen from '../screens/DoctorService/DoctorMyBookingL
 import ProfileSupporterScreen from '../screens/SupporterService/ProfileSupporterScreen.jsx';
 // HOC footer
 import withFooter from '../components/withFooter';
-
+ 
 const Stack = createStackNavigator();
 
 // Component wrapper để sử dụng hooks INSIDE NavigationContainer
@@ -470,6 +472,17 @@ const NavigationContent = ({ initialRouteName }) => {
         <Stack.Screen
           name="DoctorHome"
           component={withFooter(DoctorHomeScreen, 'DoctorHome')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ConsulationSummary"
+          component={withFooter(ConsulationSummaryScreen, 'DoctorHome')}
+          options={{ headerShown: false }}
+        />
+
+        <Stack.Screen
+          name="ListSumary"
+          component={withFooter(ListSumaryScreen, 'DoctorHome')}
           options={{ headerShown: false }}
         />
 
