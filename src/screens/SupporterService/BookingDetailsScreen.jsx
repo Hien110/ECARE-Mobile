@@ -563,7 +563,13 @@ const BookingDetailScreen = ({ route, navigation }) => {
   // Kiểm tra xem có được phép hủy không (chỉ hủy trước ngày bắt đầu)
   const now = new Date();
   const startDate = booking?.startDate ? new Date(booking.startDate) : null;
+  const endDate = booking?.endDate ? new Date(booking.endDate) : null;
   const isBeforeStartDate = startDate ? now < startDate : false;
+  
+  // Kiểm tra xem ngày hôm nay có phải ngày endDate không (chỉ hoàn thành khi bằng endDate)
+  const isSameEndDate = endDate ? 
+    (now.toLocaleDateString('vi-VN', { timeZone: VN_TZ }) === 
+     endDate.toLocaleDateString('vi-VN', { timeZone: VN_TZ })) : false;
   
   const disabledCancelBase = ['canceled', 'completed'].includes(statusKey);
   
@@ -577,7 +583,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
   // Supporter flow buttons
   const canAccept = isSupporter && statusKey === 'pending';
   const canStart = isSupporter && statusKey === 'confirmed';
-  const canComplete = isSupporter && statusKey === 'in_progress';
+  const canComplete = isSupporter && statusKey === 'in_progress' && isSameEndDate;
 
   const priceText =
     typeof booking?.priceAtBooking === 'number'
@@ -1006,6 +1012,23 @@ const BookingDetailScreen = ({ route, navigation }) => {
                       </Text>
                     )}
                   </TouchableOpacity>
+                </View>
+              )}
+
+              {isSupporter && statusKey === 'in_progress' && !isSameEndDate && (
+                <View
+                  style={{
+                    backgroundColor: '#FEF3C7',
+                    borderColor: '#FCD34D',
+                    borderWidth: 1,
+                    padding: 12,
+                    borderRadius: 12,
+                    marginTop: 20,
+                  }}
+                >
+                  <Text style={{ color: '#92400E', fontSize: 14 }}>
+                    Bạn chỉ có thể hoàn thành công việc vào ngày {endDate ? formatVNDateLong(endDate) : '—'}
+                  </Text>
                 </View>
               )}
 
