@@ -177,6 +177,40 @@ const PaymentServiceScreen = () => {
     (doctor.profile && doctor.profile.hospitalName) ||
     '';
 
+  const elderlyCurrentAddress =
+    beneficiary.currentAddress ||
+    (beneficiary.elderly && beneficiary.elderly.currentAddress) ||
+    (beneficiary.user && beneficiary.user.currentAddress) ||
+    '';
+
+  const [fetchedElderlyAddress, setFetchedElderlyAddress] = useState('');
+  const [fetchingAddress, setFetchingAddress] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchAddress = async () => {
+      if (!elderlyId) return;
+      if (elderlyCurrentAddress) return; // already have address from params
+      try {
+        setFetchingAddress(true);
+        const res = await userService.getUserById(elderlyId);
+        if (mounted && res?.success && res.data) {
+          const addr = res.data.currentAddress || '';
+          setFetchedElderlyAddress(addr);
+        }
+      } catch (e) {
+      } finally {
+        if (mounted) setFetchingAddress(false);
+      }
+    };
+    fetchAddress();
+    return () => {
+      mounted = false;
+    };
+  }, [elderlyId, elderlyCurrentAddress]);
+
+  const elderlyCurrentAddressFinal = elderlyCurrentAddress || fetchedElderlyAddress || '';
+
   const rawPriceNumber = useMemo(() => {
     const fromParam =
       priceParam != null && !Number.isNaN(Number(priceParam))
@@ -455,6 +489,7 @@ const PaymentServiceScreen = () => {
           <View style={styles.sectionSeparator} />
           <Text style={styles.sectionTitle}>Bác sĩ phụ trách</Text>
           <InfoRow label="Họ và tên:" value={doctorName} />
+          <InfoRow label="Địa chỉ thăm khám:" value={elderlyCurrentAddressFinal} />
           <InfoRow label="Chuyên khoa:" value={doctorSpecializations} />
           <InfoRow label="Bệnh viện / cơ sở:" value={doctorHospital} />
 
