@@ -91,8 +91,13 @@ class SocketService {
     // Connection events
     this.socket.on('connect', () => {
       console.log('✅ Socket connected successfully');
+      console.log('🆔 Socket ID:', this.socket.id);
       this.isConnected = true;
       this.reconnectAttempts = 0;
+      
+      // 🔧 CRITICAL: Re-register event listeners sau khi reconnect
+      // Đảm bảo tất cả listeners được thiết lập lại
+      this.registerMessageListeners();
       
       // Gửi các tin nhắn đang chờ
       this.flushMessageQueue();
@@ -118,6 +123,35 @@ class SocketService {
       this.emit('socket_connect_error', error);
       this.reconnect();
     });
+
+    // Register message & event listeners
+    this.registerMessageListeners();
+  }
+
+  // 🆕 Tách message listeners thành method riêng để có thể re-register
+  registerMessageListeners() {
+    if (!this.socket) return;
+
+    console.log('📝 Registering message listeners...');
+
+    // Remove existing listeners để tránh duplicate (trong trường hợp reconnect)
+    this.socket.off('new_message');
+    this.socket.off('message_error');
+    this.socket.off('messages_read');
+    this.socket.off('user_typing');
+    this.socket.off('user_stop_typing');
+    this.socket.off('conversation_updated');
+    this.socket.off('sos:new');
+    this.socket.off('sos_call_request');
+    this.socket.off('sos_call_timeout');
+    this.socket.off('sos_call_cancelled');
+    this.socket.off('sos_call_no_answer');
+    this.socket.off('video_call_request');
+    this.socket.off('video_call_accepted');
+    this.socket.off('video_call_rejected');
+    this.socket.off('video_call_cancelled');
+    this.socket.off('video_call_ended');
+    this.socket.off('video_call_busy');
 
     // Message events
     this.socket.on('new_message', (data) => {

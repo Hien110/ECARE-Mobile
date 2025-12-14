@@ -36,11 +36,14 @@ class CallService {
    */
   markCallAsProcessed(callId) {
     this.processedCalls.add(callId);
+    console.log(`✅ Call marked as processed: ${callId}`);
     
-    // Auto cleanup sau 5 phút để tránh memory leak
+    // 🔧 IMPROVED: Tăng thời gian auto cleanup từ 5 phút lên 10 phút
+    // để tránh re-process calls quá sớm
     setTimeout(() => {
       this.processedCalls.delete(callId);
-    }, 5 * 60 * 1000);
+      console.log(`🗑️  Call removed from processed set: ${callId}`);
+    }, 10 * 60 * 1000); // 10 phút
   }
 
   /**

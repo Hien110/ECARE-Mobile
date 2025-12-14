@@ -55,7 +55,7 @@ import DoctorHomeScreen from '../screens/Site/DoctorHomeScreen.jsx';
 import ProfileDoctorScreen from '../screens/Doctor/ProfileScreen.jsx';
 import ScheduleScreen from '../screens/Doctor/ScheduleScreen.jsx';
 import ReviewsScreen from '../screens/Doctor/ReviewsScreen.jsx';
-import ConsulationSummaryScreen from '../screens/Doctor/ConsulationSummaryScreen.jsx';
+import ConsulationSummaryScreen from '../screens/Doctor/consulationSummaryScreen.jsx';
 import ListSumaryScreen from '../screens/Doctor/ListSumaryScreen.jsx';
 
 
