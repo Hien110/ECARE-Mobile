@@ -38,7 +38,7 @@ const SupportFinderScreen = ({ navigation, route }) => {
   const [currentLocation, setCurrentLocation] = useState(null); // location mặc định của người già (từ backend)
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('distance'); // "distance" | "rating"
+  const [activeFilter, setActiveFilter] = useState('rating'); // "rating"
   const [hasCheckedLocation, setHasCheckedLocation] = useState(false);
   const [user, setUser] = useState(null); // người già nhận lịch
 
@@ -260,72 +260,13 @@ const SupportFinderScreen = ({ navigation, route }) => {
         return;
       }
       console.log("danh sách người hỗ trợ", profiles);
-      
-      // ---- Tính khoảng cách ----
-      const destinations = profiles
-        .filter(p => {
-          const c = p?.user?.currentLocation?.coordinates;
-          return (
-            Array.isArray(c) &&
-            c.length === 2 &&
-            c.every(n => Number.isFinite(Number(n)))
-          );
-        })
-        .map(p => {
-          const lon = Number(p.user.currentLocation.coordinates[0]);
-          const lat = Number(p.user.currentLocation.coordinates[1]);
-          return { lat, lon, profile: p };
-        });
 
-        console.log("Khoảng cách", destinations);
-        
-      const test = await routingService.calculateRoute(15.977962, 108.261863, 15.978579, 108.251182);
-      console.log("TEst", test);
-      let distanceResults = [];
-      if (userLocation && destinations.length > 0) {
-        distanceResults = await routingService.calculateMultipleDistances(
-          userLocation.latitude,
-          userLocation.longitude,
-          destinations,
-        );
-      }
-
-      
-      console.log("khoảng cách từng người", distanceResults);
-      console.log("Tọa độ mỗi người",userLocation);
-      
-
-      const supportersWithDistance = profiles.map(profile => {
-        let distance = null,
-          duration = null,
-          distanceText = 'N/A',
-          durationText = '';
-        const c = profile?.user?.currentLocation?.coordinates;
-
-        if (userLocation && Array.isArray(c) && c.length === 2) {
-          const idx = destinations.findIndex(
-            d => d.profile?._id === profile?._id,
-          );
-          const r = idx > -1 ? distanceResults[idx] : null;
-          if (r?.success) {
-            distance = r.distance;
-            duration = r.duration;
-            if (typeof distance === 'number') {
-              distanceText = `${distance.toFixed(1)}km`;
-              if (typeof duration === 'number')
-                durationText = ` • ~${Math.round(duration)}p`;
-            }
-          }
-        }
-
+      const supportersWithoutDistance = profiles.map(profile => {
         return {
           id: profile?._id ?? `${Math.random()}`,
           name: profile?.user?.fullName || 'Chưa có tên',
           rating: profile?.ratingStats?.averageRating || 0,
           reviewCount: profile?.ratingStats?.totalRatings || 0,
-          distance: distanceText + durationText,
-          distanceValue: distance,
-          duration,
           experience: profile?.experience?.description || 'Chưa có mô tả',
           avatar:
             profile?.user?.avatar ||
@@ -337,15 +278,7 @@ const SupportFinderScreen = ({ navigation, route }) => {
         };
       });
 
-      // ---- Sắp xếp theo khoảng cách ----
-      supportersWithDistance.sort((a, b) => {
-        if (a.distanceValue == null && b.distanceValue == null) return 0;
-        if (a.distanceValue == null) return 1;
-        if (b.distanceValue == null) return -1;
-        return a.distanceValue - b.distanceValue;
-      });
-
-      setSupporters(supportersWithDistance);
+      setSupporters(supportersWithoutDistance);
       setHasCheckedLocation(true);
     } catch (e) {
       console.error('Error fetching supporters:', e);
@@ -575,18 +508,9 @@ const SupportFinderScreen = ({ navigation, route }) => {
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
-    if (activeFilter === 'distance') {
-      arr.sort((a, b) => {
-        if (a.distanceValue == null && b.distanceValue == null) return 0;
-        if (a.distanceValue == null) return 1;
-        if (b.distanceValue == null) return -1;
-        return a.distanceValue - b.distanceValue;
-      });
-    } else if (activeFilter === 'rating') {
-      arr.sort((a, b) => b.rating - a.rating);
-    }
+    arr.sort((a, b) => b.rating - a.rating);
     return arr;
-  }, [filtered, activeFilter]);
+  }, [filtered]);
 
   // ---- UI elements -------------------------------------------------------
   const StarRow = ({ rating }) => {
@@ -610,7 +534,7 @@ const SupportFinderScreen = ({ navigation, route }) => {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         {items}
-        <Text style={styles.ratingText}> {rating} </Text>
+        <Text style={styles.ratingText}> {rating.toFixed(1)} </Text>
       </View>
     );
   };
@@ -648,9 +572,6 @@ const SupportFinderScreen = ({ navigation, route }) => {
           <Text numberOfLines={2} style={styles.bio}>
             {p.experience}
           </Text>
-          <View style={{ marginTop: 6 }}>
-            <Badge text={p.distance} />
-          </View>
         </View>
       </View>
 
@@ -684,44 +605,6 @@ const SupportFinderScreen = ({ navigation, route }) => {
     </View>
   );
 
-  // Banner hiển thị địa chỉ đang dùng + nút Thay đổi
-  const LocationNotice = () => {
-    if (!effectiveAddress && !effectiveLocation) return null;
-
-    const addressText =
-      effectiveAddress ||
-      (effectiveLocation
-        ? `(${effectiveLocation.latitude?.toFixed(
-            5,
-          )}, ${effectiveLocation.longitude?.toFixed(5)})`
-        : '');
-
-    return (
-      <View style={styles.locationNotice}>
-        <View
-          style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1 }}
-        >
-          <Icon
-            name="location-outline"
-            size={16}
-            color="#0ea5e9"
-            style={{ marginTop: 2 }}
-          />
-          <View style={{ marginLeft: 8, flex: 1 }}>
-            <Text style={styles.locationTitle}>
-              Đang dùng địa chỉ này để đo khoảng cách
-            </Text>
-            <Text style={styles.locationText}>{addressText}</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.changeBtn} onPress={openAddressModal}>
-          <Text style={styles.changeBtnText}>Thay đổi</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
   const ListHeader = () => (
     <>
       {/* Header */}
@@ -753,19 +636,11 @@ const SupportFinderScreen = ({ navigation, route }) => {
       {/* Filters */}
       <View style={styles.filterRow}>
         <Chip
-          label="Khoảng cách"
-          active={activeFilter === 'distance'}
-          onPress={() => setActiveFilter('distance')}
-        />
-        <Chip
           label="Đánh giá"
           active={activeFilter === 'rating'}
           onPress={() => setActiveFilter('rating')}
         />
       </View>
-
-      {/* Location notice */}
-      <LocationNotice />
     </>
   );
 
@@ -805,22 +680,6 @@ const SupportFinderScreen = ({ navigation, route }) => {
                 Thử tìm kiếm với từ khoá khác
               </Text>
             </View>
-          }
-          ListFooterComponent={
-            sorted.length > 0 ? (
-              <View style={styles.infoContainer}>
-                <Text style={styles.infoTitle}>ℹ️ Thông tin khoảng cách:</Text>
-                <Text style={styles.infoText}>
-                  • Khoảng cách tính theo đường đi thực tế.
-                </Text>
-                <Text style={styles.infoText}>
-                  • "~Xp" là thời gian di chuyển ước tính.
-                </Text>
-                <Text style={styles.infoText}>
-                  • "N/A" nếu không tính được đường đi.
-                </Text>
-              </View>
-            ) : null
           }
         />
       )}
