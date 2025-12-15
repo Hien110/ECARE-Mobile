@@ -65,8 +65,17 @@ const PaymentServiceScreen = () => {
 
       try {
         const res = await doctorBookingService.getDefaultConsultationPrice();
-        if (res?.success && typeof res.data === 'number') {
-          setDefaultPrice(res.data);
+        if (res?.success) {
+          // Backend may return { success: true, data: { price } } or { success: true, data: 200000 }
+          const priceFromObj = res.data && typeof res.data === 'object' && typeof res.data.price === 'number' ? res.data.price : null;
+          const priceDirect = typeof res.data === 'number' ? res.data : null;
+          const final = priceFromObj ?? priceDirect;
+          if (final != null && !Number.isNaN(Number(final))) {
+            console.log('[PaymentServiceScreen] default price fetched:', final);
+            setDefaultPrice(Number(final));
+          } else {
+            console.log('[PaymentServiceScreen] default price not available from backend');
+          }
         }
       } catch (e) {
         // bỏ qua, sẽ hiển thị "-" nếu không có giá
@@ -216,12 +225,20 @@ const PaymentServiceScreen = () => {
       priceParam != null && !Number.isNaN(Number(priceParam))
         ? Number(priceParam)
         : null;
-    const fromRegistration =
-      registration &&
-      registration.price != null &&
-      !Number.isNaN(Number(registration.price))
-        ? Number(registration.price)
-        : null;
+    const fromRegistration = (() => {
+      if (!registration) return null;
+      if (registration.price != null && !Number.isNaN(Number(registration.price))) {
+        return Number(registration.price);
+      }
+      if (
+        registration.packageRef &&
+        registration.packageRef.price != null &&
+        !Number.isNaN(Number(registration.packageRef.price))
+      ) {
+        return Number(registration.packageRef.price);
+      }
+      return null;
+    })();
 
     const fromDefault =
       defaultPrice != null && !Number.isNaN(Number(defaultPrice))
