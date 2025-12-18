@@ -96,15 +96,26 @@ const paymentMethodLabelMap = {
   online: 'Online',
 };
 
-// Trạng thái thời gian khám theo giờ UTC: 'before' | 'within' | 'after' | 'unknown'
+// Trạng thái thời gian khám theo giờ (local time): 'before' | 'within' | 'after' | 'unknown'
 const getConsultationWindowStateUtc = (scheduledDate, slot) => {
   if (!scheduledDate || !slot) return 'unknown';
-  const base = new Date(scheduledDate);
+  // Parse date-only strings (YYYY-MM-DD) as local date to avoid UTC shift
+  let base;
+  if (typeof scheduledDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) {
+    const [yStr, mStr, dStr] = scheduledDate.split('-');
+    const y = Number(yStr);
+    const m = Number(mStr) - 1;
+    const d = Number(dStr);
+    if (Number.isNaN(y) || Number.isNaN(m) || Number.isNaN(d)) return 'unknown';
+    base = new Date(y, m, d);
+  } else {
+    base = new Date(scheduledDate);
+  }
   if (Number.isNaN(base.getTime())) return 'unknown';
 
-  const year = base.getUTCFullYear();
-  const month = base.getUTCMonth();
-  const day = base.getUTCDate();
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const day = base.getDate();
 
   let startHour;
   let endHour;
@@ -118,9 +129,15 @@ const getConsultationWindowStateUtc = (scheduledDate, slot) => {
     return 'unknown';
   }
 
-  const start = new Date(Date.UTC(year, month, day, startHour, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month, day, endHour, 0, 0, 0));
+  // build start/end in local timezone
+  const start = new Date(year, month, day, startHour, 0, 0, 0);
+  const end = new Date(year, month, day, endHour, 0, 0, 0);
   const now = new Date();
+
+  // debug log
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[DoctorConsultationDetail] scheduledDate=', scheduledDate, 'slot=', slot, 'start=', start.toString(), 'end=', end.toString(), 'now=', now.toString());
+  }
 
   if (now.getTime() < start.getTime()) return 'before';
   if (now.getTime() > end.getTime()) return 'after';

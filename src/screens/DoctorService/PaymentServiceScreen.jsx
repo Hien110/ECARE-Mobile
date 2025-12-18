@@ -48,6 +48,7 @@ const PaymentServiceScreen = () => {
   const [loadingQR, setLoadingQR] = useState(false);
   const [qrError, setQrError] = useState('');
   const [defaultPrice, setDefaultPrice] = useState(null);
+  const [priceUnavailable, setPriceUnavailable] = useState(false);
   const [note, setNote] = useState('');
 
   useEffect(() => {
@@ -56,8 +57,9 @@ const PaymentServiceScreen = () => {
         priceParam != null && !Number.isNaN(Number(priceParam));
       const hasRegistrationPrice =
         registration &&
-        registration.price != null &&
-        !Number.isNaN(Number(registration.price));
+        registration.packageRef &&
+        registration.packageRef.price != null &&
+        !Number.isNaN(Number(registration.packageRef.price));
 
       if (hasPriceParam || hasRegistrationPrice) {
         return;
@@ -73,12 +75,17 @@ const PaymentServiceScreen = () => {
           if (final != null && !Number.isNaN(Number(final))) {
             console.log('[PaymentServiceScreen] default price fetched:', final);
             setDefaultPrice(Number(final));
+            setPriceUnavailable(false);
           } else {
             console.log('[PaymentServiceScreen] default price not available from backend');
+            setDefaultPrice(null);
+            setPriceUnavailable(true);
           }
         }
       } catch (e) {
-        // bỏ qua, sẽ hiển thị "-" nếu không có giá
+        // Nếu lỗi khi gọi backend, đánh dấu không có giá để hiển thị fallback
+        setDefaultPrice(null);
+        setPriceUnavailable(true);
       }
     };
 
@@ -227,9 +234,6 @@ const PaymentServiceScreen = () => {
         : null;
     const fromRegistration = (() => {
       if (!registration) return null;
-      if (registration.price != null && !Number.isNaN(Number(registration.price))) {
-        return Number(registration.price);
-      }
       if (
         registration.packageRef &&
         registration.packageRef.price != null &&
@@ -518,7 +522,11 @@ const PaymentServiceScreen = () => {
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Giá gói khám:</Text>
             <Text style={styles.priceValue}>
-              {displayPrice ? `${displayPrice} đ` : '—'}
+                {displayPrice
+                  ? `${displayPrice} đ`
+                  : priceUnavailable
+                  ? 'Liên hệ CSKH'
+                  : '—'}
             </Text>
           </View>
 
@@ -630,10 +638,10 @@ const PaymentServiceScreen = () => {
           <TouchableOpacity
             style={[
               styles.confirmButton,
-              (!selectedMethod || submitting) && styles.confirmButtonDisabled,
+              (!selectedMethod || submitting || priceUnavailable) && styles.confirmButtonDisabled,
             ]}
             activeOpacity={0.8}
-            disabled={!selectedMethod || submitting}
+            disabled={!selectedMethod || submitting || priceUnavailable}
             onPress={handleConfirmPayment}
           >
             <Text style={styles.confirmButtonText}>
