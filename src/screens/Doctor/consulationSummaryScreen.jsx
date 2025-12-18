@@ -15,33 +15,35 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import consultationSummaryService from '../../services/consultationSummaryService';
 
 const getConsultationWindowStateUtc = (scheduledDate, slot) => {
-	if (!scheduledDate || !slot) return 'unknown';
-	const base = new Date(scheduledDate);
-	if (Number.isNaN(base.getTime())) return 'unknown';
+	// Use local time comparison to avoid timezone/parsing inconsistencies
+    if (!scheduledDate || !slot) return 'unknown';
+    const base = new Date(scheduledDate);
+    if (Number.isNaN(base.getTime())) return 'unknown';
 
-	const year = base.getUTCFullYear();
-	const month = base.getUTCMonth();
-	const day = base.getUTCDate();
+    const year = base.getFullYear();
+    const month = base.getMonth();
+    const day = base.getDate();
 
-	let startHour;
-	let endHour;
-	if (slot === 'morning') {
-		startHour = 8;
-		endHour = 11;
-	} else if (slot === 'afternoon') {
-		startHour = 14;
-		endHour = 16;
-	} else {
-		return 'unknown';
-	}
+    let startHour;
+    let endHour;
+    if (slot === 'morning') {
+        startHour = 8;
+        endHour = 11;
+    } else if (slot === 'afternoon') {
+        startHour = 14;
+        endHour = 16;
+    } else {
+        return 'unknown';
+    }
 
-	const start = new Date(Date.UTC(year, month, day, startHour, 0, 0, 0));
-	const end = new Date(Date.UTC(year, month, day, endHour, 0, 0, 0));
-	const now = new Date();
+    // build start/end in local timezone
+    const start = new Date(year, month, day, startHour, 0, 0, 0);
+    const end = new Date(year, month, day, endHour, 0, 0, 0);
+    const now = new Date();
 
-	if (now.getTime() < start.getTime()) return 'before';
-	if (now.getTime() > end.getTime()) return 'after';
-	return 'within';
+    if (now.getTime() < start.getTime()) return 'before';
+    if (now.getTime() > end.getTime()) return 'after';
+    return 'within';
 };
 
 const ConsulationSummaryScreen = () => {

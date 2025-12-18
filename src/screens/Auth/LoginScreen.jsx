@@ -49,7 +49,7 @@ export default function LoginScreen() {
       const token = await userService.getToken();
       if (!token) return; 
 
-      const { data: user } = await userService.getUser();
+      let { data: user } = await userService.getUser();
       if (!user) {
         const res = await userService.getUserInfo();
         if (res?.success) {
