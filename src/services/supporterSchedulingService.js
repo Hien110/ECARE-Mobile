@@ -125,6 +125,25 @@ const supporterSchedulingService = {
         };
       }
   },
+
+  // Lấy danh sách đặt lịch theo status (confirmed, in_progress, canceled)
+  getSchedulingsByStatus: async (userId, status, limit = 10) => {
+    try {
+      const response = await api.post('/supporter-schedulings/by-status', {
+        userId,
+        status,
+        limit,
+      });
+      return {
+        success: true,
+        data: response.data.data,
+        message: response.data.message,
+      };
+    } catch (error) {
+      console.error('getSchedulingsByStatus error:', error);
+      throw error;
+    }
+  },
 };
 
 export default supporterSchedulingService;
