@@ -566,6 +566,11 @@ const BookingDetailScreen = ({ route, navigation }) => {
   const endDate = booking?.endDate ? new Date(booking.endDate) : null;
   const isBeforeStartDate = startDate ? now < startDate : false;
   
+  // Kiểm tra xem ngày hôm nay có phải ngày startDate không (chỉ tiến hành làm việc khi bằng startDate)
+  const isSameStartDate = startDate ? 
+    (now.toLocaleDateString('vi-VN', { timeZone: VN_TZ }) === 
+     startDate.toLocaleDateString('vi-VN', { timeZone: VN_TZ })) : false;
+  
   // Kiểm tra xem ngày hôm nay có phải ngày endDate không (chỉ hoàn thành khi bằng endDate)
   const isSameEndDate = endDate ? 
     (now.toLocaleDateString('vi-VN', { timeZone: VN_TZ }) === 
@@ -582,7 +587,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
 
   // Supporter flow buttons
   const canAccept = isSupporter && statusKey === 'pending';
-  const canStart = isSupporter && statusKey === 'confirmed';
+  const canStart = isSupporter && statusKey === 'confirmed' && isSameStartDate;
   const canComplete = isSupporter && statusKey === 'in_progress' && isSameEndDate;
 
   const priceText =
@@ -844,15 +849,6 @@ const BookingDetailScreen = ({ route, navigation }) => {
               </View>
             )}
 
-            {booking?.status === 'canceled' && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={styles.sectionLabel}>Lý do hủy</Text>
-                <Text style={styles.noteText}>
-                  {booking.cancelReason || 'Không có lý do'}
-                </Text>
-              </View>
-            )}
-
             {/* Thông báo hoàn tiền khi đã thanh toán */}
             {isPaid && booking?.status === 'canceled' && (
               <View style={styles.refundBox}>
@@ -1012,6 +1008,23 @@ const BookingDetailScreen = ({ route, navigation }) => {
                       </Text>
                     )}
                   </TouchableOpacity>
+                </View>
+              )}
+
+              {isSupporter && statusKey === 'confirmed' && !isSameStartDate && (
+                <View
+                  style={{
+                    backgroundColor: '#FEF3C7',
+                    borderColor: '#FCD34D',
+                    borderWidth: 1,
+                    padding: 12,
+                    borderRadius: 12,
+                    marginTop: 20,
+                  }}
+                >
+                  <Text style={{ color: '#92400E', fontSize: 14 }}>
+                    Bạn chỉ có thể tiến hành làm việc vào ngày {startDate ? formatVNDateLong(startDate) : '—'}
+                  </Text>
                 </View>
               )}
 

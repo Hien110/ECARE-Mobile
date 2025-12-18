@@ -11,6 +11,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 // import đúng service của bạn
 import { userService } from "../../services/userService";
+import supporterSchedulingService from "../../services/supporterSchedulingService";
 
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -20,71 +21,10 @@ export default function FinancialApp() {
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // --------- mock data (có thể thay bằng API thật) ----------
-  const quickActions = useMemo(
-    () => [
-      { id: 1, icon: "📝", title: "Yêu cầu mới", subtitle: "+ yêu cầu đăng ký" },
-      { id: 2, icon: "📅", title: "Lịch hẹn", subtitle: "Hoạt động hôm nay" },
-      { id: 3, icon: "🔧", title: "Hỗ trợ", subtitle: "Cập nhật thông tin" },
-      { id: 4, icon: "💰", title: "Thu nhập", subtitle: "Xem chi tiết" },
-    ],
-    []
-  );
-
-  const upcomingSchedule = useMemo(
-    () => [
-      {
-        id: 1,
-        name: "Bà Nguyễn Thị Lan",
-        time: "14:00",
-        address: "153 Đường ABC, Quận 1",
-        amount: "600.000đ",
-        avatar: "👩‍💼",
-      },
-      {
-        id: 2,
-        name: "Ông Trần Văn Minh",
-        time: "16:30",
-        address: "456 Đường XYZ, Quận 3",
-        amount: "400.000đ",
-        avatar: "👨‍💼",
-      },
-    ],
-    []
-  );
-
-  const recentActivities = useMemo(
-    () => [
-      {
-        id: 1,
-        type: "payment",
-        title: "Hoàn thành dịch vụ",
-        subtitle: "Bà Lê Thị Hương",
-        time: "10:00",
-        amount: "+240.000đ",
-        status: "completed",
-      },
-      {
-        id: 2,
-        type: "request",
-        title: "Nhận yêu cầu mới",
-        subtitle: "Ông Phạm Văn Đức",
-        time: "4 giờ trước",
-        amount: "+600.000đ",
-        status: "pending",
-      },
-      {
-        id: 3,
-        type: "payment",
-        title: "Nhận thanh toán",
-        subtitle: "Bà Nguyễn Thị Mai",
-        time: "1 ngày trước",
-        amount: "+320.000đ",
-        status: "completed",
-      },
-    ],
-    []
-  );
+  // Data states
+  const [upcomingSchedule, setUpcomingSchedule] = useState([]);
+  const [inProgressSchedule, setInProgressSchedule] = useState([]);
+  const [canceledSchedule, setCanceledSchedule] = useState([]);
 
   // ---------- helpers ----------
   const now = new Date();
@@ -99,26 +39,99 @@ export default function FinancialApp() {
     return `${d}, ${now.getDate()} tháng ${now.getMonth() + 1}, ${now.getFullYear()}`;
   })();
 
-  // ---------- load user info ----------
+  const formatPrice = (price) => {
+    if (!price) return "0đ";
+    return `${Number(price).toLocaleString('vi-VN')}đ`;
+  };
+
+  const formatTime = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+    } catch {
+      return "--:--";
+    }
+  };
+
+  // ---------- load user info + schedulings ----------
   useEffect(() => {
     let mounted = true;
+
     (async () => {
       try {
-        const res = await userService.getUserInfo();
-        if (mounted) {
-          if (res?.success) {
-            // tuỳ backend: res.data có thể là { user: {...} } hoặc {...}
-            setMe(res.data?.user || res.data);
+        // Load user info
+        const userRes = await userService.getUserInfo();
+        if (mounted && userRes?.success) {
+          const userData = userRes.data?.user || userRes.data;
+          setMe(userData);
+
+          // Load schedulings by status
+          if (userData?._id) {
+            try {
+              const [confirmedRes, inProgressRes, canceledRes] = await Promise.all([
+                supporterSchedulingService.getSchedulingsByStatus(userData._id, 'confirmed', 3),
+                supporterSchedulingService.getSchedulingsByStatus(userData._id, 'in_progress', 3),
+                supporterSchedulingService.getSchedulingsByStatus(userData._id, 'canceled', 3),
+              ]);
+
+              if (mounted) {
+                if (confirmedRes?.success && Array.isArray(confirmedRes.data)) {
+                  setUpcomingSchedule(confirmedRes.data);
+                }
+                if (inProgressRes?.success && Array.isArray(inProgressRes.data)) {
+                  setInProgressSchedule(inProgressRes.data);
+                }
+                if (canceledRes?.success && Array.isArray(canceledRes.data)) {
+                  setCanceledSchedule(canceledRes.data);
+                }
+              }
+            } catch (err) {
+              console.error('Error loading schedulings:', err);
+            }
           }
         }
+      } catch (err) {
+        console.error('Error loading user info:', err);
       } finally {
         mounted && setLoading(false);
       }
     })();
+
     return () => {
       mounted = false;
     };
   }, []);
+
+  const renderScheduleItem = (item) => (
+    <TouchableOpacity 
+      key={item._id || item.id} 
+      style={styles.scheduleItem}
+      onPress={() => nav.navigate('BookingDetailScreen', { bookingId: item._id })}
+      activeOpacity={0.7}
+    >
+      <View style={styles.scheduleAvatar}>
+        {item.elderly?.avatar ? (
+          <Image
+            source={{ uri: item.elderly.avatar }}
+            style={{ width: 44, height: 44, borderRadius: 22 }}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text style={{ fontSize: 18 }}>
+            {item.elderly?.gender === 'Nữ' ? '👩‍🦳' : '👨‍🦳'}
+          </Text>
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.scheduleName}>{item.elderly?.fullName || 'N/A'}</Text>
+        <Text style={styles.scheduleTime}>
+          {formatTime(item.startDate)}
+        </Text>
+        <Text style={styles.scheduleAddr}>{item.elderly?.currentAddress || '—'}</Text>
+      </View>
+      <Text style={styles.scheduleAmount}>{formatPrice(item.price)}</Text>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -142,15 +155,8 @@ export default function FinancialApp() {
               <Text style={styles.userRole}>
                 {(me?.role ? capitalize(me.role) : "Supporter") + (me?.yearsExp ? ` • ${me.yearsExp} năm kinh nghiệm` : "")}
               </Text>
-              <View style={styles.ratingRow}>
-                <Text style={styles.ratingStar}>⭐ 4.9</Text>
-                <Text style={styles.ratingReview}>(89 đánh giá)</Text>
-              </View>
             </View>
           </View>
-          <TouchableOpacity activeOpacity={0.9} style={styles.onlineBtn}>
-            <Text style={styles.onlineBtnText}>Online</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Time & schedule summary */}
@@ -160,43 +166,10 @@ export default function FinancialApp() {
             <Text style={styles.dateNow}>{dateStr}</Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={styles.scheduleCount}>3 lịch hẹn</Text>
-            <Text style={styles.scheduleDay}>Hôm nay</Text>
-          </View>
-        </View>
-
-        {/* Overview */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📊 Tổng quan hôm nay</Text>
-          <View style={styles.overviewRow}>
-            <View style={[styles.overviewCard, styles.balanceCard]}>
-              <Text style={styles.cardIcon}>💳</Text>
-              <Text style={styles.cardLabel}>Dư khoản thanh</Text>
-              <Text style={styles.cardValue}>1</Text>
-            </View>
-            <View style={[styles.overviewCard, styles.incomeCard]}>
-              <Text style={styles.cardIcon}>💰</Text>
-              <Text style={styles.cardLabel}>Thu nhập hôm nay</Text>
-              <Text style={styles.cardValue}>450.000đ</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Quick actions */}
-        <View style={[styles.section, { backgroundColor: "#f8fafc", paddingVertical: 16 }]}>
-          <Text style={styles.sectionTitle}>⚡ Thao tác nhanh</Text>
-          <View style={styles.actionsGrid}>
-            {quickActions.map((a) => (
-              <TouchableOpacity key={a.id} style={styles.actionBtn} activeOpacity={0.9}>
-                <View style={styles.actionIconBox}>
-                  <Text style={styles.actionIconText}>{a.icon}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionTitle}>{a.title}</Text>
-                  <Text style={styles.actionSubtitle}>{a.subtitle}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+            <Text style={styles.scheduleCount}>
+              {upcomingSchedule.length + inProgressSchedule.length} lịch
+            </Text>
+            <Text style={styles.scheduleDay}>Hiện tại</Text>
           </View>
         </View>
 
@@ -204,61 +177,51 @@ export default function FinancialApp() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>📅 Lịch hẹn sắp tới</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => nav.navigate('SupporterBookingListSupporterScreen', { filterStatus: 'confirmed' })}>
               <Text style={styles.viewAll}>Xem tất cả</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={{ gap: 12 }}>
-            {upcomingSchedule.map((it) => (
-              <View key={it.id} style={styles.scheduleItem}>
-                <View style={styles.scheduleAvatar}>
-                  <Text style={{ fontSize: 18 }}>{it.avatar}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.scheduleName}>{it.name}</Text>
-                  <Text style={styles.scheduleTime}>{it.time}</Text>
-                  <Text style={styles.scheduleAddr}>{it.address}</Text>
-                </View>
-                <Text style={styles.scheduleAmount}>{it.amount}</Text>
-                <View style={styles.scheduleActions}>
-                  <TouchableOpacity style={styles.circleBtn}><Text>📞</Text></TouchableOpacity>
-                  <TouchableOpacity style={styles.circleBtn}><Text>💬</Text></TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </View>
+          {loading ? (
+            <ActivityIndicator color="#3b82f6" />
+          ) : upcomingSchedule.length > 0 ? (
+            <View style={{ gap: 12 }}>
+              {upcomingSchedule.map(renderScheduleItem)}
+            </View>
+          ) : (
+            <Text style={styles.emptyText}>Không có lịch hẹn sắp tới</Text>
+          )}
         </View>
 
-        {/* Recent activities */}
-        <View style={[styles.section, { backgroundColor: "#f8fafc", paddingVertical: 16 }]}>
-          <Text style={styles.sectionTitle}>🕒 Hoạt động gần đây</Text>
-          <View style={{ gap: 12 }}>
-            {recentActivities.map((ac) => (
-              <View key={ac.id} style={styles.activityItem}>
-                <View
-                  style={[
-                    styles.activityIcon,
-                    ac.type === "payment" ? { backgroundColor: "#dcfce7" } : { backgroundColor: "#dbeafe" },
-                  ]}
-                >
-                  <Text style={{ fontSize: 14 }}>{ac.type === "payment" ? "✅" : "📋"}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.activityTitle}>{ac.title}</Text>
-                  <Text style={styles.activitySub}>{ac.subtitle}</Text>
-                  <Text style={styles.activityTime}>{ac.time}</Text>
-                </View>
-                <Text style={styles.activityAmount}>{ac.amount}</Text>
-                <Text style={styles.activityRate}>⭐⭐⭐⭐⭐</Text>
-              </View>
-            ))}
-          </View>
-        </View>
+        {/* Lịch hẹn hiện tại (in_progress) */}
+        {inProgressSchedule.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>⏳ Lịch hẹn hiện tại</Text>
+              <TouchableOpacity onPress={() => nav.navigate('SupporterBookingListSupporterScreen', { filterStatus: 'in_progress' })}>
+                <Text style={styles.viewAll}>Xem tất cả</Text>
+              </TouchableOpacity>
+            </View>
 
-        {loading && (
-          <View style={{ padding: 16 }}>
-            <ActivityIndicator />
+            <View style={{ gap: 12 }}>
+              {inProgressSchedule.map(renderScheduleItem)}
+            </View>
+          </View>
+        )}
+
+        {/* Lịch hẹn đã hủy (canceled) */}
+        {canceledSchedule.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>❌ Lịch hẹn đã hủy</Text>
+              <TouchableOpacity onPress={() => nav.navigate('SupporterBookingListSupporterScreen', { filterStatus: 'canceled' })}>
+                <Text style={styles.viewAll}>Xem tất cả</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ gap: 12 }}>
+              {canceledSchedule.map(renderScheduleItem)}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -340,6 +303,8 @@ const styles = StyleSheet.create({
 
   section: { paddingHorizontal: 16, paddingVertical: 16 },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: "#1e293b", marginBottom: 12 },
+
+  emptyText: { fontSize: 14, color: "#94a3b8", textAlign: "center", paddingVertical: 20 },
 
   overviewRow: { flexDirection: "row", gap: 12 },
   overviewCard: {

@@ -4,6 +4,12 @@ import { Platform } from 'react-native';
 class CallNotificationService {
   constructor() {
     this.activeCallNotificationId = null;
+    // \ud83c\udd95 CRITICAL: Deduplication - Track displayed notifications to prevent duplicates
+    this.displayedNotifications = new Set();
+    // Auto-cleanup after 30 seconds
+    this.cleanupInterval = setInterval(() => {
+      this.displayedNotifications.clear();
+    }, 30000);
   }
 
   /**
@@ -50,6 +56,15 @@ class CallNotificationService {
   async showIncomingCallNotification(callData) {
     try {
       const { callId, caller, conversationId, callType = 'video' } = callData;
+
+      // 🚫 DEDUPLICATION: Kiểm tra xem notification này đã được hiển thị chưa
+      if (this.displayedNotifications.has(callId)) {
+        console.log('⚠️  Duplicate video call notification prevented:', callId);
+        return null;
+      }
+
+      // Đánh dấu notification này đã được hiển thị
+      this.displayedNotifications.add(callId);
 
       console.log('📞 Showing full-screen incoming call notification:', {
         callId,
@@ -154,6 +169,15 @@ class CallNotificationService {
   async showSOSCallNotification(callData) {
     try {
       const { sosId, callId, requester, recipientIndex, totalRecipients } = callData;
+
+      // 🚫 DEDUPLICATION: Kiểm tra xem notification này đã được hiển thị chưa
+      if (this.displayedNotifications.has(callId)) {
+        console.log('⚠️  Duplicate SOS call notification prevented:', callId);
+        return null;
+      }
+
+      // Đánh dấu notification này đã được hiển thị
+      this.displayedNotifications.add(callId);
 
       console.log('🆘📞 Showing SOS call notification:', {
         sosId,

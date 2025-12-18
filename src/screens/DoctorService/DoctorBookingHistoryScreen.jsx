@@ -211,7 +211,12 @@ const normalizePaymentStatusKey = raw => {
 };
 
 const getPaymentMethodRaw = item => {
-  return item.paymentMethod || 'cash';
+  return (
+    item?.paymentMethod ??
+    item?.payment?.method ??
+    item?.payment?.paymentMethod ??
+    'cash'
+  );
 };
 
 const getPaymentMethodLabel = item => {
@@ -293,7 +298,13 @@ const DoctorBookingHistoryScreen = () => {
     const statusKey = String(rawStatus).toLowerCase();
     const bookScheme = statusColors[statusKey] || statusColors.default;
 
-    const rawPayStatus = item.paymentStatus || 'unpaid';
+    const rawPayStatus =
+      item?.paymentStatus ?? item?.payment?.status ?? item?.payStatus ?? 'unpaid';
+    console.log(`${TAG}[getStatusLabelAndStyle] rawPayStatus =`, rawPayStatus, {
+      paymentStatus_field: item?.paymentStatus,
+      payment_obj_status: item?.payment?.status,
+      payStatus_field: item?.payStatus,
+    });
     const payKey = normalizePaymentStatusKey(rawPayStatus);
     let payScheme = paymentStatusColors[payKey] || paymentStatusColors.default;
 

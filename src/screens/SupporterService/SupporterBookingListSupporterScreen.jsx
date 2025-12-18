@@ -150,7 +150,7 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
   const [userId, setUserId] = useState(null);
 
   // Lọc theo status
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState(route?.params?.filterStatus || 'all');
   const [filterOpen, setFilterOpen] = useState(false);
 
   // 1) Lấy userId (ưu tiên route, fallback API)

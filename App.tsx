@@ -29,8 +29,30 @@ export default function App() {
     
     initializeNotifications();
 
-    // ℹ️ Foreground FCM messages được xử lý bởi NotificationService.onMessageListener()
-    // Không cần thêm handler ở đây
+    // 🆕 CRITICAL: Xử lý FCM messages khi app đang FOREGROUND
+    // Đây là vấn đề chính - khi app đang mở, FCM message không được xử lý!
+    const unsubscribeFCM = messaging().onMessage(async remoteMessage => {
+      console.log('📥 [Foreground] FCM message received:', {
+        type: remoteMessage.data?.type,
+        callId: remoteMessage.data?.callId,
+      });
+
+      // 🚫 VIDEO CALL: KHÔNG xử lý khi app foreground
+      // Lý do: Socket đã xử lý và navigate đến IncomingCallScreen
+      // Nếu hiển thị notification sẽ bị duplicate
+      if (remoteMessage.data?.type === 'video_call') {
+        console.log('ℹ️  [Foreground] Video call - Skipped (handled by socket)');
+        return; // Socket sẽ xử lý
+      }
+      
+      // 🚫 SOS CALL: KHÔNG xử lý khi app foreground
+      // Lý do: Socket đã xử lý qua AppNavigator (handleIncomingSOSCall)
+      // Nếu hiển thị notification sẽ bị duplicate
+      if (remoteMessage.data?.type === 'sos_call') {
+        console.log('ℹ️  [Foreground] SOS call - Skipped (handled by socket)');
+        return; // Socket sẽ xử lý
+      }
+    });
     
     // Check initial notification (khi app mở từ notification ở trạng thái killed)
     notifee.getInitialNotification().then(initialNotification => {
@@ -228,6 +250,7 @@ export default function App() {
     
     return () => {
       unsubscribe(); // Cleanup Notifee listener
+      unsubscribeFCM(); // Cleanup FCM listener
       appStateSubscription.remove();
     };
   }, []);
