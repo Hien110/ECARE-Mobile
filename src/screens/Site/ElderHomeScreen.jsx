@@ -464,12 +464,58 @@ export default function HomeScreen() {
     })();
   }, [nav]);
 
-  // khi có user, tải dữ liệu gia đình
   useEffect(() => {
     if (user?._id) {
       loadPendingRequests();
       loadFamilyRelationships();
     }
+  }, [user, loadPendingRequests, loadFamilyRelationships]);
+
+ 
+  useEffect(() => {
+    if (!user?._id) return undefined;
+
+    let mounted = true;
+
+    const handleRelationshipEvent = async (data) => {
+      try {
+        if (!mounted) return;
+        await loadPendingRequests();
+        await loadFamilyRelationships();
+      } catch (e) {
+        console.warn('Error handling relationship event:', e);
+      }
+    };
+
+    const setup = async () => {
+      try {
+        if (!socketService.isConnected) {
+          await socketService.connect();
+        }
+
+        
+        socketService.on('relationship_created', handleRelationshipEvent);
+        socketService.on('relationship_updated', handleRelationshipEvent);
+        socketService.on('relationship_deleted', handleRelationshipEvent);
+        socketService.on('relationship_request', handleRelationshipEvent);
+        socketService.on('relationship_request_created', handleRelationshipEvent);
+        socketService.on('relationship_request_updated', handleRelationshipEvent);
+      } catch (e) {
+        console.warn('Socket setup error:', e);
+      }
+    };
+
+    setup();
+
+    return () => {
+      mounted = false;
+      socketService.off('relationship_created', handleRelationshipEvent);
+      socketService.off('relationship_updated', handleRelationshipEvent);
+      socketService.off('relationship_deleted', handleRelationshipEvent);
+      socketService.off('relationship_request', handleRelationshipEvent);
+      socketService.off('relationship_request_created', handleRelationshipEvent);
+      socketService.off('relationship_request_updated', handleRelationshipEvent);
+    };
   }, [user, loadPendingRequests, loadFamilyRelationships]);
 
   // Bật/tắt FloatingDeadman theo role & relationship

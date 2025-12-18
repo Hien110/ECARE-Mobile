@@ -34,11 +34,9 @@ export default function SupportStaffDetailScreen() {
         const meData = meRes?.data || null;
         if (mounted) setMe(meData);
 
-        // Lấy danh sách elderly thuộc family hiện tại (dựa vào màn hình khác đang dùng)
         const eldersRes = await doctorBookingService.getElderlies();
         const elders = Array.isArray(eldersRes?.data) ? eldersRes.data : [];
 
-        // Với từng elderly, kiểm tra có quan hệ với staff không
         const matched = [];
         for (const e of elders) {
           const eId = e?.elderlyId || e?.userId || e?.elderly?._id || e?._id;

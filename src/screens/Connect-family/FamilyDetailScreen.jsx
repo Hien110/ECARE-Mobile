@@ -17,6 +17,34 @@ export default function FamilyDetailScreen() {
   const route = useRoute();
   const navigation = useNavigation();
   const { elderlyId, name, relationship, avatar } = route.params || {};
+  const [fetchedAvatar, setFetchedAvatar] = React.useState(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        if (!avatar && elderlyId) {
+          const res = await userService.getUserById(elderlyId);
+          if (mounted && res?.success && res.data) {
+            setFetchedAvatar(res.data.avatar || null);
+          }
+        }
+      } catch (err) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, [elderlyId, avatar]);
+
+  // Human-friendly relationship label (use 'bác' wording)
+  const getFriendlyRelationship = (rel) => {
+    if (!rel) return 'Vai trò đối với bác: chưa xác định';
+    const r = String(rel).toLowerCase();
+    if (r.includes('con')) return 'Vai trò đối với bác: Con';
+    if (r.includes('hỗ trợ') || r.includes('ho tro') || r.includes('người hỗ trợ')) return 'Vai trò đối với bác: Người hỗ trợ';
+    if (r.includes('bác sĩ') || r.includes('bac si')) return 'Vai trò đối với bác: Bác sĩ';
+    return `Vai trò đối với bác: ${rel}`;
+  };
 
   const handleVideoCall = async () => {
     try {
@@ -65,23 +93,24 @@ export default function FamilyDetailScreen() {
     }
   };
 
+  // Display name: prefix with 'Bác ' if not already present
+  const displayName = (name && !/^\s*(Bác\s|Ông\s|Bà\s)/i.test(name)) ? `Bác ${name}` : (name || 'Ẩn danh');
+
   return (
     <View style={styles.safe}>
       <View style={styles.card}>
         <View style={{ alignItems: 'center', marginBottom: 12 }}>
-          <Image
-            source={{
-              uri:
-                avatar ||
-                'https://cdn.sforum.vn/sforum/wp-content/uploads/2023/10/avatar-trang-4.jpg',
-            }}
-            style={styles.avatar}
-          />
+            <Image
+              source={{
+                uri: avatar || fetchedAvatar || 'https://cdn.sforum.vn/sforum/wp-content/uploads/2023/10/avatar-trang-4.jpg',
+              }}
+              style={styles.avatar}
+            />
           <Text style={styles.name} numberOfLines={1}>
-            {name || 'Ẩn danh'}
+            {displayName}
           </Text>
           <Text style={styles.rel} numberOfLines={1}>
-            {relationship || 'Mối quan hệ'}
+            {getFriendlyRelationship(relationship)}
           </Text>
         </View>
         <TouchableOpacity style={styles.callButton} onPress={handleVideoCall} activeOpacity={0.8}>
