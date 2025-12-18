@@ -87,143 +87,218 @@ const Stack = createStackNavigator();
 const NavigationContent = ({ initialRouteName }) => {
   const navigation = useNavigation();
   const appState = useRef(AppState.currentState);
+  const listenersRegistered = useRef(false);
   
   useEffect(() => {
-    // Đăng ký listener cho incoming video call
-    const handleIncomingCall = (data) => {
-      // CHỈ xử lý khi app đang ở FOREGROUND (active)
-      if (appState.current !== 'active') {
-        return;
-      }
+    console.log('🎬 [AppNavigator] useEffect triggered');
+    console.log('🔌 [AppNavigator] Socket status:', {
+      isConnected: socketService.isConnected,
+      socketExists: !!socketService.socket
+    });
+    
+    // 🔧 FIX: Đăng ký listeners và RE-REGISTER mỗi khi navigation hoặc socket state thay đổi
+    const setupListeners = () => {
+      console.log('📝 [AppNavigator] Setting up socket listeners...');
+      console.log('🔌 Socket connected:', socketService.isConnected);
       
-      const { callId, conversationId, caller, callType } = data;
+      // Đăng ký listener cho incoming video call
+      const handleIncomingCall = (data) => {
+        // CHỈ xử lý khi app đang ở FOREGROUND (active)
+        if (appState.current !== 'active') {
+          console.log('⚠️ App not active, skipping call');
+          return;
+        }
+        
+        const { callId, conversationId, caller, callType } = data;
+        console.log('📞 [AppNavigator] Incoming video call:', { callId, caller: caller?.fullName });
 
-      // Check if this call has been processed
-      if (CallService.hasProcessedCall(callId)) {
-        console.log('⚠️ Call already processed, ignoring:', callId);
-        return;
-      }
+        // Check if this call has been processed
+        if (CallService.hasProcessedCall(callId)) {
+          console.log('⚠️ Call already processed, ignoring:', callId);
+          return;
+        }
 
-      // Mark as processed
-      CallService.markCallAsProcessed(callId);
+        // Mark as processed
+        CallService.markCallAsProcessed(callId);
 
-      // Lưu thông tin cuộc gọi vào CallService
-      CallService.receiveCall({
-        callId,
-        conversationId,
-        caller,
-        callType: callType || 'video'
-      });
+        // Lưu thông tin cuộc gọi vào CallService
+        CallService.receiveCall({
+          callId,
+          conversationId,
+          caller,
+          callType: callType || 'video'
+        });
 
-      // Navigate đến IncomingCallScreen
-      navigation.navigate('IncomingCall', {
-        callId,
-        caller,
-        conversationId,
-        callType: callType || 'video',
-      });
+        // Navigate đến IncomingCallScreen
+        navigation.navigate('IncomingCall', {
+          callId,
+          caller,
+          conversationId,
+          callType: callType || 'video',
+        });
+      };
+      
+      // Đăng ký listener cho incoming SOS
+      const handleIncomingSOS = (data) => {
+        // CHỈ xử lý khi app đang ở FOREGROUND (active)
+        if (appState.current !== 'active') {
+          return;
+        }
+        
+        const { _id, requester, location, message } = data;
+        
+        // Navigate đến SOSDetail screen
+        navigation.navigate('SOSDetail', {
+          sosId: _id,
+          requesterName: requester?.fullName || 'Không rõ',
+          requesterAvatar: requester?.avatar || '',
+          address: location?.address || 'Không rõ vị trí',
+          latitude: location?.coordinates?.latitude || null,
+          longitude: location?.coordinates?.longitude || null,
+          message: message || '',
+        });
+      };
+
+      // 🆕 Đăng ký listener cho incoming SOS Call
+      const handleIncomingSOSCall = (data) => {
+        // CHỈ xử lý khi app đang ở FOREGROUND (active)
+        if (appState.current !== 'active') {
+          return;
+        }
+        
+        const { sosId, callId, requester, recipientIndex, totalRecipients } = data;
+
+        // Check if this call has been processed
+        if (CallService.hasProcessedCall(callId)) {
+          console.log('⚠️ SOS call already processed, ignoring:', callId);
+          return;
+        }
+
+        // Mark as processed
+        CallService.markCallAsProcessed(callId);
+
+        // Navigate đến SOSCallScreen
+        navigation.navigate('SOSCall', {
+          sosId,
+          callId,
+          requester: {
+            _id: requester._id,
+            fullName: requester.fullName,
+            avatar: requester.avatar,
+            phoneNumber: requester.phoneNumber,
+          },
+          recipientIndex: recipientIndex || 1,
+          totalRecipients: totalRecipients || 1,
+        });
+      };
+
+      // 🆕 Đăng ký listener khi SOS call được chấp nhận (cho requester/elderly)
+      const handleSOSCallAnswered = (data) => {
+        // CHỈ xử lý khi app đang ở FOREGROUND (active)
+        if (appState.current !== 'active') {
+          return;
+        }
+        
+        const { sosId, callId, recipient } = data;
+
+        console.log('✅ SOS call answered, navigating to VideoCall:', {
+          sosId,
+          callId,
+          recipientName: recipient?.fullName,
+        });
+
+        // Navigate elderly đến VideoCallScreen
+        navigation.navigate('VideoCall', {
+          callId,
+          conversationId: null, // SOS call không cần conversation
+          otherParticipant: recipient,
+          isIncoming: false, // Elderly là người gọi
+          isSOSCall: true,
+          sosId,
+        });
+      };
+      
+      // 🔧 CRITICAL: Cleanup listeners cũ trước khi đăng ký mới để tránh duplicate
+      console.log('🧹 [AppNavigator] Removing old listeners...');
+      socketService.off('video_call_request', handleIncomingCall);
+      socketService.off('sos:new', handleIncomingSOS);
+      socketService.off('sos_call_request', handleIncomingSOSCall);
+      socketService.off('sos_call_answered', handleSOSCallAnswered);
+      
+      // Đăng ký listener mới
+      console.log('➕ [AppNavigator] Registering new listeners...');
+      socketService.on('video_call_request', handleIncomingCall);
+      socketService.on('sos:new', handleIncomingSOS);
+      socketService.on('sos_call_request', handleIncomingSOSCall);
+      socketService.on('sos_call_answered', handleSOSCallAnswered);
+      
+      listenersRegistered.current = true;
+      console.log('✅ [AppNavigator] Socket listeners registered successfully');
+      console.log('📊 [AppNavigator] Listener count check after registration...');
+      
+      // Return cleanup function
+      return () => {
+        console.log('🗑️  Cleaning up AppNavigator socket listeners...');
+        socketService.off('video_call_request', handleIncomingCall);
+        socketService.off('sos:new', handleIncomingSOS);
+        socketService.off('sos_call_request', handleIncomingSOSCall);
+        socketService.off('sos_call_answered', handleSOSCallAnswered);
+        listenersRegistered.current = false;
+      };
     };
     
-    // Đăng ký listener cho incoming SOS
-    const handleIncomingSOS = (data) => {
-      // CHỈ xử lý khi app đang ở FOREGROUND (active)
-      if (appState.current !== 'active') {
-        return;
-      }
-      
-      const { _id, requester, location, message } = data;
-      
-      // Navigate đến SOSDetail screen
-      navigation.navigate('SOSDetail', {
-        sosId: _id,
-        requesterName: requester?.fullName || 'Không rõ',
-        requesterAvatar: requester?.avatar || '',
-        address: location?.address || 'Không rõ vị trí',
-        latitude: location?.coordinates?.latitude || null,
-        longitude: location?.coordinates?.longitude || null,
-        message: message || '',
-      });
-    };
-
-    // 🆕 Đăng ký listener cho incoming SOS Call
-    const handleIncomingSOSCall = (data) => {
-      // CHỈ xử lý khi app đang ở FOREGROUND (active)
-      if (appState.current !== 'active') {
-        return;
-      }
-      
-      const { sosId, callId, requester, recipientIndex, totalRecipients } = data;
-
-      // Check if this call has been processed
-      if (CallService.hasProcessedCall(callId)) {
-        console.log('⚠️ SOS call already processed, ignoring:', callId);
-        return;
-      }
-
-      // Mark as processed
-      CallService.markCallAsProcessed(callId);
-
-      // Navigate đến SOSCallScreen
-      navigation.navigate('SOSCall', {
-        sosId,
-        callId,
-        requester: {
-          _id: requester._id,
-          fullName: requester.fullName,
-          avatar: requester.avatar,
-          phoneNumber: requester.phoneNumber,
-        },
-        recipientIndex: recipientIndex || 1,
-        totalRecipients: totalRecipients || 1,
-      });
-    };
-
-    // 🆕 Đăng ký listener khi SOS call được chấp nhận (cho requester/elderly)
-    const handleSOSCallAnswered = (data) => {
-      // CHỈ xử lý khi app đang ở FOREGROUND (active)
-      if (appState.current !== 'active') {
-        return;
-      }
-      
-      const { sosId, callId, recipient } = data;
-
-      console.log('✅ SOS call answered, navigating to VideoCall:', {
-        sosId,
-        callId,
-        recipientName: recipient?.fullName,
-      });
-
-      // Navigate elderly đến VideoCallScreen
-      navigation.navigate('VideoCall', {
-        callId,
-        conversationId: null, // SOS call không cần conversation
-        otherParticipant: recipient,
-        isIncoming: false, // Elderly là người gọi
-        isSOSCall: true,
-        sosId,
-      });
+    // 🔧 CRITICAL: Lưu setupListeners vào global để có thể gọi từ LoginScreen
+    globalSetupListeners = () => {
+      console.log('🔥 [Global] Re-setting up listeners via global function...');
+      if (cleanup) cleanup();
+      cleanup = setupListeners();
     };
     
-    // Đăng ký listener
-    socketService.on('video_call_request', handleIncomingCall);
-    socketService.on('sos:new', handleIncomingSOS);
-    socketService.on('sos_call_request', handleIncomingSOSCall); // 🆕
-    socketService.on('sos_call_answered', handleSOSCallAnswered); // 🆕 Elderly nhận khi có người accept
+    // Setup listeners lần đầu
+    let cleanup = setupListeners();
+    
+    // 🔧 CRITICAL FIX: Đợi socket.io listeners được đăng ký xong
+    // Socket có thể đã connected nhưng internal listeners chưa được setup
+    // Re-setup sau 200ms để đảm bảo
+    setTimeout(() => {
+      console.log('⚡ [Delayed re-check] Re-setting up listeners after component mount...');
+      if (cleanup) cleanup();
+      cleanup = setupListeners();
+    }, 200);
+    
+    // 🔧 IMMEDIATE CHECK: Kiểm tra ngay xem socket đã connected chưa
+    // Nếu đã connected thì re-setup để đảm bảo listeners được đăng ký đúng
+    setTimeout(() => {
+      if (socketService.isConnected) {
+        console.log('⚡ [Immediate] Socket already connected, re-setting up listeners...');
+        if (cleanup) cleanup();
+        cleanup = setupListeners();
+      }
+    }, 100); // Chỉ đợi 100ms
+    
+    // 🔧 POLLING: Tiếp tục check định kỳ để catch trường hợp socket connect muộn
+    const pollInterval = setInterval(() => {
+      // Nếu socket connected NHƯNG listeners chưa được đăng ký
+      if (socketService.isConnected && !listenersRegistered.current) {
+        console.log('🔄 [Poll] Socket connected but listeners not registered, setting up...');
+        if (cleanup) cleanup();
+        cleanup = setupListeners();
+      }
+    }, 1000); // Check mỗi giây
     
     // Theo dõi AppState để biết app foreground/background
     const subscription = AppState.addEventListener('change', (nextAppState) => {
+      console.log(`📱 AppState changed: ${appState.current} → ${nextAppState}`);
       appState.current = nextAppState;
     });
     
     // Cleanup khi unmount
     return () => {
-      socketService.off('video_call_request', handleIncomingCall);
-      socketService.off('sos:new', handleIncomingSOS);
-      socketService.off('sos_call_request', handleIncomingSOSCall); // 🆕
-      socketService.off('sos_call_answered', handleSOSCallAnswered); // 🆕
+      clearInterval(pollInterval);
+      if (cleanup) cleanup();
       subscription.remove();
     };
-  }, [navigation]);
+  }, [navigation]); // Re-run khi navigation thay đổi
   
   return (
     <Stack.Navigator initialRouteName={initialRouteName || 'Login'}>
@@ -630,6 +705,20 @@ const NavigationContent = ({ initialRouteName }) => {
 
 // Tạo navigationRef global để sử dụng ở ngoài component
 export const navigationRef = React.createRef();
+
+// 🔧 CRITICAL FIX: Global function để force setup listeners
+// Được gọi từ LoginScreen sau khi socket connect
+let globalSetupListeners = null;
+
+export const forceSetupSocketListeners = () => {
+  console.log('🔥 [FORCE] forceSetupSocketListeners called from outside');
+  if (globalSetupListeners) {
+    console.log('🔥 [FORCE] Running global setup listeners...');
+    globalSetupListeners();
+  } else {
+    console.warn('⚠️  [FORCE] globalSetupListeners not ready yet');
+  }
+};
 
 const AppNavigator = () => {
   const [booted, setBooted] = useState(false);

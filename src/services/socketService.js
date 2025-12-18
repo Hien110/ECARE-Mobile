@@ -130,9 +130,17 @@ class SocketService {
 
   // 🆕 Tách message listeners thành method riêng để có thể re-register
   registerMessageListeners() {
-    if (!this.socket) return;
+    if (!this.socket) {
+      console.warn('⚠️  Cannot register listeners: socket is null');
+      return;
+    }
 
-    console.log('📝 Registering message listeners...');
+    console.log('📝 Registering socket message listeners...');
+    console.log('🔌 Socket state:', {
+      id: this.socket.id,
+      connected: this.socket.connected,
+      isConnected: this.isConnected
+    });
 
     // Remove existing listeners để tránh duplicate (trong trường hợp reconnect)
     this.socket.off('new_message');
@@ -444,14 +452,19 @@ class SocketService {
   }
 
   emit(event, data) {
+    const listenerCount = this.listeners.has(event) ? this.listeners.get(event).length : 0;
+    console.log(`📡 Emitting '${event}' event to ${listenerCount} listener(s)`);
+    
     if (this.listeners.has(event)) {
-      this.listeners.get(event).forEach(callback => {
+      this.listeners.get(event).forEach((callback, index) => {
         try {
           callback(data);
         } catch (error) {
-          console.error(`Error in ${event} listener:`, error);
+          console.error(`❌ Error in ${event} listener #${index}:`, error);
         }
       });
+    } else {
+      console.warn(`⚠️  No listeners registered for event '${event}'`);
     }
   }
 
