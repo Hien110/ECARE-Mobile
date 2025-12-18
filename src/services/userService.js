@@ -582,6 +582,26 @@ export const userService = {
       return shapeAxiosError(error);
     }
   },
+
+  // Check relationship statuses in bulk
+  checkRelationshipsBulk: async ({ elderlyId, familyIds }) => {
+    try {
+      const token = await userService.getToken();
+      const response = await api.post(
+        `/relationships/check-status-bulk`,
+        { elderlyId, familyIds },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      return {
+        success: true,
+        status: response.status,
+        data: response.data?.data,
+        message: response.data?.message,
+      };
+    } catch (error) {
+      return shapeAxiosError(error);
+    }
+  },
 };
 
 export default userService;

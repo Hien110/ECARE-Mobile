@@ -55,45 +55,23 @@ export default function EnhancedHealthAppRN() {
       </View>
     );
   }
-  function Button({ title, onPress, variant = 'solid', style, left, right }) {
-    const solid = variant === 'solid';
-    return (
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.btn,
-          solid ? styles.btnSolid : styles.btnGhost,
-          { opacity: pressed ? 0.9 : 1 },
-          style,
-        ]}
-      >
-        <View style={styles.btnRow}>
-          {left ? <View style={{ marginRight: 8 }}>{left}</View> : null}
-          <Text
-            style={[
-              styles.btnText,
-              solid ? { color: '#fff' } : { color: C.indigo },
-            ]}
-          >
-            {title}
-          </Text>
-          {right ? <View style={{ marginLeft: 8 }}>{right}</View> : null}
-        </View>
-      </Pressable>
-    );
-  }
+  
   function Card({ children, style }) {
     return <View style={[styles.card, style]}>{children}</View>;
   }
   function ContactTile({ contact, onPress }) {
     return (
       <Pressable style={styles.contactTile} onPress={onPress}>
-        <View style={{ position: 'relative' }}>
-          <View
-            style={[styles.tileIconCircle, { backgroundColor: contact.color }]}
-          >
-            <Text style={styles.tileIconText}>{contact.icon}</Text>
-          </View>
+        <View style={{ position: 'relative', alignItems: 'center' }}>
+          {contact.avatar ? (
+            <Image source={{ uri: contact.avatar }} style={styles.tileAvatar} />
+          ) : (
+            <View
+              style={[styles.tileIconCircle, { backgroundColor: contact.color }]}
+            >
+              <Text style={styles.tileIconText}>{contact.icon}</Text>
+            </View>
+          )}
           <View
             style={[
               styles.statusDot,
@@ -104,12 +82,12 @@ export default function EnhancedHealthAppRN() {
             ]}
           />
         </View>
-        <Text style={styles.contactName} numberOfLines={1}>
+        <Text style={styles.contactName} numberOfLines={2} ellipsizeMode="tail">
           {contact.name}
         </Text>
-        <Text style={styles.contactSub} numberOfLines={1}>
-          {contact.subtitle}
-        </Text>
+        {contact.type !== 'family' && contact.subtitle ? (
+          <Text style={styles.contactSub} numberOfLines={1}>{contact.subtitle}</Text>
+        ) : null}
       </Pressable>
     );
   }
@@ -135,16 +113,26 @@ export default function EnhancedHealthAppRN() {
       const id = entity?._id || entity?.userId || entity?.user?._id || Math.random().toString(36).slice(2);
       const fullName =
         entity?.fullName || entity?.name || entity?.user?.fullName || entity?.user?.name || 'Ẩn danh';
-      const subtitle = type === 'doctor' ? 'Bác sĩ' : type === 'supporter' ? 'Supporter' : (entity?.relationship || '');
+      const avatar = entity?.avatar || entity?.avatarUrl || null;
+      const rawSubtitle = type === 'doctor' ? 'Bác sĩ' : type === 'supporter' ? 'Supporter' : (entity?.relationship || '');
       const color = type === 'doctor' ? C.blue : type === 'supporter' ? C.orange : C.purple;
       const icon = type === 'doctor' ? '🩺' : type === 'supporter' ? '💁‍♀️' : '📞';
+
+      // For family (elderly), prefix honorific if missing
+      let displayName = fullName;
+      if (type === 'family' && fullName && !/^Bác\s+/i.test(fullName)) {
+        displayName = `Bác ${fullName}`;
+      }
+
       return {
         id: `${type}-${id}`,
         type,
-        name: fullName,
-        subtitle,
+        name: displayName,
+        rawName: fullName,
+        subtitle: rawSubtitle,
         color,
         icon,
+        avatar,
         status: 'offline',
       };
     };
@@ -194,37 +182,125 @@ export default function EnhancedHealthAppRN() {
           try {
             const bRes = await doctorBookingService.getBookingsByElderlyId(eId);
             const bookings = Array.isArray(bRes?.data) ? bRes.data : [];
+
+            // Collect unique doctor ids
+            const candidateDoctorIds = [];
+            bookings.forEach(bk => {
+              const d = bk?.doctor || bk?.doctorProfile || {};
+              const dUser = d?.user || d?.userInfo || {};
+              const id = dUser?._id || d?.userId || d?._id;
+              if (id && !candidateDoctorIds.includes(String(id))) candidateDoctorIds.push(String(id));
+            });
+
+            // Bulk-check relationship statuses between elderly and these doctor ids
+            const docRelMap = {};
+            if (candidateDoctorIds.length > 0) {
+              try {
+                const bulkRes = await userService.checkRelationshipsBulk({ elderlyId: eId, familyIds: candidateDoctorIds });
+                const list = Array.isArray(bulkRes?.data) ? bulkRes.data : [];
+                list.forEach(item => {
+                  if (item && item.familyId) docRelMap[String(item.familyId)] = item;
+                });
+              } catch (err) {
+                // ignore errors and treat as no cancelled relationships
+              }
+            }
+
             const map = new Map();
             bookings.forEach(bk => {
               const d = bk?.doctor || bk?.doctorProfile || {};
               const dUser = d?.user || d?.userInfo || {};
               const id = dUser?._id || d?.userId || d?._id;
               if (!id) return;
-              if (!map.has(id)) {
-                map.set(id, toContact({ _id: id, fullName: dUser?.fullName || d?.fullName }, { type: 'doctor' }));
-              }
+              if (map.has(id)) return;
+
+              const rel = docRelMap[String(id)];
+              if (rel && String(rel.status) === 'cancelled') return;
+
+              map.set(id, toContact({ _id: id, fullName: dUser?.fullName || d?.fullName }, { type: 'doctor' }));
             });
+
             doctorContacts = Array.from(map.values());
           } catch (_) {
             doctorContacts = [];
           }
 
-          // Supporters via schedulings
           let supporterContacts = [];
           try {
-            const sRes = await supporterSchedulingService.getSchedulingsByUserId(eId);
-            const scheds = Array.isArray(sRes?.data) ? sRes.data : [];
-            const map = new Map();
-            scheds.forEach(s => {
-              const sup = s?.supporter || s?.supporterProfile || {};
-              const sUser = sup?.user || sup?.userInfo || {};
-              const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
-              if (!id) return;
-              if (!map.has(id)) {
+            let membersRes = null;
+            try {
+              if (userService.getFamilyMembersByElderlyId) {
+                try {
+                  membersRes = await userService.getFamilyMembersByElderlyId(eId);
+                } catch (err) {
+                  membersRes = await userService.getFamilyMembersByElderlyId({ elderlyId: eId });
+                }
+              }
+            } catch (err) {
+              membersRes = null;
+            }
+
+            const members = Array.isArray(membersRes?.data)
+              ? membersRes.data
+              : Array.isArray(membersRes)
+              ? membersRes
+              : [];
+
+            if (members.length > 0) {
+              const map = new Map();
+              members
+                .filter(m => (m?.role || '').toLowerCase() === 'supporter')
+                .forEach(s => {
+                  const id = s?._id || s?.userId;
+                  if (!id) return;
+                  if (!map.has(id)) {
+                    map.set(
+                      id,
+                      toContact({ _id: id, fullName: s?.fullName || s?.name }, { type: 'supporter' }),
+                    );
+                  }
+                });
+              supporterContacts = Array.from(map.values());
+            } else {
+              const sRes = await supporterSchedulingService.getSchedulingsByUserId(eId);
+              const scheds = Array.isArray(sRes?.data) ? sRes.data : [];
+              const map = new Map();
+
+              const candidateIds = [];
+              scheds.forEach(s => {
+                const sup = s?.supporter || s?.supporterProfile || {};
+                const sUser = sup?.user || sup?.userInfo || {};
+                const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
+                if (id && !candidateIds.includes(String(id))) candidateIds.push(String(id));
+              });
+
+              let relMap = {};
+              if (candidateIds.length > 0) {
+                try {
+                  const bulkRes = await userService.checkRelationshipsBulk({ elderlyId: eId, familyIds: candidateIds });
+                  const list = Array.isArray(bulkRes?.data) ? bulkRes.data : [];
+                  list.forEach(item => {
+                    if (item && item.familyId) relMap[String(item.familyId)] = item;
+                  });
+                } catch (err) {
+                }
+              }
+
+              for (const s of scheds) {
+                const sup = s?.supporter || s?.supporterProfile || {};
+                const sUser = sup?.user || sup?.userInfo || {};
+                const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
+                if (!id) continue;
+                if (map.has(id)) continue;
+
+                const rel = relMap[String(id)];
+                if (rel && String(rel.status) === 'cancelled') continue;
+
                 map.set(id, toContact({ _id: id, fullName: sUser?.fullName || sup?.fullName }, { type: 'supporter' }));
               }
-            });
-            supporterContacts = Array.from(map.values());
+
+              supporterContacts = Array.from(map.values());
+            }
           } catch (_) {
             supporterContacts = [];
           }
@@ -281,65 +357,7 @@ export default function EnhancedHealthAppRN() {
   const familyCount = familyContacts.length;
   const staffCount = supportStaffContacts.length;
 
-  const activities = useMemo(
-    () => [
-      {
-        time: '07:30',
-        title: 'Đo huyết áp buổi sáng',
-        subtitle: '122/76 mmHg - Bình thường',
-        color: C.green,
-        icon: '📈',
-        status: 'completed',
-      },
-      {
-        time: '08:00',
-        title: 'Uống thuốc huyết áp',
-        subtitle: 'Đã hoàn thành đúng giờ',
-        color: C.blue,
-        icon: '✅',
-        status: 'completed',
-      },
-      {
-        time: '12:00',
-        title: 'Kiểm tra đường huyết',
-        subtitle: '85 mg/dL - Cần theo dõi',
-        color: C.yellow,
-        icon: '📊',
-        status: 'pending',
-      },
-      {
-        time: '14:30',
-        title: 'Ghi nhận tâm trạng',
-        subtitle: 'Vui vẻ, tích cực',
-        color: C.green,
-        icon: '❤️',
-        status: 'pending',
-      },
-    ],
-    [],
-  );
-  const completed = activities.filter(a => a.status === 'completed').length;
-  const progressPct = Math.round((completed / activities.length) * 100);
-
-  /** ========= TIME ========= */
-  const now = new Date();
-  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(
-    now.getMinutes(),
-  ).padStart(2, '0')}`;
-  const dateStr = (() => {
-    const days = [
-      'Chủ nhật',
-      'Thứ Hai',
-      'Thứ Ba',
-      'Thứ Tư',
-      'Thứ Năm',
-      'Thứ Sáu',
-      'Thứ Bảy',
-    ];
-    return `${days[now.getDay()]}, ${now.getDate()} tháng ${
-      now.getMonth() + 1
-    }, ${now.getFullYear()}`;
-  })();
+  
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -484,6 +502,7 @@ export default function EnhancedHealthAppRN() {
                       elderlyId: c.id?.replace(/^family-/, ''),
                       name: c.name,
                       relationship: c.subtitle,
+                      avatar: c.avatar || null,
                     })
                   }
                 />
@@ -742,9 +761,9 @@ function makeStyles({ isSmall, isLarge }) {
       gap: 10,
     },
     tileIconCircle: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -782,23 +801,28 @@ function makeStyles({ isSmall, isLarge }) {
     viewAllText: { fontSize: 11, color: '#fff', fontWeight: '700' },
     emptyText: { fontSize: 12, color: C.mutedFg, marginBottom: 6 },
 
-    contactsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    contactsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-start' },
     contactTile: {
-      width: '31%',
+      width: '30%',
+      minWidth: 92,
       backgroundColor: '#fff',
       borderRadius: 14,
       borderWidth: 1,
       borderColor: C.border,
-      padding: 10,
+      paddingVertical: 12,
+      paddingHorizontal: 8,
       alignItems: 'center',
       gap: 6,
     },
     contactName: {
-      fontSize: isSmall ? 11.5 : 12.5,
+      fontSize: isSmall ? 12 : 13,
       fontWeight: '700',
       color: C.cardFg,
+      textAlign: 'center',
+      marginTop: 8,
+      lineHeight: 16,
     },
-    contactSub: { fontSize: isSmall ? 10 : 11, color: C.mutedFg },
+    contactSub: { fontSize: isSmall ? 10 : 11, color: C.mutedFg, textAlign: 'center', marginTop: 4 },
     statusDot: {
       position: 'absolute',
       top: -3,
@@ -827,89 +851,15 @@ function makeStyles({ isSmall, isLarge }) {
     },
     btnText: { fontWeight: '700', fontSize: 13 },
 
-    /** Activities */
-    activitiesHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-    },
-    segment: {
-      flexDirection: 'row',
-      backgroundColor: '#f3f4f6',
-      borderRadius: 10,
-      padding: 4,
-    },
-    segBtn: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8 },
-    segBtnActive: {
-      backgroundColor: '#fff',
-      shadowColor: '#000',
-      shadowOpacity: 0.06,
-      shadowRadius: 4,
-      shadowOffset: { width: 0, height: 1 },
-    },
-    segText: { fontSize: 12, color: '#6b7280', fontWeight: '600' },
-    segTextActive: { color: C.indigo },
-
-    activityRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 10,
-      backgroundColor: '#fff',
-      borderRadius: 14,
+    
+    tileAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
       borderWidth: 1,
       borderColor: C.border,
-      padding: 10,
-    },
-    activityTime: {
-      minWidth: 48,
-      textAlign: 'right',
-      color: C.mutedFg,
-      fontSize: 12,
-    },
-    activityIconCircle: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    activityTitle: {
-      fontSize: isSmall ? 12.5 : 13.5,
-      fontWeight: '700',
-      color: C.cardFg,
-    },
-    activitySub: {
-      fontSize: isSmall ? 11 : 12,
-      color: C.mutedFg,
-      marginTop: 2,
-    },
-    smallStatusDot: { width: 12, height: 12, borderRadius: 6 },
-
-    /** Progress */
-    progressCard: {
-      marginTop: 14,
-      backgroundColor: '#eef2ff',
-      borderRadius: 12,
-      padding: 12,
-      borderWidth: 1,
-      borderColor: '#e0e7ff',
-    },
-    progressHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 8,
-    },
-    progressTitle: { color: C.cardFg, fontSize: 13, fontWeight: '700' },
-    progressPct: { color: C.indigo, fontSize: 18, fontWeight: '800' },
-    progressTrack: {
-      height: 8,
-      borderRadius: 6,
-      backgroundColor: '#e5e7eb',
       overflow: 'hidden',
+      backgroundColor: '#f3f4f6',
     },
-    progressFill: { height: '100%', backgroundColor: C.indigo },
-    progressHint: { color: C.mutedFg, fontSize: 12, marginTop: 6 },
   });
 }

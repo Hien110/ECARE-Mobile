@@ -153,6 +153,14 @@ class SocketService {
     this.socket.off('video_call_ended');
     this.socket.off('video_call_busy');
 
+    // Relationship events (forward từ server tới app)
+    this.socket.off('relationship_created');
+    this.socket.off('relationship_updated');
+    this.socket.off('relationship_deleted');
+    this.socket.off('relationship_request');
+    this.socket.off('relationship_request_created');
+    this.socket.off('relationship_request_updated');
+
     // Message events
     this.socket.on('new_message', (data) => {
       console.log('📨 New message received:', data);
@@ -247,6 +255,37 @@ class SocketService {
     this.socket.on('video_call_busy', (data) => {
       console.log('📞 Video call busy:', data);
       this.emit('video_call_busy', data);
+    });
+
+    // Relationship events
+    this.socket.on('relationship_created', (data) => {
+      console.log('🔗 relationship_created:', data);
+      this.emit('relationship_created', data);
+    });
+
+    this.socket.on('relationship_updated', (data) => {
+      console.log('🔁 relationship_updated:', data);
+      this.emit('relationship_updated', data);
+    });
+
+    this.socket.on('relationship_deleted', (data) => {
+      console.log('🗑️ relationship_deleted:', data);
+      this.emit('relationship_deleted', data);
+    });
+
+    this.socket.on('relationship_request', (data) => {
+      console.log('🔔 relationship_request:', data);
+      this.emit('relationship_request', data);
+    });
+
+    this.socket.on('relationship_request_created', (data) => {
+      console.log('🔔 relationship_request_created:', data);
+      this.emit('relationship_request_created', data);
+    });
+
+    this.socket.on('relationship_request_updated', (data) => {
+      console.log('🔔 relationship_request_updated:', data);
+      this.emit('relationship_request_updated', data);
     });
   }
 
