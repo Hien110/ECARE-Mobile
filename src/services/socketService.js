@@ -130,9 +130,17 @@ class SocketService {
 
   // 🆕 Tách message listeners thành method riêng để có thể re-register
   registerMessageListeners() {
-    if (!this.socket) return;
+    if (!this.socket) {
+      console.warn('⚠️  Cannot register listeners: socket is null');
+      return;
+    }
 
-    console.log('📝 Registering message listeners...');
+    console.log('📝 Registering socket message listeners...');
+    console.log('🔌 Socket state:', {
+      id: this.socket.id,
+      connected: this.socket.connected,
+      isConnected: this.isConnected
+    });
 
     // Remove existing listeners để tránh duplicate (trong trường hợp reconnect)
     this.socket.off('new_message');
@@ -152,6 +160,14 @@ class SocketService {
     this.socket.off('video_call_cancelled');
     this.socket.off('video_call_ended');
     this.socket.off('video_call_busy');
+
+    // Relationship events (forward từ server tới app)
+    this.socket.off('relationship_created');
+    this.socket.off('relationship_updated');
+    this.socket.off('relationship_deleted');
+    this.socket.off('relationship_request');
+    this.socket.off('relationship_request_created');
+    this.socket.off('relationship_request_updated');
 
     // Message events
     this.socket.on('new_message', (data) => {
@@ -247,6 +263,37 @@ class SocketService {
     this.socket.on('video_call_busy', (data) => {
       console.log('📞 Video call busy:', data);
       this.emit('video_call_busy', data);
+    });
+
+    // Relationship events
+    this.socket.on('relationship_created', (data) => {
+      console.log('🔗 relationship_created:', data);
+      this.emit('relationship_created', data);
+    });
+
+    this.socket.on('relationship_updated', (data) => {
+      console.log('🔁 relationship_updated:', data);
+      this.emit('relationship_updated', data);
+    });
+
+    this.socket.on('relationship_deleted', (data) => {
+      console.log('🗑️ relationship_deleted:', data);
+      this.emit('relationship_deleted', data);
+    });
+
+    this.socket.on('relationship_request', (data) => {
+      console.log('🔔 relationship_request:', data);
+      this.emit('relationship_request', data);
+    });
+
+    this.socket.on('relationship_request_created', (data) => {
+      console.log('🔔 relationship_request_created:', data);
+      this.emit('relationship_request_created', data);
+    });
+
+    this.socket.on('relationship_request_updated', (data) => {
+      console.log('🔔 relationship_request_updated:', data);
+      this.emit('relationship_request_updated', data);
     });
   }
 
@@ -405,14 +452,19 @@ class SocketService {
   }
 
   emit(event, data) {
+    const listenerCount = this.listeners.has(event) ? this.listeners.get(event).length : 0;
+    console.log(`📡 Emitting '${event}' event to ${listenerCount} listener(s)`);
+    
     if (this.listeners.has(event)) {
-      this.listeners.get(event).forEach(callback => {
+      this.listeners.get(event).forEach((callback, index) => {
         try {
           callback(data);
         } catch (error) {
-          console.error(`Error in ${event} listener:`, error);
+          console.error(`❌ Error in ${event} listener #${index}:`, error);
         }
       });
+    } else {
+      console.warn(`⚠️  No listeners registered for event '${event}'`);
     }
   }
 
