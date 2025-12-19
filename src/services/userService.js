@@ -495,6 +495,38 @@ export const userService = {
     }
   },
 
+  /* ========== Cập nhật tài khoản ngân hàng ========== */
+  updateBankAccount: async (token, { bankName, bankAccountNumber, bankAccountHolderName }) => {
+    try {
+      const response = await api.put(
+        '/users/update-bank-account',
+        { bankName, bankAccountNumber, bankAccountHolderName },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      // Update local user data
+      if (response.data?.data) {
+        await userService.setUser(response.data.data);
+      }
+
+      return {
+        success: true,
+        status: response.status,
+        data: response.data?.data,
+        message: response.data?.message || 'Cập nhật tài khoản ngân hàng thành công',
+      };
+    } catch (error) {
+      console.log('[userService.updateBankAccount] error:', {
+        status: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+      return shapeAxiosError(error);
+    }
+  },
+
   getAllSupporters: async () => {
     try {
       const response = await api.get('/users/get-supporters', {

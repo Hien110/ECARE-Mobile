@@ -26,6 +26,7 @@ const PaymentBookingScreen = ({ navigation, route }) => {
   const [method, setMethod] = useState(null); // 'cash' | 'online'
   const [service, setService] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showBankInfoModal, setShowBankInfoModal] = useState(false);
   const [note, setNote] = useState(''); // ✅ Ghi chú của người đặt lịch
   const [orderCode, setOrderCode] = useState(null);
   const [loadingQR, setLoadingQR] = useState(false);
@@ -165,6 +166,28 @@ const PaymentBookingScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleSelectOnline = async () => {
+    try {
+      const response = await userService.getUserInfo();
+      if (response?.success && response?.data) {
+        const userData = response.data;
+        if (userData.bankName && userData.bankAccountNumber) {
+          // Có đủ thông tin ngân hàng, cho phép chọn
+          setUserBooking(userData);
+          setMethod('online');
+        } else {
+          // Thiếu thông tin ngân hàng, hiển thị modal yêu cầu cập nhật
+          setShowBankInfoModal(true);
+        }
+      } else {
+        setShowBankInfoModal(true);
+      }
+    } catch (error) {
+      console.error('Error checking bank info:', error);
+      setShowBankInfoModal(true);
+    }
+  };
+
   const handleGoHome = () => {
   setShowSuccessModal(false);
 
@@ -278,7 +301,7 @@ const PaymentBookingScreen = ({ navigation, route }) => {
 
           <TouchableOpacity
             style={[styles.option, method === 'online' && styles.optionActive]}
-            onPress={() => setMethod('online')}
+            onPress={handleSelectOnline}
           >
             <Icon
               name="qr-code-outline"
@@ -345,6 +368,45 @@ const PaymentBookingScreen = ({ navigation, route }) => {
             >
               <Text style={styles.modalButtonText}>Về trang chủ</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal yêu cầu cập nhật thông tin ngân hàng */}
+      <Modal
+        visible={showBankInfoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowBankInfoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalIconWrap}>
+              <Icon name="card-outline" size={60} color="#f59e0b" />
+            </View>
+            <Text style={styles.modalTitle}>Yêu cầu thông tin thanh toán</Text>
+            <Text style={styles.modalMessage}>
+              Bạn cần cập nhật thông tin tài khoản ngân hàng để sử dụng phương thức thanh toán online.
+            </Text>
+
+            <View style={styles.modalButtonGroup}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={() => {
+                  setShowBankInfoModal(false);
+                  navigation.navigate('BankAccount');
+                }}
+              >
+                <Text style={styles.modalButtonText}>Cập nhật ngay</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={() => setShowBankInfoModal(false)}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonTextSecondary]}>Bỏ qua</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -492,5 +554,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 15,
+  },
+  modalButtonGroup: {
+    width: '100%',
+    gap: 10,
+  },
+  modalButtonPrimary: {
+    backgroundColor: '#2563eb',
+  },
+  modalButtonSecondary: {
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+  },
+  modalButtonTextSecondary: {
+    color: '#475569',
   },
 });
