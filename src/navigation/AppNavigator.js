@@ -44,6 +44,7 @@ import FamilyHealthMonitoringScreen from '../screens/HealthRecord/FamilyHealthMo
 import SupportFinderScreen from '../screens/Search-Supporter/SupportFinderScreen.jsx';
 import SupporterProfileScreen from '../screens/Search-Supporter/SupporterProfileScreen.jsx';
 import AddressPickerScreen from '../screens/Profile/AddressPickerScreen.jsx';
+import BankAccountScreen from '../screens/Profile/BankAccountScreen.jsx';
 import IntroductionCreateDoctorProfileScreen from '../screens/Doctor/IntroductionCreateDoctorProfileScreen.jsx';
 import CreateDoctorProfileScreen from '../screens/Doctor/CreateDoctorProfileScreen.jsx';
 import ViewDoctorProfileScreen from '../screens/Doctor/ViewDoctorProfileScreen.jsx';
@@ -504,6 +505,11 @@ const NavigationContent = ({ initialRouteName }) => {
         <Stack.Screen
           name="AddressPicker"
           component={withFooter(AddressPickerScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="BankAccount"
+          component={withFooter(BankAccountScreen, 'home')}
           options={{ headerShown: false }}
         />
         <Stack.Screen
