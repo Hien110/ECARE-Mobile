@@ -232,14 +232,14 @@ const HealthPackageScheduleScreen = () => {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Steps */}
+      {/* Steps (date-first flow) */}
       <View style={styles.stepContainer}>
-        <View style={styles.stepItem}>
-          <Text style={styles.stepLabel}>1. Chọn bác sĩ</Text>
+        <View style={[styles.stepItem, styles.stepItemActive]}>
+          <Text style={styles.stepLabelActive}>1. Chọn lịch khám</Text>
         </View>
         <View style={styles.stepDivider} />
-        <View style={[styles.stepItem, styles.stepItemActive]}>
-          <Text style={styles.stepLabelActive}>2. Chọn thời gian</Text>
+        <View style={styles.stepItem}>
+          <Text style={styles.stepLabel}>2. Chọn bác sĩ</Text>
         </View>
       </View>
 

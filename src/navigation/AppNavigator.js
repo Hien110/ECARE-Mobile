@@ -74,6 +74,8 @@ import ChatWithAIScreen from '../screens/Chat-AI/ChatWithAI.jsx';
 import IntroductionBookingDoctorScreen from '../screens/DoctorService/IntroductionBookingDoctor.jsx';
 import DoctorListBookScreen from '../screens/DoctorService/DoctorListBookScreen.jsx';
 import DoctorScheduleSelectScreen from '../screens/DoctorService/DoctorScheduleSelectScreen.jsx';
+import ChooseBookingTime from '../screens/DoctorService/ChooseBookingTime.jsx';
+import AvailableDoctors from '../screens/DoctorService/AvailableDoctorsScreen.jsx';
 import PaymentServiceScreen from '../screens/DoctorService/PaymentServiceScreen.jsx';
 import DoctorBookingHistoryScreen from '../screens/DoctorService/DoctorBookingHistoryScreen.jsx';
 import DoctorConsultationDetailScreen from '../screens/DoctorService/DoctorConsultationDetailScreen.jsx';
@@ -662,6 +664,16 @@ const NavigationContent = ({ initialRouteName }) => {
         <Stack.Screen
           name="IntroductionBookingDoctor"
           component={withFooter(IntroductionBookingDoctorScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ChooseBookingTime"
+          component={withFooter(ChooseBookingTime, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="AvailableDoctors"
+          component={withFooter(AvailableDoctors, 'home')}
           options={{ headerShown: false }}
         />
         <Stack.Screen
