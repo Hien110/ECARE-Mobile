@@ -91,11 +91,12 @@ const FamilyListFunctionScreen = ({ route }) => {
     console.log('handleNavigate -> selected elderly =', elderly);
 
     if (flowType === 'doctorBooking') {
-      // Luồng ĐẶT LỊCH TƯ VẤN BÁC SĨ:
-      // Chọn người thân xong -> sang màn danh sách gói khám bác sĩ
-      navigation.navigate('HealthPackageListScreen', {
-        elderly,      // ✅ object đầy đủ cho flow booking bác sĩ
-        elderlyId,    // vẫn giữ elderlyId nếu màn sau cần
+      // Luồng ĐẶT LỊCH TƯ VẤN BÁC SĨ (date-first):
+      // Sau khi chọn người thân -> chọn ngày + ca trước
+      navigation.navigate('ChooseBookingTime', {
+        elderly,
+        elderlyId,
+        // preserve any incoming params from caller
         source: 'FamilyListFunction_Doctor',
       });
     } else {

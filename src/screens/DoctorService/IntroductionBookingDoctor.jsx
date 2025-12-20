@@ -1,4 +1,4 @@
-// src/screens/doctorBooking/IntroductionBookingDoctor.jsx
+
 import { useNavigation, useRoute } from '@react-navigation/native';
 import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
@@ -42,10 +42,6 @@ const IntroductionBookingDoctor = (props) => {
 
     const initialRole = fromUserRoleProp || fromPropsUser || fromParams || null;
 
-    console.log('[IntroBooking] user from props =', props?.user);
-    console.log('[IntroBooking] props.userRole =', props?.userRole);
-    console.log('[IntroBooking] route.params =', route?.params);
-    console.log('[IntroBooking] initial role state =', initialRole);
 
     return initialRole;
   });
@@ -151,13 +147,10 @@ const IntroductionBookingDoctor = (props) => {
 
   const handleContinue = () => {
     const normalizedRole = role?.toLowerCase?.() || null;
-    console.log('[IntroBooking] handleContinue raw role =', role);
-    console.log('[IntroBooking] handleContinue normalizedRole =', normalizedRole);
-
-    // Elderly → đi thẳng tới HealthPackageListScreen
+   
     if (normalizedRole === 'elderly') {
-      console.log('[IntroBooking] Navigating to HealthPackageListScreen (elderly flow)');
-      navigation.navigate('HealthPackageListScreen', {
+      // For elderly users, use date-first flow: choose date/time before selecting doctor
+      navigation.navigate('ChooseBookingTime', {
         flowType: 'doctorBooking',
         fromIntro: true,
         bookingFor: 'self',
@@ -166,7 +159,7 @@ const IntroductionBookingDoctor = (props) => {
     }
 
     // Còn lại → giữ flow cũ
-    console.log('[IntroBooking] Navigating to FamilyListFunctionScreen (non-elderly flow)');
+   
     navigation.navigate('FamilyListFunctionScreen', {
       message: 'Chức năng đặt lịch bác sĩ',
       flowType: 'doctorBooking',
@@ -208,7 +201,6 @@ const IntroductionBookingDoctor = (props) => {
               />
             </View>
 
-            {/* ◀ ▶ nút chuyển ảnh */}
             <TouchableOpacity style={styles.leftArrow} onPress={prevImage}>
               <Icon name="chevron-back" size={28} color="#ffffff" />
             </TouchableOpacity>
@@ -218,7 +210,6 @@ const IntroductionBookingDoctor = (props) => {
             </TouchableOpacity>
           </View>
 
-          {/* ●●● Indicators */}
           <View style={styles.dotsContainer}>
             {heroImages.map((_, index) => (
               <TouchableOpacity
@@ -240,8 +231,8 @@ const IntroductionBookingDoctor = (props) => {
             <Text style={styles.doctorDescription}>
               Quy trình gồm 3 bước đơn giản:{'\n'}
               1. Chọn người cao tuổi cần được chăm sóc.{'\n'}
-              2. Chọn bác sĩ mong muốn.{'\n'}
-              3. Chọn thời gian và xác nhận thanh toán.
+              2. Chọn ngày và ca khám trước.{'\n'}
+              3. Chọn bác sĩ phù hợp và xác nhận thanh toán.
             </Text>
           </View>
         </View>

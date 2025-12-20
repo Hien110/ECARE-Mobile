@@ -208,6 +208,40 @@ const DoctorScheduleSelectScreen = () => {
           <Text style={styles.stepLabelActive}>2. Chọn lịch khám</Text>
         </View>
       </View>
+        {/* Steps: keep old flow for elderly (bookingFor === 'self'), otherwise
+            if scheduledDate param exists treat as date-first flow */}
+        {(() => {
+          const params = route?.params || {};
+          const isElderlySelf = (params.bookingFor === 'self') || (params.role && String(params.role).toLowerCase() === 'elderly');
+          // Treat elderly self-booking as date-first as requested; also date-first when scheduledDate provided
+          const isDateFirst = !!params.scheduledDate || isElderlySelf;
+
+          if (isDateFirst) {
+            return (
+              <View style={styles.stepContainer}>
+                <View style={[styles.stepItem, styles.stepItemActive]}>
+                  <Text style={styles.stepLabelActive}>1. Chọn lịch khám</Text>
+                </View>
+                <View style={styles.stepDivider} />
+                <View style={styles.stepItem}>
+                  <Text style={styles.stepLabel}>2. Chọn bác sĩ</Text>
+                </View>
+              </View>
+            );
+          }
+
+          return (
+            <View style={styles.stepContainer}>
+              <View style={styles.stepItem}>
+                <Text style={styles.stepLabel}>1. Chọn bác sĩ</Text>
+              </View>
+              <View style={styles.stepDivider} />
+              <View style={[styles.stepItem, styles.stepItemActive]}>
+                <Text style={styles.stepLabelActive}>2. Chọn lịch khám</Text>
+              </View>
+            </View>
+          );
+        })()}
 
       <ScrollView
         style={styles.content}
