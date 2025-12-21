@@ -156,12 +156,12 @@ const DoctorListBookScreen = () => {
       </View>
       {/* Steps */}
             <View style={styles.stepContainer}>
-              <View style={[styles.stepItem, styles.stepItemActive]}>
-                <Text style={styles.stepLabel}>1. Chọn bác sĩ</Text>
+              <View style={styles.stepItem}>
+                <Text style={styles.stepLabel}>1. Chọn lịch khám</Text>
               </View>
               <View style={styles.stepDivider} />
-              <View style={[styles.stepItem]}>
-                <Text style={styles.stepLabelActive}>2. Chọn lịch khám</Text>
+              <View style={[styles.stepItem, styles.stepItemActive]}>
+                <Text style={styles.stepLabelActive}>2. Chọn bác sĩ</Text>
               </View>
             </View>
 

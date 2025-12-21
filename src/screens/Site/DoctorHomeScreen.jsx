@@ -1,7 +1,6 @@
 // src/screens/DoctorHomeScreen.jsx
-import React, { useCallback, useMemo, useState  } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
-
   View,
   Text,
   Image,
@@ -10,15 +9,13 @@ import {
   RefreshControl,
   TouchableOpacity,
   Dimensions,
-  Platform,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
-import { useNavigation } from "@react-navigation/native";
-import logo from "../../assets/logoBrand.png";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
 import { doctorService } from "../../services/doctorService";
 import userService from "../../services/userService";
 import doctorBookingService from "../../services/doctorBookingService";
-import {SafeAreaView} from "react-native-safe-area-context";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 const isSmall = SCREEN_W < 360;
@@ -52,8 +49,9 @@ const Tag = ({ children, type = "primary", size = "md" }) => {
 const CompletionBar = ({ total, done }) => {
   const safePercent =
     total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
+
   return (
-    <View style={{ marginTop: 8, width: "100%" }}>
+    <View style={{ marginTop: 10, width: "100%" }}>
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${safePercent}%` }]} />
       </View>
@@ -78,6 +76,7 @@ const StatItem = ({
         ? value
         : value.toFixed(1)
       : value ?? "—";
+
   return (
     <View style={styles.statItem}>
       <View style={[styles.statIconWrap, { backgroundColor: bgColor }]}>
@@ -95,10 +94,7 @@ const StatItem = ({
 };
 
 const normalizeStatusKey = (rawStatus) => {
-  const raw = (rawStatus || "")
-    .toString()
-    .toLowerCase()
-    .trim();
+  const raw = (rawStatus || "").toString().toLowerCase().trim();
   if (!raw) return "pending";
   if (["pending", "wait", "waiting", "unconfirmed"].includes(raw)) return "pending";
   if (["confirmed", "accepted", "xacnhan", "xac_nhan"].includes(raw)) return "confirmed";
@@ -142,11 +138,9 @@ const getPaymentInfoFromBooking = (booking) => {
   if (["qr", "online", "bank_transfer", "bank-transfer"].includes(rawMethod)) {
     return { label: "Đã trả trước", tagType: "info" };
   }
-
   if (["cash", "tienmat", "tiền mặt"].includes(rawMethod)) {
     return { label: "Tiền mặt", tagType: "primary" };
   }
-
   return { label: "Khác", tagType: "gray" };
 };
 
@@ -161,13 +155,11 @@ const DoctorHomeScreen = () => {
   const [appointmentsUpcoming, setAppointmentsUpcoming] = useState([]);
   const navigate = useNavigation();
 
- 
-
   const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMsg("");
     try {
-      let user = await userService.getUser();
+      const user = await userService.getUser();
       const userId = user?.data?._id;
       const role = user?.data?.role;
 
@@ -186,6 +178,7 @@ const DoctorHomeScreen = () => {
         doctorService.getProfileByUserId(userId),
         doctorService.getMyRatingStats(),
       ]);
+
       if (p?.success) setProfile(p.data);
       else setErrorMsg(p?.message || "Không thể tải hồ sơ bác sĩ.");
 
@@ -196,6 +189,7 @@ const DoctorHomeScreen = () => {
         const now = new Date();
         const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
         const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
         const today = [];
         const upcoming = [];
 
@@ -206,32 +200,21 @@ const DoctorHomeScreen = () => {
           const isToday = when >= startOfToday && when <= endOfToday;
 
           let timeLabel = "--:--";
-          if (b.slot === "morning") {
-            timeLabel = "8h - 11h";
-          } else if (b.slot === "afternoon") {
-            timeLabel = "14h - 16h";
-          }
+          if (b.slot === "morning") timeLabel = "8h - 11h";
+          else if (b.slot === "afternoon") timeLabel = "14h - 16h";
 
-          const { key: statusKey, label: statusLabel, tagType: statusTagType } =
-            getStatusInfo(b.status);
+          const { key: statusKey, label: statusLabel, tagType: statusTagType } = getStatusInfo(b.status);
+          const { label: paymentLabel, tagType: paymentTagType } = getPaymentInfoFromBooking(b);
 
-          const { label: paymentLabel, tagType: paymentTagType } =
-            getPaymentInfoFromBooking(b);
-
-          const dob = b.beneficiary?.dateOfBirth
-            ? new Date(b.beneficiary.dateOfBirth)
-            : null;
-          const computedAge = dob
-            ? new Date().getFullYear() - dob.getFullYear()
-            : "";
+          const dob = b.beneficiary?.dateOfBirth ? new Date(b.beneficiary.dateOfBirth) : null;
+          const computedAge = dob ? new Date().getFullYear() - dob.getFullYear() : "";
 
           const idStr = String(b._id || "");
           const bookingCode = idStr ? idStr.slice(-6) : "";
 
           const elderlyName = b.beneficiary?.fullName || "Người cao tuổi";
           const elderlyAddress = b.beneficiary?.currentAddress || "";
-          const registrantName =
-            b.registrant?.fullName || b.registrant?.name || "Người đặt lịch";
+          const registrantName = b.registrant?.fullName || b.registrant?.name || "Người đặt lịch";
 
           const dateLabel = when.toLocaleDateString("vi-VN");
 
@@ -260,11 +243,8 @@ const DoctorHomeScreen = () => {
             note: (b.note || "").toString().trim(),
           };
 
-          if (isToday) {
-            today.push(item);
-          } else if (when > endOfToday) {
-            upcoming.push(item);
-          }
+          if (isToday) today.push(item);
+          else if (when > endOfToday) upcoming.push(item);
         });
 
         setAppointmentsToday(today);
@@ -325,44 +305,51 @@ const DoctorHomeScreen = () => {
     workingHours: workingHourStr,
   };
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Image source={logo} style={styles.logo} resizeMode="contain" />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>E-CARE</Text>
-          <Text style={styles.brandSub}>Chăm sóc người cao tuổi</Text>
-        </View>
-        <View style={styles.statusDot} />
-        <Text style={styles.statusText}>Đang hoạt động</Text>
-      </View>
+  const appts = activeApptTab === "today" ? appointmentsToday : appointmentsUpcoming;
 
+  return (
+    <SafeAreaView style={styles.safe} edges={["top", "left", "right"]}>
       <ScrollView
         style={styles.container}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 28 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
+        {/* ====== TOP (bỏ phần E-CARE header) ====== */}
+        <View style={styles.topRow}>
+          {/* <View style={{ flex: 1 }}>
+            <Text style={styles.pageTitle}>Trang bác sĩ</Text>
+            <Text style={styles.pageSub}>Theo dõi lịch khám và lịch làm việc</Text>
+          </View> */}
+
+          {/* <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => navigate.navigate("CreateWorkSchedule")}
+            style={styles.primaryBtn}
+          >
+            <Text style={styles.primaryBtnText}>Chỉnh lịch</Text>
+          </TouchableOpacity> */}
+        </View>
+
         {!!errorMsg && (
-          <View style={[styles.card, { backgroundColor: "#fff3f2" }]}>
-            <Text style={{ color: "#9b1c1c", fontWeight: "700" }}>{errorMsg}</Text>
+          <View style={[styles.card, styles.cardError]}>
+            <Text style={styles.errorText}>{errorMsg}</Text>
           </View>
         )}
 
-        <View style={styles.card}>
+        {/* ====== Profile card ====== */}
+        <View style={[styles.card, styles.cardTight]}>
           <View style={styles.row}>
             <View style={styles.avatar}>
               {avatarUrl ? (
                 <Image source={{ uri: avatarUrl }} style={styles.avatarImg} />
               ) : (
-                <Text style={styles.avatarText}>
-                  {doctorName?.charAt(0)?.toUpperCase() || "D"}
-                </Text>
+                <Text style={styles.avatarText}>{doctorName?.charAt(0)?.toUpperCase() || "D"}</Text>
               )}
             </View>
 
             <View style={{ flex: 1 }}>
               <Text style={styles.doctorTitle}>Bác sĩ</Text>
-              <Text style={styles.doctorName} numberOfLines={1} ellipsizeMode="tail">
+              <Text style={styles.doctorName} numberOfLines={1}>
                 {doctorName}
               </Text>
               <Text style={styles.doctorSub} numberOfLines={2}>
@@ -370,59 +357,39 @@ const DoctorHomeScreen = () => {
               </Text>
 
               <View style={styles.metaRow}>
-                <View style={styles.metaItem}>
-                  <Tag size="sm" type="success">
-                    ⭐ {Number(rating?.averageRating || 0).toFixed(1)}
-                  </Tag>
-                </View>
-                <Text style={[styles.muted, styles.metaItem]}>
-                  {rating?.totalRatings || 0} đánh giá
-                </Text>
-                <View style={styles.metaItem}>
-                  <Tag size="sm" type="gray">
-                    {expYears} năm KN
-                  </Tag>
-                </View>
+                <Tag size="sm" type="success">
+                  ⭐ {Number(rating?.averageRating || 0).toFixed(1)}
+                </Tag>
+                <Text style={styles.metaText}>{rating?.totalRatings || 0} đánh giá</Text>
+                <Tag size="sm" type="gray">
+                  {expYears} năm KN
+                </Tag>
               </View>
             </View>
           </View>
         </View>
 
+        {/* ====== Stats ====== */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Thông kê hôm nay</Text>
-          <View style={styles.sectionRight}>
-            <View style={[styles.badge, { backgroundColor: "#e8fff1" }]}>
-              <Text style={[styles.badgeText, { color: "#0a7d2e" }]}>✓</Text>
-            </View>
-          </View>
+          <Text style={styles.sectionTitle}>Thống kê hôm nay</Text>
+          <Tag size="sm" type="gray">
+            {new Date().toLocaleDateString("vi-VN")}
+          </Tag>
         </View>
 
         <View style={styles.card}>
           <View style={styles.statsGrid}>
-            <StatItem
-              icon="📅"
-              value={statsToday.total}
-              label="Tổng lịch hẹn"
-              bgColor="#0B5FFF"
-              textColor="#0f172a"
-            />
+            <StatItem icon="📅" value={statsToday.total} label="Tổng lịch hẹn" bgColor="#0B5FFF" />
             <StatItem
               icon="✅"
               value={statsToday.done}
               label="Đã hoàn thành"
               bgColor="#2AC670"
-              textColor="#0f172a"
               showProgress
               total={statsToday.total}
               done={statsToday.done}
             />
-            <StatItem
-              icon="🕒"
-              value={statsToday.processing}
-              label="Chờ xử lý"
-              bgColor="#FF8A34"
-              textColor="#0f172a"
-            />
+            <StatItem icon="🕒" value={statsToday.processing} label="Chờ xử lý" bgColor="#FF8A34" />
             <StatItem
               icon="⏱️"
               value={statsToday.workingHours}
@@ -433,11 +400,9 @@ const DoctorHomeScreen = () => {
           </View>
         </View>
 
+        {/* ====== Working slots ====== */}
         <View style={styles.sectionHeader}>
-          <Text  style={styles.sectionTitle}>Lịch làm việc hôm nay</Text>
-          <TouchableOpacity activeOpacity={0.7} onPress={() => navigate.navigate('CreateWorkSchedule')}> 
-            <Tag type="blue">Chỉnh sửa</Tag>
-          </TouchableOpacity>
+          <Text style={styles.sectionTitle}>Lịch làm việc hôm nay</Text>
         </View>
 
         <View style={styles.slotWrap}>
@@ -452,14 +417,20 @@ const DoctorHomeScreen = () => {
                   slot.isAvailable === false ? styles.slotDisabled : styles.slotFree,
                 ]}
               >
-                <Text
-                  style={[
-                    styles.slotText,
-                    slot.isAvailable === false && styles.slotTextDisabled,
-                  ]}
-                >
-                  {timeRangeStr(slot)}
-                </Text>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text
+                    style={[
+                      styles.slotText,
+                      slot.isAvailable === false && styles.slotTextDisabled,
+                    ]}
+                  >
+                    {timeRangeStr(slot)}
+                  </Text>
+                  <Text style={styles.slotSub}>
+                    {slot.isAvailable === false ? "Không khả dụng" : "Khả dụng"}
+                  </Text>
+                </View>
+
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Tag
                     size="sm"
@@ -485,43 +456,79 @@ const DoctorHomeScreen = () => {
           )}
         </View>
 
-       
-
+        {/* ====== Tabs ====== */}
         <View style={styles.sectionHeader}>
-          <View style={{ flexDirection: "row" }}>
-            <TouchableOpacity onPress={() => setActiveApptTab("today")}>
-              <Text style={[styles.tab, activeApptTab === "today" && styles.tabActive]}>
-                Hôm nay ({appointmentsToday.length})
-              </Text>
-            </TouchableOpacity>
-            <View style={{ width: 12 }} />
-            <TouchableOpacity onPress={() => setActiveApptTab("upcoming")}>
-              <Text style={[styles.tab, activeApptTab === "upcoming" && styles.tabActive]}>
-                Sắp tới ({appointmentsUpcoming.length})
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={styles.sectionTitle}>Lịch hẹn</Text>
         </View>
 
-        {(activeApptTab === "today" ? appointmentsToday : appointmentsUpcoming).map((a) => (
+        <View style={styles.tabsRow}>
           <TouchableOpacity
-            key={a.id}
-            style={styles.apptCard}
             activeOpacity={0.8}
-            onPress={() =>
-              navigate.navigate('DoctorConsultationDetailScreen', {
-                registrationId: a.id,
-                patientName: a.elderlyName,
-                patientGender: a.gender,
-                patientDob: a.dob,
-                scheduledDate: a.scheduledDate,
-                slot: a.slot,
-              })
-            }
+            onPress={() => setActiveApptTab("today")}
+            style={[styles.tabPill, activeApptTab === "today" && styles.tabPillActive]}
           >
-            <View style={{ width: "100%" }}>
-              <View style={styles.rowBetween}>
-                
+            <Text style={[styles.tabPillText, activeApptTab === "today" && styles.tabPillTextActive]}>
+              Hôm nay
+            </Text>
+            <View style={styles.tabCount}>
+              <Text style={styles.tabCountText}>{appointmentsToday.length}</Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setActiveApptTab("upcoming")}
+            style={[styles.tabPill, activeApptTab === "upcoming" && styles.tabPillActive]}
+          >
+            <Text
+              style={[
+                styles.tabPillText,
+                activeApptTab === "upcoming" && styles.tabPillTextActive,
+              ]}
+            >
+              Sắp tới
+            </Text>
+            <View style={styles.tabCount}>
+              <Text style={styles.tabCountText}>{appointmentsUpcoming.length}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* ====== Appointment list ====== */}
+        {appts.length === 0 ? (
+          <View style={[styles.card, styles.emptyCard]}>
+            <Text style={styles.emptyTitle}>Chưa có lịch hẹn</Text>
+            <Text style={styles.emptySub}>
+              {activeApptTab === "today"
+                ? "Hôm nay bạn chưa có lịch khám nào."
+                : "Chưa có lịch khám sắp tới."}
+            </Text>
+          </View>
+        ) : (
+          appts.map((a) => (
+            <TouchableOpacity
+              key={a.id}
+              style={styles.apptCard}
+              activeOpacity={0.85}
+              onPress={() =>
+                navigate.navigate("DoctorConsultationDetailScreen", {
+                  registrationId: a.id,
+                  patientName: a.elderlyName,
+                  patientGender: a.gender,
+                  patientDob: a.dob,
+                  scheduledDate: a.scheduledDate,
+                  slot: a.slot,
+                })
+              }
+            >
+              {/* Top row */}
+              <View style={styles.apptTopRow}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Text style={styles.apptCode}>#{a.bookingCode || "------"}</Text>
+                  <View style={{ width: 10 }} />
+                  <Text style={styles.apptTime}>{a.time || "--:--"}</Text>
+                </View>
+
                 <Tag size="sm" type={a.statusTagType || "blue"}>
                   {a.status || "—"}
                 </Tag>
@@ -536,27 +543,26 @@ const DoctorHomeScreen = () => {
                 </View>
               )}
 
+              {/* Patient */}
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Người cao tuổi</Text>
                 <View style={styles.row}>
                   <View style={styles.circleAvatar}>
                     {a.elderlyAvatar ? (
-                      <Image
-                        source={{ uri: a.elderlyAvatar }}
-                        style={styles.circleAvatarImg}
-                      />
+                      <Image source={{ uri: a.elderlyAvatar }} style={styles.circleAvatarImg} />
                     ) : (
                       <Text style={styles.circleAvatarText}>
                         {a.elderlyName?.charAt(0)?.toUpperCase() || "N"}
                       </Text>
                     )}
                   </View>
+
                   <View style={styles.personInfo}>
                     <Text style={styles.personName} numberOfLines={1}>
                       {a.elderlyName}
                     </Text>
                     <Text style={styles.personSub} numberOfLines={1}>
-                      Vai trò: Người cao tuổi
+                      Vai trò: Người cao tuổi{a.age ? ` • ${a.age} tuổi` : ""}
                     </Text>
                     {!!a.elderlyAddress && (
                       <Text style={styles.personSub} numberOfLines={1}>
@@ -567,6 +573,7 @@ const DoctorHomeScreen = () => {
                 </View>
               </View>
 
+              {/* Registrant */}
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>Người đặt lịch</Text>
                 <View style={styles.row}>
@@ -593,14 +600,9 @@ const DoctorHomeScreen = () => {
                 </View>
               </View>
 
-              <View
-                style={[
-                  styles.section,
-                  styles.rowBetween,
-                  { alignItems: "flex-start" },
-                ]}
-              >
-                <View style={{ flex: 1, paddingRight: 8 }}>
+              {/* Bottom row */}
+              <View style={[styles.section, styles.bottomRow]}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
                   <Text style={styles.sectionLabel}>Ngày khám</Text>
                   <Text style={styles.timeText}>
                     {a.dateLabel || "—"}
@@ -612,15 +614,16 @@ const DoctorHomeScreen = () => {
                     </Text>
                   )}
                 </View>
+
                 {a.paymentLabel ? (
                   <Tag size="sm" type={a.paymentTagType || "primary"}>
                     {a.paymentLabel}
                   </Tag>
                 ) : null}
               </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -628,29 +631,41 @@ const DoctorHomeScreen = () => {
 
 export default DoctorHomeScreen;
 
+/** =========================
+ * Styles
+ * ========================= */
 const CARD_BG = "#ffffff";
 const SURFACE = "#f6f7fb";
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: SURFACE },
-  header: {
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
+
+  // Top
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === "android" ? 12 : 0,
-    paddingBottom: 12,
-    backgroundColor: "#0B5FFF",
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
+    gap: 12,
+    marginBottom: 12,
+    paddingHorizontal: 2,
   },
-  logo: { width: 36, height: 36, borderRadius: 8 },
-  brand: { fontSize: isSmall ? 16 : 18, fontWeight: "700", color: "#fff", letterSpacing: 0.3 },
-  brandSub: { fontSize: 12, color: "rgba(255,255,255,0.85)" },
-  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#19d36b", marginRight: 6 },
-  statusText: { color: "#d7ffe9", fontSize: 12, fontWeight: "600" },
+  pageTitle: { fontSize: isSmall ? 18 : 20, fontWeight: "800", color: "#0f172a" },
+  pageSub: { marginTop: 4, fontSize: 12, color: "#64748b" },
 
-  container: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
+  primaryBtn: {
+    backgroundColor: "#0B5FFF",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  primaryBtnText: { color: "#fff", fontWeight: "800", fontSize: 12 },
 
+  // Cards
   card: {
     backgroundColor: CARD_BG,
     borderRadius: 16,
@@ -662,58 +677,62 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginBottom: 12,
   },
-  row: { flexDirection: "row", alignItems: "center" },
-  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end" },
+  cardTight: { padding: 14 },
+  cardError: { backgroundColor: "#fff3f2", borderWidth: 1, borderColor: "#ffd6d2" },
+  errorText: { color: "#9b1c1c", fontWeight: "800" },
 
+  row: { flexDirection: "row", alignItems: "center" },
+
+  // Avatar
   avatar: {
-    width: 56, height: 56, borderRadius: 12,
+    width: 56,
+    height: 56,
+    borderRadius: 14,
     backgroundColor: "#e9efff",
-    alignItems: "center", justifyContent: "center",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
     overflow: "hidden",
   },
-  avatarImg: { width: "100%", height: "100%", borderRadius: 12 },
-  avatarText: { fontWeight: "700", color: "#2b3a67", fontSize: 20 },
+  avatarImg: { width: "100%", height: "100%", borderRadius: 14 },
+  avatarText: { fontWeight: "800", color: "#2b3a67", fontSize: 20 },
 
   doctorTitle: { color: "#667085", fontSize: 12, marginBottom: 2 },
-  doctorName: { fontSize: isSmall ? 16 : 18, fontWeight: "700", color: "#111827" },
+  doctorName: { fontSize: isSmall ? 16 : 18, fontWeight: "800", color: "#111827" },
   doctorSub: { color: "#4b5563", marginTop: 2 },
 
-  metaRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: 8 },
-  metaItem: { marginRight: 8, marginBottom: 6 },
+  metaRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginTop: 10, gap: 8 },
+  metaText: { color: "#64748b", fontWeight: "600", fontSize: 12 },
 
+  // Section
   sectionHeader: {
-    marginTop: 12,
+    marginTop: 8,
     marginBottom: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  sectionTitle: { fontSize: isSmall ? 15 : 16, fontWeight: "700", color: "#0f172a" },
-  sectionRight: { flexDirection: "row", alignItems: "center" },
+  sectionTitle: { fontSize: isSmall ? 15 : 16, fontWeight: "800", color: "#0f172a" },
 
+  // Stats
   statsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
   },
-  statItem: {
-    width: "48%",
-    alignItems: "center",
-    marginBottom: 16,
-  },
+  statItem: { width: "48%", alignItems: "center", marginBottom: 16 },
   statIconWrap: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   statIconEmoji: { fontSize: 22, color: "#fff" },
-  statValue: { fontSize: 22, fontWeight: "700", color: "#0f172a", marginBottom: 4 },
-  statCaption: { fontSize: 12, color: "#6b7280", textAlign: "center" },
+  statValue: { fontSize: 22, fontWeight: "900", color: "#0f172a", marginBottom: 4 },
+  statCaption: { fontSize: 12, color: "#6b7280", textAlign: "center", fontWeight: "600" },
   progressTrack: {
     width: "100%",
     height: 8,
@@ -723,108 +742,125 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   progressFill: { height: 8, backgroundColor: "#16a34a", borderRadius: 999 },
-  progressText: { fontSize: 12, color: "#6b7280", textAlign: "center", marginTop: 4 },
+  progressText: { fontSize: 12, color: "#6b7280", textAlign: "center", marginTop: 4, fontWeight: "600" },
 
-  slotWrap: { marginTop: 8 },
+  // Slots
+  slotWrap: { marginTop: 6 },
   slot: {
-    backgroundColor: "#e8f7ff",
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 14,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 10,
+    borderWidth: 1,
   },
-  slotFree: { backgroundColor: "#e8f7ff" },
-  slotDisabled: { backgroundColor: "#ffe9e9" },
-  slotText: { fontWeight: "700", color: "#0f172a", fontSize: 14 },
+  slotFree: { backgroundColor: "#F3F7FF", borderColor: "#E3ECFF" },
+  slotDisabled: { backgroundColor: "#FFF1F2", borderColor: "#FFD4D8" },
+  slotText: { fontWeight: "900", color: "#0f172a", fontSize: 14 },
   slotTextDisabled: { color: "#9b1c1c" },
+  slotSub: { marginTop: 4, fontSize: 12, color: "#64748b", fontWeight: "600" },
 
-  legend: { flexDirection: "row", alignItems: "center", marginTop: 12 },
-  legendRow: { flexDirection: "row", alignItems: "center", marginRight: 16 },
-  legendDot: { width: 12, height: 12, borderRadius: 6 },
-  legendText: { color: "#6b7280", fontSize: 12, marginLeft: 8 },
-
-  tab: {
-    fontWeight: "700",
-    color: "#64748b",
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: "#eef2ff",
+  // Tabs (pill)
+  tabsRow: { flexDirection: "row", gap: 10, marginBottom: 6 },
+  tabPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#EEF2FF",
   },
-  tabActive: { color: "#0b5fff", backgroundColor: "#dfe8ff" },
+  tabPillActive: { backgroundColor: "#DDE7FF" },
+  tabPillText: { fontWeight: "900", color: "#64748b", fontSize: 13 },
+  tabPillTextActive: { color: "#0B5FFF" },
+  tabCount: {
+    minWidth: 26,
+    paddingHorizontal: 8,
+    height: 22,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  tabCountText: { fontWeight: "900", color: "#0f172a", fontSize: 12 },
 
+  // Appointment card
   apptCard: {
     marginTop: 10,
     backgroundColor: CARD_BG,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
     shadowColor: "#000",
     shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 1,
+    borderWidth: 1,
+    borderColor: "#EEF2F7",
   },
-  apptTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 2,
+  apptTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  apptCode: { fontWeight: "900", color: "#0f172a", fontSize: 12 },
+  apptTime: { color: "#0B5FFF", fontWeight: "900", fontSize: 12 },
+
+  section: { marginTop: 14 },
+  sectionLabel: {
+    fontSize: 11,
+    color: "#64748B",
+    marginBottom: 8,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
-  apptLeft: { paddingRight: 12 },
+
   circleAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: "#e6edf9",
     justifyContent: "center",
     alignItems: "center",
   },
-  circleAvatarImg: { width: "100%", height: "100%", borderRadius: 18 },
-  circleAvatarText: { fontWeight: "700", color: "#234", fontSize: 14 },
-  apptTime: { color: "#0b5fff", fontWeight: "700" },
-  section: { marginTop: 14 },
-  sectionLabel: {
-    fontSize: 12,
-    color: "#64748B",
-    marginBottom: 8,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
+  circleAvatarImg: { width: "100%", height: "100%", borderRadius: 19 },
+  circleAvatarText: { fontWeight: "900", color: "#234", fontSize: 14 },
+
   personInfo: { marginLeft: 12, flex: 1 },
-  personName: { fontSize: 15, fontWeight: "600", color: "#111827" },
-  personSub: { fontSize: 12, color: "#6B7280", marginTop: 2 },
-  timeText: { fontSize: 14, fontWeight: "600", color: "#111827" },
-  noteText: { fontSize: 12, color: "#374151", marginTop: 4 },
+  personName: { fontSize: 15, fontWeight: "800", color: "#111827" },
+  personSub: { fontSize: 12, color: "#6B7280", marginTop: 2, fontWeight: "600" },
+
+  bottomRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  timeText: { fontSize: 14, fontWeight: "800", color: "#111827" },
+  noteText: { fontSize: 12, color: "#374151", marginTop: 6, fontWeight: "600" },
+
   cancelReasonBox: {
-    marginTop: 8,
-    padding: 8,
-    borderRadius: 8,
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 12,
     backgroundColor: "#FEF2F2",
     borderWidth: 1,
     borderColor: "#FECACA",
   },
   cancelReasonLabel: {
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "900",
     color: "#991B1B",
-    marginBottom: 2,
+    marginBottom: 4,
     textTransform: "uppercase",
   },
-  cancelReasonText: {
-    fontSize: 12,
-    color: "#7F1D1D",
-  },
+  cancelReasonText: { fontSize: 12, color: "#7F1D1D", fontWeight: "600" },
 
-  tagBase: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  tagText: { color: "#0f172a", fontWeight: "700", fontSize: 12 },
-  tagBaseSm: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
-  tagTextSm: { color: "#0f172a", fontWeight: "700", fontSize: 11 },
+  // Empty
+  emptyCard: { alignItems: "center", paddingVertical: 20 },
+  emptyTitle: { fontWeight: "900", color: "#0f172a", fontSize: 14 },
+  emptySub: { marginTop: 6, color: "#64748b", fontWeight: "600", textAlign: "center" },
+
+  // Tags
+  tagBase: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  tagText: { color: "#0f172a", fontWeight: "900", fontSize: 12 },
+  tagBaseSm: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+  tagTextSm: { color: "#0f172a", fontWeight: "900", fontSize: 11 },
   tagPrimary: { backgroundColor: "#e9f0ff" },
   tagSuccess: { backgroundColor: "#e6f9ee" },
   tagWarn: { backgroundColor: "#fff6e5" },
@@ -833,7 +869,5 @@ const styles = StyleSheet.create({
   tagGray: { backgroundColor: "#f1f5f9" },
   tagBlue: { backgroundColor: "#dfe8ff" },
 
-  badge: { width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  badgeText: { fontWeight: "800" },
-  muted: { color: "#6b7280" },
+  muted: { color: "#6b7280", fontWeight: "600" },
 });

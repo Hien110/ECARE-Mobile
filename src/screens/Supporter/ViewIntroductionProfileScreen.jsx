@@ -21,17 +21,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const AVATAR_FALLBACK =
   'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/image-mAf0Q5orw3lJzIC2j6NFU6Ik2VNcgB.png';
 
-const DAY_NUM_TO_LABEL = { 2: 'Thứ 2', 3: 'Thứ 3', 4: 'Thứ 4', 5: 'Thứ 5', 6: 'Thứ 6', 7: 'Thứ 7', 8: 'Chủ nhật' };
+// const DAY_NUM_TO_LABEL = { 2: 'Thứ 2', 3: 'Thứ 3', 4: 'Thứ 4', 5: 'Thứ 5', 6: 'Thứ 6', 7: 'Thứ 7', 8: 'Chủ nhật' };
 const DAY_ORDER = [2, 3, 4, 5, 6, 7, 8];
 
-const SLOT_LABEL = {
-  morning: 'Ca sáng (06:00 - 12:00)',
-  afternoon: 'Ca chiều (12:00 - 18:00)',
-  evening: 'Ca tối (18:00 - 22:00)',
-};
-const SLOT_SHORT = { morning: 'Sáng', afternoon: 'Chiều', evening: 'Tối' };
+// const SLOT_LABEL = {
+//   morning: 'Ca sáng (06:00 - 12:00)',
+//   afternoon: 'Ca chiều (12:00 - 18:00)',
+//   evening: 'Ca tối (18:00 - 22:00)',
+// };
+// const SLOT_SHORT = { morning: 'Sáng', afternoon: 'Chiều', evening: 'Tối' };
 
-const TAG = '[ViewIntroductionProfile]';
 
 const ViewIntroductionProfile = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
@@ -65,25 +64,15 @@ const ViewIntroductionProfile = ({ navigation }) => {
   const fetchProfile = async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
-      console.log(TAG, '--- call supporterService.getMyProfile, isRefresh =', isRefresh);
       const res = await supporterService.getMyProfile();
-      console.log(
-        TAG,
-        'getMyProfile raw response =',
-        // dùng JSON.stringify để xem rõ cấu trúc
-        JSON.stringify(res, null, 2),
-      );
-
+   
       if (res.success) {
         setProfile(res.data);
         hydrateBankForm(res.data);
-        console.log(TAG, 'profile.user from API =', JSON.stringify(res.data?.user, null, 2));
       } else {
-        console.log(TAG, 'getMyProfile error message =', res.message);
         Alert.alert('Lỗi', res.message || 'Không tải được hồ sơ.');
       }
     } catch (e) {
-      console.log(TAG, 'getMyProfile exception =', e);
       Alert.alert('Lỗi', e?.message || 'Không tải được hồ sơ.');
     } finally {
       if (isRefresh) setRefreshing(false);
@@ -106,61 +95,55 @@ const ViewIntroductionProfile = ({ navigation }) => {
     fetchProfile(true);
   };
 
-  // log khi profile thay đổi để dễ debug
-  useEffect(() => {
-    if (profile) {
-      console.log(TAG, 'profile state updated =', JSON.stringify(profile, null, 2));
-    }
-  }, [profile]);
-
+ 
   // --- Schedule transforms ---
-  const scheduleByDay = useMemo(() => {
-    const map = {};
-    (profile?.schedule || []).forEach((s) => {
-      const d = s.dayOfWeek; // 2..8
-      if (!map[d]) map[d] = new Set();
-      map[d].add(s.timeSlots);
-    });
-    return DAY_ORDER.map((d) => ({ dayNumber: d, slots: Array.from(map[d] || []) }));
-  }, [profile]);
+  // const scheduleByDay = useMemo(() => {
+  //   const map = {};
+  //   (profile?.schedule || []).forEach((s) => {
+  //     const d = s.dayOfWeek; // 2..8
+  //     if (!map[d]) map[d] = new Set();
+  //     map[d].add(s.timeSlots);
+  //   });
+  //   return DAY_ORDER.map((d) => ({ dayNumber: d, slots: Array.from(map[d] || []) }));
+  // }, [profile]);
 
   /**
    * todaySlots = các ca đã được ĐẶT trong hôm nay
    */
-  const todaySlots = useMemo(() => {
-    const today = new Date();
-    const isSameYMD = (d) => {
-      if (!d) return false;
-      const x = new Date(d);
-      if (isNaN(x)) return false;
-      return (
-        x.getFullYear() === today.getFullYear() &&
-        x.getMonth() === today.getMonth() &&
-        x.getDate() === today.getDate()
-      );
-    };
+  // const todaySlots = useMemo(() => {
+  //   const today = new Date();
+  //   const isSameYMD = (d) => {
+  //     if (!d) return false;
+  //     const x = new Date(d);
+  //     if (isNaN(x)) return false;
+  //     return (
+  //       x.getFullYear() === today.getFullYear() &&
+  //       x.getMonth() === today.getMonth() &&
+  //       x.getDate() === today.getDate()
+  //     );
+  //   };
 
-    // profile.bookings | profile.appointments | profile.todayBookings
-    const list =
-      (Array.isArray(profile?.todayBookings) && profile.todayBookings) ||
-      (Array.isArray(profile?.bookings) && profile.bookings) ||
-      (Array.isArray(profile?.appointments) && profile.appointments) ||
-      [];
+  //   // profile.bookings | profile.appointments | profile.todayBookings
+  //   const list =
+  //     (Array.isArray(profile?.todayBookings) && profile.todayBookings) ||
+  //     (Array.isArray(profile?.bookings) && profile.bookings) ||
+  //     (Array.isArray(profile?.appointments) && profile.appointments) ||
+  //     [];
 
-    const BOOKED_STATUS = ['confirmed', 'accepted', 'booked', 'approved', 'pending'];
+  //   const BOOKED_STATUS = ['confirmed', 'accepted', 'booked', 'approved', 'pending'];
 
-    const bookedToday = list.filter((b) => {
-      const status = String(b?.status || '').toLowerCase();
-      const dateField = b?.date || b?.bookingDate || b?.start || b?.startTime || b?.startAt;
-      return BOOKED_STATUS.includes(status) && isSameYMD(dateField);
-    });
+  //   const bookedToday = list.filter((b) => {
+  //     const status = String(b?.status || '').toLowerCase();
+  //     const dateField = b?.date || b?.bookingDate || b?.start || b?.startTime || b?.startAt;
+  //     return BOOKED_STATUS.includes(status) && isSameYMD(dateField);
+  //   });
 
-    const slots = bookedToday
-      .map((b) => b?.timeSlot || b?.slot || b?.timeSlots)
-      .filter((s) => s === 'morning' || s === 'afternoon' || s === 'evening');
+  //   const slots = bookedToday
+  //     .map((b) => b?.timeSlot || b?.slot || b?.timeSlots)
+  //     .filter((s) => s === 'morning' || s === 'afternoon' || s === 'evening');
 
-    return new Set(slots);
-  }, [profile]);
+  //   return new Set(slots);
+  // }, [profile]);
 
   const renderStars = (rating) =>
     Array.from({ length: 5 }, (_, i) => (
@@ -224,15 +207,12 @@ const ViewIntroductionProfile = ({ navigation }) => {
       if (res?.success) {
         setProfile(res.data);
         hydrateBankForm(res.data);
-        console.log(TAG, 'bank card saved, new profile =', JSON.stringify(res.data, null, 2));
         Alert.alert('Thành công', 'Đã lưu thẻ ngân hàng.');
       } else {
-        console.log(TAG, 'updateMyProfile (bankCard) error =', res?.message);
         Alert.alert('Không thành công', res?.message || 'Không thể lưu thẻ.');
       }
     } catch (e) {
       setSavingCard(false);
-      console.log(TAG, 'updateMyProfile (bankCard) exception =', e);
       Alert.alert('Lỗi', e?.message || 'Không thể lưu thẻ.');
     }
   };
@@ -264,8 +244,6 @@ const ViewIntroductionProfile = ({ navigation }) => {
     userObj.currentLocation?.formatted ||
     'Chưa cập nhật địa chỉ.';
 
-  console.log(TAG, 'userObj for address =', JSON.stringify(userObj, null, 2));
-  console.log(TAG, 'computed addressText =', addressText);
 
   const reviews = Array.isArray(profile?.reviews) ? profile.reviews : [];
   const ratingAvg =
@@ -398,7 +376,7 @@ const ViewIntroductionProfile = ({ navigation }) => {
         </View>
 
         {/* Edit button */}
-        <View style={styles.actionButtons}>
+        {/* <View style={styles.actionButtons}>
           <TouchableOpacity
             style={styles.editButton}
             onPress={() =>
@@ -412,7 +390,7 @@ const ViewIntroductionProfile = ({ navigation }) => {
           >
             <Text style={styles.editButtonText}>Chỉnh sửa hồ sơ</Text>
           </TouchableOpacity>
-        </View>
+        </View> */}
       </ScrollView>
     </SafeAreaView>
   );
