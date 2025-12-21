@@ -356,13 +356,13 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
             </View>
 
             {/* CTA: Chỉnh sửa hồ sơ (nút to, rõ ràng) */}
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.editProfileCta}
               onPress={() => navigation?.navigate?.('EditDoctorProfile')}
             >
               <Icon name="create-outline" size={18} color="#fff" />
               <Text style={styles.editProfileCtaText}>Chỉnh sửa hồ sơ</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </>
         )}
         
@@ -373,7 +373,7 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
 
 const styles = StyleSheet.create({
   // Container & Header
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: { flex: 1, backgroundColor: '#F8F9FA', marginBottom: 18 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -381,6 +381,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: '#2F6FED',
     minHeight: 80,
+    marginBottom: 8,
   },
   backButton: { padding: 8, marginRight: 12 },
   headerContent: { flex: 1 },

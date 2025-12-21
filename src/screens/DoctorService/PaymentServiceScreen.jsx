@@ -42,6 +42,7 @@ const PaymentServiceScreen = () => {
 
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showBankInfoModal, setShowBankInfoModal] = useState(false);
 
   const [orderCode, setOrderCode] = useState(null);
   const [qrCode, setQrCode] = useState(null);
@@ -443,6 +444,38 @@ const PaymentServiceScreen = () => {
     }
   };
 
+  const handleSelectPaymentMethod = async (method) => {
+    // Nếu chọn phương thức QR/Online, kiểm tra thông tin ngân hàng từ API
+    if (method === 'qr') {
+      try {
+        // Gọi API để lấy thông tin user mới nhất
+        const response = await userService.getUserInfo();
+        
+        if (response?.success && response?.data) {
+          const userData = response.data;
+          
+          // Kiểm tra xem có thông tin ngân hàng chưa
+          if (!userData.bankName || !userData.bankAccountNumber) {
+            setShowBankInfoModal(true);
+            return;
+          }
+          
+          // Cập nhật currentUser với thông tin mới nhất
+          setCurrentUser(userData);
+        } else {
+          // Nếu không lấy được thông tin, yêu cầu cập nhật
+          setShowBankInfoModal(true);
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking bank info:', error);
+        setShowBankInfoModal(true);
+        return;
+      }
+    }
+    setSelectedMethod(method);
+  };
+
   const handleConfirmPayment = async () => {
     if (!selectedMethod) {
       Alert.alert(
@@ -557,7 +590,7 @@ const PaymentServiceScreen = () => {
               selectedMethod === 'cash' && styles.payMethodCardActive,
             ]}
             activeOpacity={0.8}
-            onPress={() => setSelectedMethod('cash')}
+            onPress={() => handleSelectPaymentMethod('cash')}
             disabled={submitting}
           >
             <View style={styles.iconCircle}>
@@ -583,7 +616,7 @@ const PaymentServiceScreen = () => {
               { marginRight: 0 },
             ]}
             activeOpacity={0.8}
-            onPress={() => setSelectedMethod('qr')}
+            onPress={() => handleSelectPaymentMethod('qr')}
             disabled={submitting}
           >
             <View style={styles.iconCircle}>
@@ -654,6 +687,43 @@ const PaymentServiceScreen = () => {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Bank Info Required Modal */}
+      <Modal
+        transparent
+        visible={showBankInfoModal}
+        animationType="fade"
+        onRequestClose={() => setShowBankInfoModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalIconCircle}>
+              <Icon name="card-outline" size={32} color="#FFFFFF" />
+            </View>
+            <Text style={styles.modalTitle}>Yêu cầu thông tin ngân hàng</Text>
+            <Text style={styles.modalSubtitle}>
+              Để tiến hành thanh toán chuyển khoản, vui lòng cập nhật thông tin tài khoản ngân hàng của bạn để nhận hoàn tiền khi cần thiết.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.modalPrimaryButton}
+              onPress={() => {
+                setShowBankInfoModal(false);
+                navigation.navigate('BankAccount');
+              }}
+            >
+              <Text style={styles.modalPrimaryButtonText}>Cập nhật thông tin</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalSecondaryButton}
+              onPress={() => setShowBankInfoModal(false)}
+            >
+              <Text style={styles.modalSecondaryButtonText}>Để sau</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         transparent
@@ -965,10 +1035,22 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingVertical: 10,
     paddingHorizontal: 32,
+    marginBottom: 8,
   },
   modalPrimaryButtonText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  modalSecondaryButton: {
+    backgroundColor: 'transparent',
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 32,
+  },
+  modalSecondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
   },
 });

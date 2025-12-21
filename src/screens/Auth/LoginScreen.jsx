@@ -139,6 +139,15 @@ export default function LoginScreen() {
         // Disconnect socket cũ trước rồi kết nối lại để đảm bảo dùng token mới
         socketService.disconnect();
         await socketService.connect();
+        
+        // 🔥 CRITICAL FIX: Force setup listeners NGAY SAU KHI socket connect
+        console.log('🔥 [Login] Socket connected, forcing listener setup...');
+        const { forceSetupSocketListeners } = require('../../navigation/AppNavigator');
+        // Đợi 100ms để đảm bảo socket internal listeners ready
+        setTimeout(() => {
+          forceSetupSocketListeners();
+          console.log('🔥 [Login] Listeners setup forced after login');
+        }, 100);
       } catch (err) {
         console.error('Socket connect after login failed:', err);
       }

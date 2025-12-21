@@ -331,6 +331,15 @@ const PersonalInfoScreen = ({ navigation }) => {
           />
 
           <MenuItem
+            bg="#E0F2FE"
+            iconLib="mat"
+            icon="account-balance"
+            color="#0284C7"
+            title="Tài khoản ngân hàng"
+            onPress={() => navigation.navigate('BankAccount')}
+          />
+
+          <MenuItem
             bg="#FFE4E6"
             iconLib="mat"
             icon="logout"
