@@ -3,10 +3,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { useRoute } from '@react-navigation/native';
 import doctorService from '../../services/doctorService';
-import { SafeAreaView, ScrollView, View, Text, Image } from "react-native";
+import { ScrollView, View, Text, Image } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Star, Calendar, MapPin, Clock, Heart, Award } from "lucide-react-native";
 import Card from "../../components/Cart";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ProfileScreen() {
   const route = useRoute();

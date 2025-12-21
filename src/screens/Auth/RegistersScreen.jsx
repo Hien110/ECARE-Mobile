@@ -5,7 +5,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Image,
   Alert,
@@ -19,6 +18,7 @@ import { launchCamera } from 'react-native-image-picker';
 import { userService } from '../../services/userService';
 import logo from '../../assets/logoBrand.png';
 
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const Btn = ({ title, onPress, disabled }) => (
   <TouchableOpacity
