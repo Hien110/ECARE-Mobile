@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
 	ActivityIndicator,
 	FlatList,
-	SafeAreaView,
 	StyleSheet,
 	Text,
 	TouchableOpacity,
@@ -12,6 +11,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 import consultationSummaryService from '../../services/consultationSummaryService';
+import { SafeAreaView } from 'react-native-safe-area-context';
  
 const ListSumaryScreen = () => {
 	const navigation = useNavigation();

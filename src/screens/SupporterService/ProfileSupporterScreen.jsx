@@ -4,7 +4,6 @@ import { useRoute } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
@@ -21,6 +20,7 @@ import {
   Phone,
   MessageCircle,
 } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import supporterSchedulingService from '../../services/supporterSchedulingService';
 import Card from '../../components/Cart';

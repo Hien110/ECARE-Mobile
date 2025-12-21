@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  SafeAreaView,
   View,
   Text,
   TouchableOpacity,
@@ -10,6 +9,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { userService } from '../../services/userService';
 import OtpCodeInput from '../../components/OtpCodeInput';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const OTPChangePhoneScreen = ({ navigation, route }) => {
   // Nhận số điện thoại mới từ màn trước

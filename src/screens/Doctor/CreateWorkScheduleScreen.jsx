@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Modal, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
+  Modal, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import DoctorNavTabs from '../../components/DoctorNavTabs';
 import { doctorService } from '../../services/doctorService';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const DAY_LABELS = ['T2','T3','T4','T5','T6','T7','CN'];
 const DAY_NAMES  = ['Thứ 2','Thứ 3','Thứ 4','Thứ 5','Thứ 6','Thứ 7','Chủ nhật'];

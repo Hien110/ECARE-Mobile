@@ -1,9 +1,10 @@
-import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, StatusBar, SafeAreaView, Modal } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, Image, StyleSheet, StatusBar, Modal } from "react-native";
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect, useState } from "react";
 import { relationshipService } from "../../services/relationshipService";
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from "react-native-responsive-screen";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const FamilyList_FamilyScreen = () => {
     const navigation = useNavigation();

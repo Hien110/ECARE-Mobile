@@ -202,23 +202,23 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
 
       {/* Tabs */}
       <DoctorNavTabs
-  navigation={navigation}
-  active={selectedTab}  
-  routes={{
-    profile: [
-      'ProfileGate',                 
-      'ViewDoctorProfile',           
-      'IntroductionCreateDoctorProfile', 
-      'EditDoctorProfile',           
-    ],
-    schedule: [
-      'CreateWorkSchedule' 
-    ],
-    statistics: [
-      'EvaluationStatistics',
-    ],
-  }}
-/>
+        navigation={navigation}
+        active={selectedTab}
+        routes={{
+          profile: [
+            'ProfileGate',
+            'ViewDoctorProfile',
+            'IntroductionCreateDoctorProfile',
+            'EditDoctorProfile',
+          ],
+          schedule: [
+            'CreateWorkSchedule'
+          ],
+          statistics: [
+            'EvaluationStatistics',
+          ],
+        }}
+      />
 
       <ScrollView
         style={styles.content}
@@ -365,7 +365,7 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
             </TouchableOpacity> */}
           </>
         )}
-        
+
       </ScrollView>
     </SafeAreaView>
   );

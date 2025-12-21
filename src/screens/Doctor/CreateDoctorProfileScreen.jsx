@@ -7,13 +7,13 @@ import {
   ScrollView,
   StyleSheet,
   StatusBar,
-  SafeAreaView,
   Animated,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { doctorService } from '../../services/doctorService';
 import DoctorNavTabs from '../../components/DoctorNavTabs';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const CreateDoctorProfileScreen = ({ navigation, onViewProfile }) => {
   const [selectedTab, setSelectedTab] = useState('profile');

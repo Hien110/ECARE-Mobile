@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, SafeAreaView, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Alert, StatusBar } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, ActivityIndicator, Image, KeyboardAvoidingView, Platform, Alert, StatusBar } from "react-native"
 import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import Icon from "react-native-vector-icons/MaterialIcons";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -8,6 +8,7 @@ import { userService } from '../../services/userService';
 import socketService from '../../services/socketService';
 import CallService from '../../services/CallService';
 import { formatMessageTime } from '../../utils/timeFormat';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const ChatScreen = () => {
   const navigation = useNavigation();

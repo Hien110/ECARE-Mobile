@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
@@ -12,6 +11,7 @@ import { Star, ChevronLeft } from "lucide-react-native";
 import Card from "../../components/Cart";
 import doctorService from "../../services/doctorService";
 import { userService } from "../../services/userService";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ReviewsScreen({ route, navigation }) {
   const passedUserId = route?.params?.userId || null;

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -15,6 +14,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import DoctorNavTabs from '../../components/DoctorNavTabs';
 import { doctorService } from '../../services/doctorService';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const EditDoctorProfileScreen = ({ navigation, onViewProfile }) => {
   const [selectedTab, setSelectedTab] = useState('profile');

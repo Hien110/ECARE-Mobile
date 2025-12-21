@@ -14,6 +14,7 @@ import {
   View,
   NativeEventEmitter,
   NativeModules,
+  Image
 } from 'react-native';
 import Geolocation from 'react-native-geolocation-service';
 
@@ -258,7 +259,7 @@ export default function HomeScreen() {
         Alert.alert(
           '⚠️ SOS đang xử lý',
           errorMsg ||
-            'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
+          'Bạn đang có cuộc gọi SOS đang xử lý. Vui lòng đợi hoàn tất trước khi gửi SOS mới.',
           [{ text: 'OK' }],
         );
       } else {
@@ -323,57 +324,60 @@ export default function HomeScreen() {
   // chấp nhận / từ chối yêu cầu
   const respondToRequest = useCallback(
     async (relationshipId, action) => {
+      if (!relationshipId) return;
+      console.log(action, "Đây là action");
+
+      // chặn action sai
+      if (action !== "accept" && action !== "reject") {
+        console.warn("Invalid action:", action);
+        return;
+      }
+
+      // chặn spam click
+      if (reqLoading) return;
+
+      const status = action === "accept" ? "accepted" : "rejected";
+
       try {
         setReqLoading(true);
-        if (action === 'accept') {
-          if (relationshipService.approveRelationship) {
-            await relationshipService.approveRelationship(relationshipId);
-          } else if (relationshipService.updateRelationshipStatus) {
-            await relationshipService.updateRelationshipStatus(
-              relationshipId,
-              'accepted',
-            );
-          } else if (relationshipService.respondRequest) {
-            await relationshipService.respondRequest({
-              id: relationshipId,
-              status: 'accepted',
-            });
-          } else if (relationshipService.patch) {
-            await relationshipService.patch(relationshipId, {
-              status: 'accepted',
-            });
-          }
-          notify('Đã chấp nhận yêu cầu kết nối!', 'success');
+
+        // Ưu tiên theo thứ tự hàm service bạn đang có
+        if (status === "accepted" && relationshipService.acceptRelationship) {
+          await relationshipService.acceptRelationship(relationshipId);
+        } else if (status === "rejected" && relationshipService.rejectRelationship) {
+          await relationshipService.rejectRelationship(relationshipId);
+        } else if (relationshipService.updateRelationshipStatus) {
+          await relationshipService.updateRelationshipStatus(relationshipId, status);
+        } else if (relationshipService.respondRequest) {
+          await relationshipService.respondRequest({ id: relationshipId, status });
+        } else if (relationshipService.patch) {
+          await relationshipService.patch(relationshipId, { status });
         } else {
-          if (relationshipService.rejectRelationship) {
-            await relationshipService.rejectRelationship(relationshipId);
-          } else if (relationshipService.updateRelationshipStatus) {
-            await relationshipService.updateRelationshipStatus(
-              relationshipId,
-              'rejected',
-            );
-          } else if (relationshipService.respondRequest) {
-            await relationshipService.respondRequest({
-              id: relationshipId,
-              status: 'rejected',
-            });
-          } else if (relationshipService.patch) {
-            await relationshipService.patch(relationshipId, {
-              status: 'rejected',
-            });
-          }
-          notify('Đã từ chối yêu cầu.');
+          throw new Error("No suitable relationshipService method found");
         }
-        await loadPendingRequests();
-        await loadFamilyRelationships();
+
+        notify(
+          status === "accepted"
+            ? "Đã chấp nhận yêu cầu kết nối!"
+            : "Đã từ chối yêu cầu.",
+          status === "accepted" ? "success" : undefined
+        );
+
+        await Promise.all([loadPendingRequests(), loadFamilyRelationships()]);
       } catch (e) {
-        console.log('respondToRequest error:', e);
-        notify('Xử lý yêu cầu thất bại. Vui lòng thử lại.', 'error');
+        console.log("respondToRequest error:", e);
+        notify("Xử lý yêu cầu thất bại. Vui lòng thử lại.", "error");
       } finally {
         setReqLoading(false);
       }
     },
-    [loadPendingRequests, loadFamilyRelationships, notify],
+    [
+      reqLoading,
+      relationshipService, // nếu service có thể thay đổi
+      loadPendingRequests,
+      loadFamilyRelationships,
+      notify,
+    ]
   );
 
   // gọi video tới thành viên gia đình
@@ -448,7 +452,7 @@ export default function HomeScreen() {
         if (cached) {
           try {
             setUser(JSON.parse(cached));
-          } catch {}
+          } catch { }
         }
         const res = await userService.getUser();
         if (res?.success && res?.data) {
@@ -471,7 +475,7 @@ export default function HomeScreen() {
     }
   }, [user, loadPendingRequests, loadFamilyRelationships]);
 
- 
+
   useEffect(() => {
     if (!user?._id) return undefined;
 
@@ -493,7 +497,7 @@ export default function HomeScreen() {
           await socketService.connect();
         }
 
-        
+
         socketService.on('relationship_created', handleRelationshipEvent);
         socketService.on('relationship_updated', handleRelationshipEvent);
         socketService.on('relationship_deleted', handleRelationshipEvent);
@@ -574,8 +578,7 @@ export default function HomeScreen() {
 
       if (Platform.OS === 'android') {
         ToastAndroid.show(
-          `✅ ${
-            recipient?.fullName || 'Thành viên gia đình'
+          `✅ ${recipient?.fullName || 'Thành viên gia đình'
           } đã chấp nhận cuộc gọi`,
           ToastAndroid.SHORT,
         );
@@ -590,7 +593,7 @@ export default function HomeScreen() {
       Alert.alert(
         '⚠️ Không có phản hồi',
         data.message ||
-          'Không có thành viên nào trả lời cuộc gọi khẩn cấp. Vui lòng thử gọi trực tiếp hoặc liên hệ số khẩn cấp 115.',
+        'Không có thành viên nào trả lời cuộc gọi khẩn cấp. Vui lòng thử gọi trực tiếp hoặc liên hệ số khẩn cấp 115.',
         [{ text: 'OK' }],
       );
     };
@@ -671,6 +674,27 @@ export default function HomeScreen() {
   };
 
   const chatSupport = () => nav.navigate('ChatWithAI');
+
+  const formatTimeAgo = (iso) => {
+    if (!iso) return "Gần đây";
+    const t = new Date(iso).getTime();
+    const diff = Date.now() - t;
+    if (diff < 0) return new Date(iso).toLocaleString("vi-VN");
+
+    const sec = Math.floor(diff / 1000);
+    if (sec < 60) return "Vừa xong";
+
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min} phút trước`;
+
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} giờ trước`;
+
+    const day = Math.floor(hr / 24);
+    if (day < 7) return `${day} ngày trước`;
+
+    return new Date(iso).toLocaleDateString("vi-VN");
+  };
 
   if (booting) {
     return (
@@ -794,33 +818,38 @@ export default function HomeScreen() {
               <>
                 <View style={styles.familyList}>
                   {familyPreview.map(m => {
-                    const rel = (m.relationship || '').toLowerCase();
-                    const role = (m.role || '').toLowerCase();
+                    const rel = (m.relationship || "").toLowerCase();
+                    const role = (m.role || "").toLowerCase();
 
                     const isDoctor =
-                      role === 'doctor' ||
-                      rel === 'doctor' ||
-                      rel === 'bác sĩ';
+                      role === "doctor" || rel === "doctor" || rel === "bác sĩ";
 
                     const subText = isDoctor
-                      ? `Bác sĩ của ${user?.fullName || 'người cao tuổi'}`
-                      : (m.relationship || 'Thành viên gia đình');
+                      ? `Bác sĩ của ${user?.fullName || "người cao tuổi"}`
+                      : (m.relationship || "Thành viên gia đình");
+
+                    console.log("Thành viên gia đình", m);
 
                     return (
                       <ConnectedCard
                         key={m._id}
-                        icon={isDoctor ? '👩‍⚕️' : '👤'}
-                        sub={subText}
                         title={m.fullName}
-                        onPress={() => handleVideoCallToMember(m)}
+                        sub={subText}
+                        isDoctor={isDoctor}
+                        avatar={m.avatar}
                         online={false}
+                        onPress={() => handleVideoCallToMember(m)}
                       />
                     );
                   })}
                 </View>
-                <Text style={styles.familyHint}>
-                  Nhấn vào tên để gọi video.
-                </Text>
+
+                {/* Hint dạng banner thay vì text thường */}
+                <View style={styles.familyBanner}>
+                  <Text style={styles.familyBannerIcon}>💡</Text>
+                  <Text style={styles.familyBannerText}>Chạm vào một thành viên để gọi video nhanh.</Text>
+                </View>
+
               </>
             )}
           </View>
@@ -840,38 +869,83 @@ export default function HomeScreen() {
             ) : pendingPreview.length === 0 ? (
               <Text style={styles.muted}>Hiện không có yêu cầu mới.</Text>
             ) : (
-              <View style={{ gap: 12 }}>
-                {pendingPreview.map(r => {
+              <View style={styles.reqList}>
+                {pendingPreview.map((r) => {
                   const other = getOtherMember(r, user?._id);
-                  const name = other?.fullName || 'Người dùng';
-                  const relation =
-                    r?.relationship || 'Thành viên gia đình';
-                  const requestedAt = r?.createdAt
-                    ? new Date(r.createdAt).toLocaleString('vi-VN')
-                    : 'Gần đây';
+
+                  const name =
+                    other?.fullName || r?.requestedBy?.fullName || "Người dùng";
+
+                  const avatar = other?.avatar || r?.requestedBy?.avatar || null;
+
+                  const relation = r?.relationship || "Thành viên gia đình";
+
                   return (
-                    <RequestItem
-                      key={r?._id}
-                      rq={{
-                        name,
-                        relation,
-                        note:
-                          r?.note ||
-                          'Yêu cầu kết nối với bạn trên E-Care',
-                        requestedAt,
-                      }}
-                      onAccept={() =>
-                        respondToRequest(r?._id, 'accept')
-                      }
-                      onDecline={() =>
-                        respondToRequest(r?._id, 'reject')
-                      }
-                    />
+                    <View style={styles.reqCard}>
+                      {/* HÀNG TRÊN: Avatar + Info */}
+                      <View style={styles.reqTop}>
+                        <View style={styles.cAvatarWrap}>
+                          {avatar ? (
+                            <Image
+                              source={{ uri: avatar }}
+                              style={styles.cAvatarImg}
+                              resizeMode="cover"
+
+                            />
+                          ) : (
+                            <Text style={styles.reqAvatarText}>
+                              {(name?.trim()?.[0] || "U").toUpperCase()}
+                            </Text>
+                          )}
+                        </View>
+
+                        <View style={styles.reqBody}>
+                          <View style={styles.reqNameRow}>
+                            <Text style={styles.reqName} numberOfLines={1}>
+                              {name}
+                            </Text>
+
+                            <View style={styles.relationBadge}>
+                              <Text style={styles.relationBadgeText}>{relation}</Text>
+                            </View>
+                          </View>
+
+                          <Text style={styles.reqNote} numberOfLines={2}>
+                            Muốn kết nối gia đình với bạn để theo dõi và chăm sóc tốt hơn.
+                          </Text>
+
+                          <Text style={styles.reqTime}>
+                            {formatTimeAgo(r?.createdAt)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* HÀNG DƯỚI: ACTIONS */}
+                      <View style={styles.reqActionRow}>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.acceptBtn]}
+                          onPress={() => respondToRequest(r?._id, "accept")}
+                        >
+                          <Text style={styles.actionBtnText}>Chấp nhận</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.declineBtn]}
+                          onPress={() => respondToRequest(r?._id, "reject")}
+                        >
+                          <Text style={[styles.actionBtnText, styles.declineBtnText]}>
+                            Từ chối
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
                   );
                 })}
               </View>
             )}
           </View>
+
         </Section>
       </ScrollView>
     </SafeAreaView>
@@ -956,69 +1030,70 @@ function BigAction({ tint, icon, title, desc, onPress }) {
   );
 }
 
-function ConnectedCard({ icon, title, sub, onPress, online }) {
+const ConnectedCard = ({
+  title,
+  sub,
+  onPress,
+  online = false,
+  isDoctor,
+  avatar,
+}) => {
+  const initial = (title?.trim()?.[0] || "U").toUpperCase();
+  const [avatarFailed, setAvatarFailed] = useState(false);
+
+  const showAvatarImage = avatar && !avatarFailed;
+
   return (
     <TouchableOpacity
-      style={styles.contact}
+      activeOpacity={0.85}
+      style={styles.cCard}
       onPress={onPress}
-      activeOpacity={0.9}
-      accessibilityRole="button"
-      accessibilityLabel={`${title}. ${sub}. Nhấn để gọi`}
-      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
-      <View style={styles.contactIconWrap}>
-        <Text style={styles.contactIcon}>{icon}</Text>
+      {/* Avatar */}
+      <View
+        style={[
+          styles.cAvatarWrap,
+          isDoctor ? styles.cAvatarDoctor : styles.cAvatarUser,
+        ]}
+      >
+        {showAvatarImage ? (
+          <Image
+            source={{ uri: avatar }}
+            style={styles.cAvatarImg}
+            resizeMode="cover"
+            onError={() => setAvatarFailed(true)}
+          />
+        ) : (
+          <Text style={styles.cAvatarText}>{initial}</Text>
+        )}
+
+        {/* Online dot (tuỳ chọn) */}
+        {/* 
         <View
           style={[
-            styles.dot,
-            { backgroundColor: online ? '#22c55e' : '#94a3b8' },
+            styles.cOnlineDot,
+            { backgroundColor: online ? "#22c55e" : "#cbd5e1" },
           ]}
-        />
+        /> 
+        */}
       </View>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.contactTitle} numberOfLines={1}>
+
+      {/* Info */}
+      <View style={styles.cBody}>
+        <Text style={styles.cTitle} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={styles.contactSub} numberOfLines={1}>
+
+        <Text style={styles.cSub} numberOfLines={1}>
           {sub}
         </Text>
+
+        <Text style={styles.cHintInline}>Nhấn để gọi video</Text>
       </View>
     </TouchableOpacity>
   );
-}
+};
 
-function RequestItem({ rq, onAccept, onDecline }) {
-  return (
-    <View style={styles.reqItem} accessible>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.reqName}>
-          {rq.name}{' '}
-          <Text style={styles.reqRelation}>• {rq.relation}</Text>
-        </Text>
-        <Text style={styles.reqNote}>{rq.note}</Text>
-        <Text style={styles.reqTime}>{rq.requestedAt}</Text>
-      </View>
-      <View style={styles.reqBtnRow}>
-        <TouchableOpacity
-          style={[styles.reqBtn, { backgroundColor: '#22C55E' }]}
-          onPress={onAccept}
-          accessibilityRole="button"
-          accessibilityLabel={`Chấp nhận kết nối với ${rq.name}`}
-        >
-          <Text style={styles.reqBtnText}>Chấp nhận</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.reqBtn, { backgroundColor: '#EF4444' }]}
-          onPress={onDecline}
-          accessibilityRole="button"
-          accessibilityLabel={`Từ chối kết nối với ${rq.name}`}
-        >
-          <Text style={styles.reqBtnText}>Từ chối</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
 
 /* ===================== UTILS & STYLES ===================== */
 function cap(s) {
@@ -1181,117 +1256,313 @@ const styles = StyleSheet.create({
 
   /* Card chung */
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: "#E5E7EB",
     padding: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    gap: 10,
-  },
-  muted: {
-    color: '#9ca3af',
-    fontSize: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
   },
 
-  /* Family list */
-  familyList: {
-    flexDirection: 'column',
-    gap: 10,
-  },
-  familyHint: {
-    marginTop: 6,
-    color: '#6b7280',
+  muted: {
+    color: "#94a3b8",
     fontSize: 14,
+    paddingVertical: 6,
   },
-  contact: {
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  reqList: {
+    gap: 12,
+  },
+
+  reqCard: {
+    backgroundColor: "#F8FAFC",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 12,
+    borderColor: "#E5E7EB",
+    padding: 14,
+    gap: 12,
   },
-  contactIconWrap: {
+
+  /* ===== HÀNG TRÊN ===== */
+  reqTop: {
+    flexDirection: "row",
+    gap: 12,
+  },
+
+  reqAvatarWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 999,
+    backgroundColor: "#ECFDF5",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+
+  reqAvatarText: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#065F46",
+  },
+
+  reqBody: {
+    flex: 1,
+    gap: 6,
+  },
+
+  reqNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  reqName: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0f172a",
+  },
+
+  relationBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: "#C7D2FE",
+  },
+
+  relationBadgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#3730A3",
+  },
+
+  reqNote: {
+    fontSize: 14,
+    color: "#475569",
+    lineHeight: 20,
+  },
+
+  reqTime: {
+    fontSize: 12,
+    color: "#94a3b8",
+  },
+
+  /* ===== HÀNG DƯỚI ===== */
+  reqActionRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+
+  acceptBtn: {
+    backgroundColor: "#0f766e",
+  },
+
+  declineBtn: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  actionBtnText: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#FFFFFF",
+  },
+
+  declineBtnText: {
+    color: "#0f172a",
+  },
+
+
+  actionBtnText: {
+    fontWeight: "900",
+    fontSize: 13,
+    color: "#fff",
+  },
+
+  declineBtnText: {
+    color: "#0f172a",
+  },
+
+
+  familyList: {
+    gap: 12,
+  },
+
+  /* Card */
+  cCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+  },
+
+  cAvatarWrap: {
     width: 52,
     height: 52,
     borderRadius: 999,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden", // ⭐ QUAN TRỌNG
+    borderWidth: 1,
   },
-  contactIcon: {
-    fontSize: 28,
+
+  cAvatarImg: {
+    width: "100%",
+    height: "100%",
   },
-  contactTitle: {
-    fontWeight: '800',
-    color: '#111827',
-    fontSize: 17,
+
+  cAvatarText: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0f172a",
   },
-  contactSub: {
-    color: '#6b7280',
-    fontSize: 14,
-    marginTop: 2,
+
+
+  cAvatarDoctor: {
+    backgroundColor: "#ECFEFF",
+    borderColor: "#A5F3FC",
   },
-  dot: {
-    position: 'absolute',
+
+  cAvatarUser: {
+    backgroundColor: "#EEF2FF",
+    borderColor: "#C7D2FE",
+  },
+
+  cOnlineDot: {
+    position: "absolute",
     right: -2,
     bottom: -2,
     width: 12,
     height: 12,
     borderRadius: 999,
     borderWidth: 2,
-    borderColor: '#EEF2FF',
+    borderColor: "#FFFFFF",
   },
 
-  /* Requests */
-  reqItem: {
-    flexDirection: 'row',
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    gap: 12,
+  cBody: {
+    flex: 1,
+    gap: 4,
   },
-  reqName: {
-    fontWeight: '800',
-    color: '#0f172a',
+
+  cTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  cTitle: {
+    flex: 1,
     fontSize: 16,
+    fontWeight: "900",
+    color: "#0f172a",
   },
-  reqRelation: {
-    color: '#2563eb',
-    fontWeight: '700',
-  },
-  reqNote: {
-    color: '#475569',
-    marginTop: 4,
+
+  cSub: {
     fontSize: 14,
+    color: "#475569",
   },
-  reqTime: {
-    color: '#9ca3af',
+
+  cHintInline: {
     fontSize: 12,
-    marginTop: 6,
+    color: "#94a3b8",
   },
-  reqBtnRow: {
-    justifyContent: 'center',
-    gap: 8,
+
+  /* Badge */
+  cBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
   },
-  reqBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+
+  cBadgeDoctor: {
+    backgroundColor: "#ECFEFF",
+    borderColor: "#A5F3FC",
+  },
+
+  cBadgeUser: {
+    backgroundColor: "#EEF2FF",
+    borderColor: "#C7D2FE",
+  },
+
+  cBadgeText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  cBadgeTextDoctor: {
+    color: "#155E75",
+  },
+
+  cBadgeTextUser: {
+    color: "#3730A3",
+  },
+
+  /* Action */
+  cAction: {
+    marginLeft: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  cCallBtn: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    minWidth: 120,
-    alignItems: 'center',
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
-  reqBtnText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 14,
+
+  cCallIcon: {
+    fontSize: 18,
+  },
+
+  /* Hint banner */
+  familyBanner: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  familyBannerIcon: {
+    fontSize: 18,
+  },
+
+  familyBannerText: {
+    flex: 1,
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
   },
 
   /* Message */

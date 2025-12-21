@@ -178,15 +178,16 @@ const AvailableDoctorsScreen = ({ navigation, route }) => {
   };
 
   const handleDetail = (doc) => {
-    const profileId = doc?.doctorId || doc?.doctorProfileId || doc?.profile?._id;
-
+    const profileId = doc?.profileDoctorId || doc?.doctorProfileId || doc?.profile?._id;
+    console.log(doc, "Bác sĩ");
+    
     if (!profileId) {
       // nếu bạn muốn, có thể show alert ở đây
       // Alert.alert("Thiếu dữ liệu", "Không tìm thấy profileId của bác sĩ.");
       return;
     }
 
-    navigation.navigate("ViewDoctorProfile", {   // ⚠️ dùng đúng route name của bạn
+    navigation.navigate('ViewDoctorProfileFromCustomer', {
       profileId,
     });
   };
