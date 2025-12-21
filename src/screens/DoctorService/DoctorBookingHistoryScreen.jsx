@@ -23,7 +23,6 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { doctorBookingService } from '../../services/doctorBookingService';
 import userService from '../../services/userService';
 
-const TAG = '[DoctorBookingHistoryScreen]';
 const HEADER_COLOR = '#4F7EFF';
 const VN_TZ = 'Asia/Ho_Chi_Minh';
 
@@ -222,13 +221,6 @@ const getPaymentMethodRaw = item => {
 const getPaymentMethodLabel = item => {
   const raw = String(getPaymentMethodRaw(item) || '').toLowerCase();
 
-  console.log(
-    `${TAG}[getPaymentMethodLabel]`,
-    item._id,
-    'rawMethod =',
-    raw,
-  );
-
   if (raw === 'bank_transfer') {
     return 'Chuyển khoản';
   }
@@ -263,19 +255,6 @@ const DoctorBookingHistoryScreen = () => {
   const normalizedRole = (userRole || '').toLowerCase();
   const showTabs = normalizedRole === 'family';
 
-  useEffect(() => {
-    console.log(
-      TAG,
-      '[roleDebug]',
-      'userRole =',
-      userRole,
-      'normalizedRole =',
-      normalizedRole,
-      'showTabs =',
-      showTabs,
-    );
-  }, [userRole, normalizedRole, showTabs]);
-
   // ---- FORMAT HELPERS (bookings) ----
   const getBookingCode = item => {
     if (item._id) return `Lịch tư vấn `;
@@ -300,11 +279,6 @@ const DoctorBookingHistoryScreen = () => {
 
     const rawPayStatus =
       item?.paymentStatus ?? item?.payment?.status ?? item?.payStatus ?? 'unpaid';
-    console.log(`${TAG}[getStatusLabelAndStyle] rawPayStatus =`, rawPayStatus, {
-      paymentStatus_field: item?.paymentStatus,
-      payment_obj_status: item?.payment?.status,
-      payStatus_field: item?.payStatus,
-    });
     const payKey = normalizePaymentStatusKey(rawPayStatus);
     let payScheme = paymentStatusColors[payKey] || paymentStatusColors.default;
 
@@ -312,17 +286,6 @@ const DoctorBookingHistoryScreen = () => {
     if (statusKey === 'cancelled' && rawPayStatus === 'paid') {
       payScheme = paymentStatusColors.refunded;
     }
-
-    console.log(`${TAG}[getStatusLabelAndStyle]`, {
-      id: item?._id,
-      rawStatus,
-      statusKey,
-      statusLabel: bookScheme.label,
-      rawPayStatus,
-      payKey,
-      payLabel: payScheme.label,
-    });
-
     return { bookScheme, payScheme };
   };
 
@@ -332,13 +295,9 @@ const DoctorBookingHistoryScreen = () => {
 
     const resolveElderlyId = async () => {
       try {
-        console.log(TAG, '[resolveElderlyId] route.params =', route?.params);
 
         const userRes = await userService.getUser();
         if (cancelled) return;
-
-        console.log(TAG, '[resolveElderlyId] userService =', userRes);
-
         const role = (userRes?.data?.role || '').toLowerCase();
         if (!cancelled) {
           setUserRole(role);
@@ -346,30 +305,14 @@ const DoctorBookingHistoryScreen = () => {
 
         const fromRoute = route?.params?.elderlyId;
         if (fromRoute) {
-          console.log(
-            TAG,
-            '[resolveElderlyId] Using elderlyId from route =',
-            fromRoute,
-          );
           if (!cancelled) setElderlyId(fromRoute);
           return;
         }
 
         if (userRes?.success && userRes?.data?._id) {
           if (role === 'elderly') {
-            console.log(
-              TAG,
-              '[resolveElderlyId] role elderly → use user._id =',
-              userRes.data._id,
-            );
             setElderlyId(userRes.data._id);
           } else {
-            console.log(
-              TAG,
-              '[resolveElderlyId] role =',
-              role,
-              '→ không truyền elderlyId từ route, không xác định được elderlyId',
-            );
             setError(
               'Không xác định được người cao tuổi để xem lịch tư vấn bác sĩ.',
             );
@@ -380,7 +323,6 @@ const DoctorBookingHistoryScreen = () => {
           setLoading(false);
         }
       } catch (e) {
-        console.log(TAG, '[resolveElderlyId] ERROR =', e?.message || e);
         if (!cancelled) {
           setError('Không lấy được thông tin người dùng.');
           setLoading(false);
@@ -397,11 +339,9 @@ const DoctorBookingHistoryScreen = () => {
   // ===== 2. Gọi API lấy bookings theo elderlyId =====
   const fetchBookings = useCallback(
     async (opts = { showLoading: true }) => {
-      const TAG_FETCH = `${TAG}[fetchBookings]`;
       const { showLoading } = opts;
 
       if (!elderlyId) {
-        console.log(TAG_FETCH, 'No elderlyId → skip fetch.');
         if (showLoading) setLoading(false);
         return;
       }
@@ -409,23 +349,9 @@ const DoctorBookingHistoryScreen = () => {
       try {
         if (showLoading) setLoading(true);
         setError('');
-        console.log(TAG_FETCH, 'CALL API with elderlyId =', elderlyId);
-
         const res =
           await doctorBookingService.getBookingsByElderlyId(elderlyId);
-
-        console.log(
-          TAG_FETCH,
-          'RAW_RESULT =',
-          JSON.stringify(res, null, 2),
-        );
-
         if (res?.success && Array.isArray(res.data)) {
-          console.log(
-            TAG_FETCH,
-            'PARSED_BOOKINGS_COUNT =',
-            res.data.length,
-          );
           setBookings(res.data);
         } else {
           setBookings([]);
@@ -435,7 +361,6 @@ const DoctorBookingHistoryScreen = () => {
           );
         }
       } catch (err) {
-        console.log(TAG_FETCH, 'ERROR =', err?.message || err);
         setError(
           'Không lấy được danh sách lịch tư vấn bác sĩ. Vui lòng thử lại.',
         );
@@ -454,7 +379,6 @@ const DoctorBookingHistoryScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
-      console.log(TAG, '[focus] screen focused → refetch bookings');
       fetchBookings({ showLoading: false });
     }, [fetchBookings]),
   );
@@ -512,11 +436,6 @@ const DoctorBookingHistoryScreen = () => {
           activeTab === 'supporter' ? styles.tabActive : styles.tabInactive,
         ]}
         onPress={() => {
-          console.log(
-            TAG,
-            '[Tab] Press Lịch hỗ trợ, navigate with elderlyId =',
-            elderlyId,
-          );
           setActiveTab('supporter');
           navigation.navigate('SupporterBookingListScreen', {
             userId: elderlyId,
@@ -568,17 +487,6 @@ const DoctorBookingHistoryScreen = () => {
     const doctorName = getDoctorName(item);
     const slotLabel = getSlotLabel(item);
     const durationLabel = getDurationLabel(item);
-
-    console.log(`${TAG}[renderBookingItem]`, {
-      id: item?._id,
-      status: item?.status,
-      paymentMethod: item?.paymentMethod,
-      paymentStatus: item?.paymentStatus,
-      scheduledDate: item?.scheduledDate,
-      slot: item?.slot,
-      methodLabel,
-      payChip: payScheme.label,
-    });
 
     const canRate =
       (item?.status || '').toLowerCase() === 'completed' &&
