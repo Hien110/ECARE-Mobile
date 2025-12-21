@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -16,6 +15,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import DoctorNavTabs from '../../components/DoctorNavTabs';
 import { doctorService } from '../../services/doctorService';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 /* ---------------- helpers: bóc tách linh hoạt ---------------- */
 const pickProfileFromResponse = (res) => {
