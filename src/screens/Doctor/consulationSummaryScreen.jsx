@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
 	ActivityIndicator,
 	Alert,
-	SafeAreaView,
 	ScrollView,
 	StyleSheet,
 	Text,
@@ -13,6 +12,8 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import consultationSummaryService from '../../services/consultationSummaryService';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const getConsultationWindowStateUtc = (scheduledDate, slot) => {
 	// Use local time comparison to avoid timezone/parsing inconsistencies
