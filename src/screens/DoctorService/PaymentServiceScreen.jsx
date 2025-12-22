@@ -422,6 +422,7 @@ const PaymentServiceScreen = () => {
         slot: slot || 'morning',
         note: note?.trim() || '',
         paymentMethod: backendPaymentMethod,
+        price: rawPriceNumber,
       };
 
       const res = await doctorBookingService.createRegistration(payload);

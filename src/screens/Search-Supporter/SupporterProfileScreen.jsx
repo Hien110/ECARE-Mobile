@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import ratingService from '../../services/ratingService';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const SupporterProfileScreen = ({ navigation, route }) => {
   const [activeTab, setActiveTab] = useState('info');

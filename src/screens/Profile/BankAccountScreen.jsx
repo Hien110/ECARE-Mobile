@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   Modal,
@@ -20,6 +19,7 @@ import {
 import PropTypes from 'prop-types';
 import { userService } from '../../services/userService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Danh sách 49 ngân hàng Việt Nam
 const VIETNAM_BANKS = [

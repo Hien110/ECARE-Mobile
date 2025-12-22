@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { SafeAreaView, View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { userService } from '../../services/userService';
 import OtpCodeInput from '../../components/OtpCodeInput';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
 
 const OTPChangeEmailScreen = ({ navigation, route }) => {
   const { email } = route.params || {};

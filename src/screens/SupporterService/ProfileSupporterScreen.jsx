@@ -4,7 +4,6 @@ import { useRoute } from '@react-navigation/native';
 import { useNavigation } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import {
-  SafeAreaView,
   ScrollView,
   View,
   Text,
@@ -21,8 +20,10 @@ import {
   Phone,
   MessageCircle,
 } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import supporterSchedulingService from '../../services/supporterSchedulingService';
+import { ratingService } from '../../services/ratingService';
 import Card from '../../components/Cart';
 
 const TAG = '[ProfileSupporterScreen]';
@@ -38,6 +39,8 @@ export default function ProfileSupporterScreen() {
   } = route.params || {};
 
   const [profile, setProfile] = useState(null);
+  const [ratings, setRatings] = useState([]);
+  const [loadingRatings, setLoadingRatings] = useState(false);
 
   // ====== LOG route params ======
   useEffect(() => {
@@ -105,6 +108,41 @@ export default function ProfileSupporterScreen() {
   useEffect(() => {
     console.log(TAG, 'profile state updated =', profile);
   }, [profile]);
+
+  // ====== GỌI API LẤY DANH SÁCH ĐÁNH GIÁ ======
+  useEffect(() => {
+    const fetchRatings = async () => {
+      if (!supporterIdFromRoute) {
+        console.log(TAG, '⚠️ Không có supporterIdFromRoute, không gọi getRatingsByUserId');
+        return;
+      }
+
+      setLoadingRatings(true);
+      try {
+        console.log(TAG, '➡️ call ratingService.getRatingsByUserId() with userId =', supporterIdFromRoute);
+        const res = await ratingService.getRatingsByUserId(supporterIdFromRoute);
+        console.log(TAG, '✅ getRatingsByUserId response =', JSON.stringify(res, null, 2));
+
+        if (res?.success && res?.data?.data) {
+          // Filter chỉ lấy ratings active và thuộc support_service
+          const supportRatings = res.data.data.filter(
+            r => r.status === 'active' && r.ratingType === 'support_service'
+          );
+          setRatings(supportRatings);
+        } else {
+          console.log(TAG, '❌ getRatingsByUserId success = false', res?.message);
+          setRatings([]);
+        }
+      } catch (e) {
+        console.log(TAG, '❌ fetch ratings error =', e?.response?.data || e?.message || e);
+        setRatings([]);
+      } finally {
+        setLoadingRatings(false);
+      }
+    };
+
+    fetchRatings();
+  }, [supporterIdFromRoute]);
 
   // ====== LẤY DATA HIỂN THỊ – ƯU TIÊN TỪ profile (API) ======
     const userFromProfile =
@@ -412,6 +450,50 @@ const email =
             )}
           </Text>
         </Card>
+
+        {/* ĐÁNH GIÁ TỪ KHÁCH HÀNG */}
+        <Card style={{ padding: 16, marginTop: 12 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 12,
+            }}
+          >
+            <Star size={18} color="#F59E0B" fill="#F59E0B" />
+            <Text style={{ fontWeight: '700', color: '#111827', fontSize: 16 }}>
+              Đánh giá từ khách hàng
+            </Text>
+            <Text style={{ color: '#6B7280', fontSize: 14 }}>
+              ({ratings.length} đánh giá)
+            </Text>
+          </View>
+
+          {loadingRatings ? (
+            <Text style={{ color: '#6B7280', textAlign: 'center', paddingVertical: 20 }}>
+              Đang tải đánh giá...
+            </Text>
+          ) : ratings.length === 0 ? (
+            <View style={{ 
+              alignItems: 'center', 
+              paddingVertical: 30,
+              backgroundColor: '#F9FAFB',
+              borderRadius: 12,
+            }}>
+              <Star size={40} color="#D1D5DB" />
+              <Text style={{ color: '#6B7280', marginTop: 8, fontSize: 14 }}>
+                Chưa có đánh giá nào
+              </Text>
+            </View>
+          ) : (
+            <View style={{ gap: 12 }}>
+              {ratings.map((rating, index) => (
+                <RatingItem key={rating._id || index} rating={rating} />
+              ))}
+            </View>
+          )}
+        </Card>
       </ScrollView>
     </SafeAreaView>
   );
@@ -489,6 +571,67 @@ function RowIcon({ icon, title, subtitle, right }) {
           {subtitle}
         </Text>
       </View>
+    </View>
+  );
+}
+
+function RatingItem({ rating }) {
+  const reviewerName = rating?.reviewer?.fullName || 'Người dùng';
+  const reviewerAvatar = rating?.reviewer?.avatar || 'https://raw.githubusercontent.com/ranui-ch/images/main/doctor_profile_placeholder.png';
+  const ratingValue = rating?.rating || 0;
+  const comment = rating?.comment || '';
+  const ratedAt = rating?.ratedAt ? new Date(rating.ratedAt) : null;
+  
+  const formattedDate = ratedAt && !isNaN(ratedAt.getTime())
+    ? ratedAt.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+    : '';
+
+  return (
+    <View
+      style={{
+        backgroundColor: '#F9FAFB',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#E5E7EB',
+      }}
+    >
+      {/* Header: Avatar + Name + Rating */}
+      <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8 }}>
+        <Image
+          source={{ uri: reviewerAvatar }}
+          style={{ width: 40, height: 40, borderRadius: 20 }}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontWeight: '600', color: '#111827', fontSize: 14 }}>
+            {reviewerName}
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Star
+                key={star}
+                size={14}
+                color={star <= ratingValue ? '#F59E0B' : '#D1D5DB'}
+                fill={star <= ratingValue ? '#F59E0B' : '#D1D5DB'}
+              />
+            ))}
+            <Text style={{ color: '#6B7280', fontSize: 12, marginLeft: 4 }}>
+              {formattedDate}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Comment */}
+      {comment ? (
+        <Text style={{ color: '#374151', fontSize: 14, lineHeight: 20 }}>
+          {comment}
+        </Text>
+      ) : null}
     </View>
   );
 }

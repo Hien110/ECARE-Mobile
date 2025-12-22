@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Alert,
+  View, Text, TouchableOpacity, StyleSheet, Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { userService } from '../../services/userService';
 import OtpCodeInput from '../../components/OtpCodeInput';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const VerifySMSScreen = ({ navigation, route }) => {
   const [otp, setOtp] = useState(['', '', '', '']);

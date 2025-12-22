@@ -1,9 +1,10 @@
 // src/screens/Doctor/ScheduleScreen.jsx
 import React, { useMemo, useState } from "react";
-import { SafeAreaView, ScrollView, View, Text, TouchableOpacity } from "react-native";
+import {ScrollView, View, Text, TouchableOpacity } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Calendar, CheckCircle2, MapPin } from "lucide-react-native";
 import Card from "../../components/Cart";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const DAYS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 

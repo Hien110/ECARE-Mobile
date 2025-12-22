@@ -48,6 +48,7 @@ import BankAccountScreen from '../screens/Profile/BankAccountScreen.jsx';
 import IntroductionCreateDoctorProfileScreen from '../screens/Doctor/IntroductionCreateDoctorProfileScreen.jsx';
 import CreateDoctorProfileScreen from '../screens/Doctor/CreateDoctorProfileScreen.jsx';
 import ViewDoctorProfileScreen from '../screens/Doctor/ViewDoctorProfileScreen.jsx';
+import ViewDoctorProfileFromCustomer from '../screens/DoctorService/ViewDoctorProfileFromCustomerScreen.jsx';
 import EditDoctorProfileScreen from '../screens/Doctor/EditDoctorProfileScreen.jsx';
 import CreateWorkScheduleScreen from '../screens/Doctor/CreateWorkScheduleScreen.jsx';
 import EvaluationStatisticsScreen from '../screens/Doctor/EvaluationStatisticsScreen.jsx';
@@ -690,6 +691,11 @@ const NavigationContent = ({ initialRouteName }) => {
         <Stack.Screen
           name="ProfileDoctorScreen"
           component={withFooter(ProfileDoctorScreen, 'home')}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="ViewDoctorProfileFromCustomer"
+          component={withFooter(ViewDoctorProfileFromCustomer, 'home')}
           options={{ headerShown: false }}
         />
         <Stack.Screen
