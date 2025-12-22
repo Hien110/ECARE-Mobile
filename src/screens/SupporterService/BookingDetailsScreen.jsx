@@ -591,8 +591,8 @@ const BookingDetailScreen = ({ route, navigation }) => {
   const canComplete = isSupporter && statusKey === 'in_progress' && isSameEndDate;
 
   const priceText =
-    typeof booking?.priceAtBooking === 'number'
-      ? `${booking.priceAtBooking.toLocaleString('vi-VN')} đ`
+    typeof booking?.price === 'number'
+      ? `${booking.price.toLocaleString('vi-VN')} đ`
       : null;
 
   // === ĐÁNH GIÁ: điều kiện được phép đánh giá ===
@@ -834,7 +834,7 @@ const BookingDetailScreen = ({ route, navigation }) => {
             />
 
             {priceText && (
-              <RowItem label="Giá tại thời điểm đặt" value={priceText} />
+              <RowItem label="Giá dịch vụ" value={priceText} />
             )}
 
             {booking?.notes ? (
