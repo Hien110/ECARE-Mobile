@@ -101,6 +101,16 @@ function formatDateISOToVN(iso) {
   }
 }
 
+function formatDateOnlyToVN(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString('vi-VN', { timeZone: VN_TZ });
+  } catch {
+    return iso;
+  }
+}
+
 const Chip = ({ scheme, text, style }) => {
   const s = scheme || statusColors.default;
   return (
@@ -280,10 +290,15 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
     const supporterAvatar = item?.supporter?.avatar;
     const elderlyName = item?.elderly?.fullName || '—';
     const elderlyAvatar = item?.elderly?.avatar;
-    const scheduleDate =
-      formatDateISOToVN(item?.scheduleDate).split(' • ')[0] || '';
-    const scheduleTime =
-      scheduleTimeMap[item?.scheduleTime] || item?.scheduleTime || '';
+    
+    // Sử dụng startDate và endDate từ model - chỉ hiển thị ngày
+    const startDateFormatted = item?.startDate 
+      ? formatDateOnlyToVN(item.startDate)
+      : '';
+    const endDateFormatted = item?.endDate
+      ? formatDateOnlyToVN(item.endDate)
+      : '';
+    
     const statusKey = (item?.status || 'default').toLowerCase();
     const statusScheme = statusColors[statusKey] || statusColors.default;
     const paymentKey = (item?.paymentMethod || 'default').toLowerCase();
@@ -343,9 +358,9 @@ const SupporterBookingListScreen = ({ navigation, route }) => {
         >
           <View style={{ flex: 1, paddingRight: 8 }}>
             <Text style={styles.sectionLabel}>Thời gian</Text>
-            <Text style={styles.timeText}>{scheduleDate}</Text>
-            {scheduleTime ? (
-              <Text style={styles.timeSub}>{scheduleTime}</Text>
+            <Text style={styles.timeText}>Bắt đầu: {startDateFormatted}</Text>
+            {endDateFormatted ? (
+              <Text style={styles.timeSub}>Kết thúc: {endDateFormatted}</Text>
             ) : null}
           </View>
           <Chip scheme={payScheme} text={payScheme.label} />
