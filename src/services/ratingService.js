@@ -97,5 +97,21 @@ export const ratingService = {
       };
     }
   },
+  // Lấy đánh giá theo Id lịch khám tư vấn
+  getRatingByConsultationId: async (consultationId) => {
+    try {
+      const response = await api.get(`/ratings/consultation/${consultationId}`);
+      return {
+        success: true,
+        data: response.data?.data,
+        message: response.data?.message,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || error.message,
+      };
+    }
+  },
 };
 export default ratingService;

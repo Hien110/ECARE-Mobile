@@ -1,5 +1,5 @@
 // src/screens/doctorBooking/DoctorConsultationDetailScreen.jsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import {
   View,
@@ -15,6 +15,7 @@ import {
   Pressable,
   Animated,
   TextInput,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
@@ -23,6 +24,7 @@ import { doctorBookingService } from '../../services/doctorBookingService';
 import userService from '../../services/userService';
 import conversationService from '../../services/conversationService';
 import doctorService from '../../services/doctorService';
+import ratingService from '../../services/ratingService';
 
 const TAG = '[DoctorConsultationDetail]';
 const VN_TZ = 'Asia/Ho_Chi_Minh';
@@ -99,9 +101,12 @@ const paymentMethodLabelMap = {
 // Trạng thái thời gian khám theo giờ (local time): 'before' | 'within' | 'after' | 'unknown'
 const getConsultationWindowStateUtc = (scheduledDate, slot) => {
   if (!scheduledDate || !slot) return 'unknown';
-  // Parse date-only strings (YYYY-MM-DD) as local date to avoid UTC shift
+
   let base;
-  if (typeof scheduledDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) {
+  if (
+    typeof scheduledDate === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)
+  ) {
     const [yStr, mStr, dStr] = scheduledDate.split('-');
     const y = Number(yStr);
     const m = Number(mStr) - 1;
@@ -129,14 +134,23 @@ const getConsultationWindowStateUtc = (scheduledDate, slot) => {
     return 'unknown';
   }
 
-  // build start/end in local timezone
   const start = new Date(year, month, day, startHour, 0, 0, 0);
   const end = new Date(year, month, day, endHour, 0, 0, 0);
   const now = new Date();
 
-  // debug log
   if (typeof console !== 'undefined' && console.log) {
-    console.log('[DoctorConsultationDetail] scheduledDate=', scheduledDate, 'slot=', slot, 'start=', start.toString(), 'end=', end.toString(), 'now=', now.toString());
+    console.log(
+      '[DoctorConsultationDetail] scheduledDate=',
+      scheduledDate,
+      'slot=',
+      slot,
+      'start=',
+      start.toString(),
+      'end=',
+      end.toString(),
+      'now=',
+      now.toString(),
+    );
   }
 
   if (now.getTime() < start.getTime()) return 'before';
@@ -187,6 +201,30 @@ function safeAvatar(obj) {
   return null;
 }
 
+/** =========================
+ * UI helpers (new)
+ * ========================= */
+const Divider = () => <View style={styles.divider} />;
+
+const SectionCard = ({ title, right, children }) => (
+  <View style={styles.card}>
+    {title || right ? (
+      <View style={styles.cardHeader}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        {right}
+      </View>
+    ) : null}
+    {children}
+  </View>
+);
+
+SectionCard.propTypes = {
+  title: PropTypes.string,
+  right: PropTypes.node,
+  children: PropTypes.node,
+};
+SectionCard.defaultProps = { title: '', right: null, children: null };
+
 const Chip = ({ scheme, text, style }) => {
   const s = scheme || statusColors.default;
   return (
@@ -203,7 +241,6 @@ const Chip = ({ scheme, text, style }) => {
     </View>
   );
 };
-
 Chip.propTypes = {
   scheme: PropTypes.shape({
     bg: PropTypes.string,
@@ -214,17 +251,23 @@ Chip.propTypes = {
   text: PropTypes.string.isRequired,
   style: PropTypes.oneOfType([PropTypes.object, PropTypes.array]),
 };
+Chip.defaultProps = { scheme: null, style: null };
 
-Chip.defaultProps = {
-  scheme: null,
-  style: null,
-};
-
-const RowItem = ({ label, value, right }) => (
+const RowItem = ({ label, value, right, icon }) => (
   <View style={styles.rowBetween}>
-    <View style={{ flex: 1, paddingRight: 8 }}>
-      <Text style={styles.itemLabel}>{label}</Text>
-      <Text style={styles.itemValue}>{value || '—'}</Text>
+    <View
+      style={{
+        flex: 1,
+        paddingRight: 10,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+      }}
+    >
+      {icon ? <View style={styles.rowIconWrap}>{icon}</View> : null}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.itemLabel}>{label}</Text>
+        <Text style={styles.itemValue}>{value || '—'}</Text>
+      </View>
     </View>
     {right}
   </View>
@@ -234,18 +277,23 @@ RowItem.propTypes = {
   label: PropTypes.string.isRequired,
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   right: PropTypes.node,
+  icon: PropTypes.node,
 };
+RowItem.defaultProps = { value: null, right: null, icon: null };
 
-RowItem.defaultProps = {
-  value: null,
-  right: null,
-};
-
-const AvatarLine = ({ title, name, role, avatar, showHistoryButton, onPressHistory }) => (
-  <View style={{ marginTop: 16 }}>
+const AvatarLine = ({
+  title,
+  name,
+  role,
+  avatar,
+  showHistoryButton,
+  onPressHistory,
+}) => (
+  <View style={{ marginTop: 14 }}>
     <Text style={styles.sectionLabel}>{title}</Text>
-    <View style={[styles.row, { alignItems: 'center', justifyContent: 'space-between' }]}>
-      <View style={styles.row}>
+
+    <View style={styles.personRow}>
+      <View style={styles.personLeft}>
         <View style={styles.avatarWrap}>
           {avatar ? (
             <Image
@@ -254,10 +302,11 @@ const AvatarLine = ({ title, name, role, avatar, showHistoryButton, onPressHisto
               style={styles.avatarImg}
             />
           ) : (
-            <Feather name="user" size={24} color="#9CA3AF" />
+            <Feather name="user" size={22} color="#94A3B8" />
           )}
         </View>
-        <View style={{ marginLeft: 12 }}>
+
+        <View style={{ marginLeft: 12, flex: 1 }}>
           <Text style={styles.personName} numberOfLines={1}>
             {name || '—'}
           </Text>
@@ -269,10 +318,11 @@ const AvatarLine = ({ title, name, role, avatar, showHistoryButton, onPressHisto
 
       {showHistoryButton ? (
         <TouchableOpacity
-          activeOpacity={0.8}
+          activeOpacity={0.85}
           onPress={onPressHistory}
           style={styles.historyBtn}
         >
+          <Feather name="clock" size={14} color="#FFFFFF" />
           <Text style={styles.historyBtnText} numberOfLines={1}>
             Lịch sử
           </Text>
@@ -290,7 +340,6 @@ AvatarLine.propTypes = {
   showHistoryButton: PropTypes.bool,
   onPressHistory: PropTypes.func,
 };
-
 AvatarLine.defaultProps = {
   name: null,
   role: null,
@@ -298,7 +347,6 @@ AvatarLine.defaultProps = {
   showHistoryButton: false,
   onPressHistory: undefined,
 };
-
 
 function resolveCreatorInfo(booking) {
   if (!booking) {
@@ -351,13 +399,10 @@ function resolveCreatorInfo(booking) {
   } else if (registrant) {
     creator = registrant;
     const role = (registrant.role || registrant.user?.role || '').toLowerCase();
-    if (role === 'elderly') {
-      roleLabel = 'Người cao tuổi (tự đặt)';
-    } else if (role === 'family' || role === 'supporter') {
+    if (role === 'elderly') roleLabel = 'Người cao tuổi (tự đặt)';
+    else if (role === 'family' || role === 'supporter')
       roleLabel = 'Người thân đặt lịch';
-    } else {
-      roleLabel = 'Người đặt lịch';
-    }
+    else roleLabel = 'Người đặt lịch';
     source = 'registrant only';
   } else if (beneficiary) {
     creator = beneficiary;
@@ -405,7 +450,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   const [comment, setComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
   const [hasRatedDoctor, setHasRatedDoctor] = useState(false);
-  const [myDoctorReview, setMyDoctorReview] = useState(null);
+  const [myDoctorReview, setMyDoctorReview] = useState(null); // { id, rating, comment, reviewerId }
 
   // toast
   const [toastVisible, setToastVisible] = useState(false);
@@ -446,9 +491,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     }
   }, []);
 
-  // doctor ratings cho màn chi tiết sẽ dùng API doctorService.createDoctorReview.
-  // Hiện tại không load lại danh sách "đánh giá của bạn" theo booking, nên bỏ loadRatings cũ.
-
   const resolveConversation = useCallback(async found => {
     if (!found?.doctor) {
       setConversation(null);
@@ -469,25 +511,17 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         return;
       }
 
-      const convRes =
-        await conversationService.getConversationByParticipants(
-          doctorId,
-          elderlyId,
-        );
-      if (convRes?.success && convRes.data) {
-        setConversation(convRes.data);
-      } else {
-        setConversation(null);
-      }
-    } catch (e) {
-      console.log(
-        `${TAG}[resolveConversation][ERROR]`,
-        e?.message || e,
+      const convRes = await conversationService.getConversationByParticipants(
+        doctorId,
+        elderlyId,
       );
+      if (convRes?.success && convRes.data) setConversation(convRes.data);
+      else setConversation(null);
+    } catch (e) {
+      console.log(`${TAG}[resolveConversation][ERROR]`, e?.message || e);
       setConversation(null);
     }
   }, []);
-
 
   const loadDetails = useCallback(async () => {
     if (!bookingId) {
@@ -506,35 +540,19 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     try {
       setLoading(true);
 
-      // ===== 1. Call API chi tiết theo id =====
       let detailRes = {};
       if (doctorBookingService.getRegistrationDetail) {
         detailRes =
           (await doctorBookingService.getRegistrationDetail(bookingId)) || {};
       }
-      console.log(
-        `${TAG}[loadDetails] registration detail res =`,
-        detailRes,
-      );
+      console.log(`${TAG}[loadDetails] registration detail res =`, detailRes);
 
       if (detailRes?.success && detailRes.data) {
-        console.log(
-          `${TAG}[loadDetails] registration detail data.status =`,
-          detailRes.data.status,
-        );
-
-        // Gộp với booking hiện tại để giữ các flag như canRateDoctor từ list
         setBooking(prev => ({ ...(prev || {}), ...detailRes.data }));
         await resolveConversation(detailRes.data);
-
-        console.log(
-          `${TAG}[loadDetails] END with booking.status =`,
-          detailRes.data.status,
-        );
         return;
       }
 
-      // ===== 2. Fallback: nếu có elderlyId (đang xem lịch theo người cao tuổi) =====
       if (elderlyIdFromRoute) {
         console.log(
           `${TAG}[loadDetails][FALLBACK_BY_ELDERLY] dùng getBookingsByElderlyId`,
@@ -545,23 +563,11 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             (await doctorBookingService.getBookingsByElderlyId?.(
               elderlyIdFromRoute,
             )) || {};
-          console.log(
-            `${TAG}[loadDetails][FALLBACK_BY_ELDERLY] raw =`,
-            listRes,
-          );
-
           if (listRes?.success && Array.isArray(listRes.data)) {
             const found = listRes.data.find(
               b => String(b._id) === String(bookingId),
             );
-            console.log(
-              `${TAG}[loadDetails][FALLBACK_BY_ELDERLY] found =`,
-              found?._id,
-              'status =',
-              found?.status,
-            );
             if (found) {
-              // Gộp để giữ lại các field có sẵn nếu cần
               setBooking(prev => ({ ...(prev || {}), ...found }));
               await resolveConversation(found);
               return;
@@ -575,41 +581,23 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         }
       }
 
-      // ===== 3. Fallback cuối: dùng getMyBookings (cũ) =====
       console.log(
-        `${TAG}[loadDetails][FALLBACK_MY_BOOKINGS] dùng getMyBookings vì không lấy được detail theo id`,
+        `${TAG}[loadDetails][FALLBACK_MY_BOOKINGS] dùng getMyBookings`,
       );
-
       const res = await doctorBookingService.getMyBookings?.();
-      console.log(`${TAG}[loadDetails][FALLBACK_MY_BOOKINGS] raw res =`, res);
 
       if (res?.success && Array.isArray(res.data)) {
-        const found = res.data.find(
-          b => String(b._id) === String(bookingId),
-        );
-        console.log(
-          `${TAG}[loadDetails][FALLBACK_MY_BOOKINGS] found booking status =`,
-          found?.status,
-        );
-
+        const found = res.data.find(b => String(b._id) === String(bookingId));
         if (found) {
           setBooking(prev => ({ ...(prev || {}), ...found }));
-          if (found.status && found.status !== 'pending') {
+          if (found.status && found.status !== 'pending')
             await resolveConversation(found);
-          } else {
-            setConversation(null);
-          }
+          else setConversation(null);
         } else {
-          console.log(
-            `${TAG}[loadDetails][WARN] Không tìm thấy booking trong danh sách getMyBookings`,
-          );
           setBooking(null);
           setConversation(null);
         }
       } else {
-        console.log(
-          `${TAG}[loadDetails][WARN] getMyBookings không trả về mảng data`,
-        );
         setBooking(null);
         setConversation(null);
       }
@@ -628,54 +616,77 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     loadDetails();
   }, [loadUserRole, loadDetails, route?.params]);
 
+  // Load existing rating for this consultation (if any)
+  useEffect(() => {
+    const fetchConsultationRating = async () => {
+      if (!booking?._id) return;
+      try {
+        const res = await ratingService.getRatingByConsultationId(booking._id);
+        if (res?.success && res.data) {
+          const r = res.data;
+          setMyDoctorReview({
+            id: r._id,
+            rating: r.rating,
+            comment: r.comment || '',
+            reviewerId: r.reviewer?._id,
+          });
+          setHasRatedDoctor(
+            Boolean(
+              currentUser?._id &&
+                String(r.reviewer?._id) === String(currentUser._id),
+            ),
+          );
+        }
+      } catch (e) {
+        console.log(`${TAG}[fetchConsultationRating][ERROR]`, e?.message || e);
+      }
+    };
+
+    fetchConsultationRating();
+  }, [booking?._id, currentUser?._id]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([loadUserRole(), loadDetails()]);
     setRefreshing(false);
   };
 
-  // ====== logic hiển thị ======
+  /** =========================
+   * Derived data
+   * ========================= */
   const rawStatusKey = String(booking?.status || 'pending').toLowerCase();
   const statusKey = rawStatusKey === 'canceled' ? 'cancelled' : rawStatusKey;
   const statusScheme = statusColors[statusKey] || statusColors.default;
-	const cancelReasonSafe = (booking?.cancelReason || '').trim();
+  const cancelReasonSafe = (booking?.cancelReason || '').trim();
 
   const isDoctorRole = (userRole || '').toLowerCase() === 'doctor';
 
-  // raw payment status từ backend
   const paymentStatusRaw =
     booking?.payment?.status || booking?.paymentStatus || 'unpaid';
   let paymentKey = String(paymentStatusRaw || 'unpaid').toLowerCase();
+  if (['success', 'successful'].includes(paymentKey)) paymentKey = 'completed';
+  if (['pending'].includes(paymentKey)) paymentKey = 'unpaid';
 
-  if (['success', 'successful'].includes(paymentKey)) {
-    paymentKey = 'completed';
-  }
-  if (['pending'].includes(paymentKey)) {
-    paymentKey = 'unpaid';
-  }
-
-  // raw method (tiền mặt / online / qr...)
   const paymentMethodRaw =
     booking?.payment?.method || booking?.paymentMethod || 'cash';
   const paymentMethodLower = String(paymentMethodRaw || '').toLowerCase();
 
-  const isOnlineMethod = ['qr', 'online', 'bank_transfer', 'bank-transfer'].includes(
-    paymentMethodLower,
-  );
+  const isOnlineMethod = [
+    'qr',
+    'online',
+    'bank_transfer',
+    'bank-transfer',
+  ].includes(paymentMethodLower);
   const isPaidRaw = ['paid', 'completed', 'success', 'successful'].includes(
     String(paymentStatusRaw || '').toLowerCase(),
   );
-
   const showRefundNotice =
     statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw);
-
-  if (statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw)) {
+  if (statusKey === 'cancelled' && (isOnlineMethod || isPaidRaw))
     paymentKey = 'completed';
-  }
 
   const payScheme =
     paymentColors[paymentKey] || paymentColors.unpaid || paymentColors.default;
-
   const paymentMethodLabel =
     paymentMethodLabelMap[paymentMethodLower] || paymentMethodLabelMap.cash;
 
@@ -683,6 +694,85 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     ['pending', 'confirmed'].includes(statusKey) &&
     ['elderly', 'family'].includes((userRole || '').toLowerCase());
 
+  const creatorInfo = useMemo(() => resolveCreatorInfo(booking), [booking]);
+
+  const priceText =
+    typeof booking?.price === 'number'
+      ? `${booking.price.toLocaleString('vi-VN')} đ`
+      : '';
+
+  const dateIso =
+    booking?.consultation?.scheduledDate ||
+    booking?.scheduledDate ||
+    booking?.consultationDate ||
+    booking?.startDate ||
+    booking?.packageInfo?.startDate ||
+    booking?.createdAt;
+
+  const dateLabel = formatDateLongVN(dateIso);
+
+  const slotRaw = booking?.slot || booking?.consultation?.slot || null;
+  const sessionLabel =
+    slotRaw === 'morning'
+      ? 'Buổi sáng'
+      : slotRaw === 'afternoon'
+      ? 'Buổi chiều'
+      : '';
+
+  const timeRaw =
+    booking?.consultationTime ||
+    booking?.appointmentTime ||
+    booking?.scheduleTime ||
+    null;
+
+  const dateDisplay = dateLabel
+    ? `${dateLabel}${sessionLabel ? ` • ${sessionLabel}` : ''}`
+    : '—';
+  const timeOnlyDisplay =
+    timeRaw ||
+    (slotRaw === 'morning'
+      ? '8h - 11h'
+      : slotRaw === 'afternoon'
+      ? '14h - 16h'
+      : '—');
+  const timeDisplay = dateDisplay;
+
+  const consultationWindowState = getConsultationWindowStateUtc(
+    booking?.consultation?.scheduledDate || booking?.scheduledDate || null,
+    booking?.slot || booking?.consultation?.slot || null,
+  );
+  const isWithinConsultationWindow = consultationWindowState === 'within';
+  const summaryButtonLabel = isWithinConsultationWindow
+    ? 'Điền phiếu khám'
+    : 'Xem phiếu khám';
+
+  const isBookingReviewer =
+    !!currentUser?._id &&
+    (String(currentUser._id) ===
+      String(
+        booking?.beneficiary?._id ||
+          booking?.beneficiary?.user?._id ||
+          booking?.elderly?._id ||
+          booking?.elderly?.user?._id,
+      ) ||
+      String(currentUser._id) ===
+        String(
+          booking?.registrant?._id ||
+            booking?.registrant?.user?._id ||
+            booking?.family?._id ||
+            booking?.family?.user?._id ||
+            booking?.createdBy?._id ||
+            booking?.createdBy?.user?._id,
+        ));
+
+  const canReview =
+    !!booking &&
+    (booking.canRateDoctor === true ||
+      (booking.status === 'completed' && isBookingReviewer));
+
+  /** =========================
+   * Actions
+   * ========================= */
   const onCancelBooking = async () => {
     if (!bookingId) return;
     try {
@@ -698,10 +788,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
 
         setBooking(prev => {
           const base = prev || {};
-          const merged = {
-            ...base,
-            ...backendData,
-          };
+          const merged = { ...base, ...backendData };
           merged.status = backendStatus || 'cancelled';
           return merged;
         });
@@ -774,102 +861,8 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       return;
     }
 
-    navigation.navigate('ListSumary', {
-      elderlyId,
-      elderlyName,
-    });
+    navigation.navigate('ListSumary', { elderlyId, elderlyName });
   };
-
-  const priceText =
-    typeof booking?.price === 'number'
-      ? `${booking.price.toLocaleString('vi-VN')} đ`
-      : '';
-
-  const dateIso =
-    booking?.consultation?.scheduledDate ||
-    booking?.scheduledDate ||
-    booking?.consultationDate ||
-    booking?.startDate ||
-    booking?.packageInfo?.startDate ||
-    booking?.createdAt;
-
-  console.log('[DETAIL][DATE_SYNC]', {
-    consultationScheduled: booking?.consultation?.scheduledDate,
-    scheduledDate: booking?.scheduledDate,
-    consultationDate: booking?.consultationDate,
-    startDate: booking?.startDate,
-    packageStart: booking?.packageInfo?.startDate,
-    createdAt: booking?.createdAt,
-    chosen: dateIso,
-  });
-
-  const dateLabel = formatDateLongVN(dateIso);
-
-  const slotRaw = booking?.slot || booking?.consultation?.slot || null;
-  const sessionLabel =
-    slotRaw === 'morning'
-      ? 'Buổi sáng'
-      : slotRaw === 'afternoon'
-      ? 'Buổi chiều'
-      : '';
-
-  const timeRaw =
-    booking?.consultationTime ||
-    booking?.appointmentTime ||
-    booking?.scheduleTime ||
-    null;
-
-  const dateDisplay = dateLabel
-    ? `${dateLabel}${sessionLabel ? ` • ${sessionLabel}` : ''}`
-    : '—';
-
-  const timeOnlyDisplay =
-    timeRaw ||
-    (slotRaw === 'morning'
-      ? '8h - 11h'
-      : slotRaw === 'afternoon'
-      ? '14h - 16h'
-      : '—');
-
-  const timeDisplay = dateDisplay;
-
-  const creatorInfo = resolveCreatorInfo(booking);
-
-  const consultationWindowState = getConsultationWindowStateUtc(
-    booking?.consultation?.scheduledDate || booking?.scheduledDate || null,
-    booking?.slot || booking?.consultation?.slot || null,
-  );
-  const isWithinConsultationWindow = consultationWindowState === 'within';
-  const summaryButtonLabel = isWithinConsultationWindow
-    ? 'Điền phiếu khám'
-    : 'Xem phiếu khám';
-
-  // ==== quyền đánh giá ====
-  const isBookingReviewer =
-    !!currentUser?._id &&
-    (String(currentUser._id) ===
-      String(
-        booking?.beneficiary?._id ||
-          booking?.beneficiary?.user?._id ||
-          booking?.elderly?._id ||
-          booking?.elderly?.user?._id,
-      ) ||
-      String(currentUser._id) ===
-        String(
-          booking?.registrant?._id ||
-            booking?.registrant?.user?._id ||
-            booking?.family?._id ||
-            booking?.family?.user?._id ||
-            booking?.createdBy?._id ||
-            booking?.createdBy?.user?._id,
-        ));
-
-  const canReview =
-    !!booking &&
-    (
-      booking.canRateDoctor === true ||
-      (booking.status === 'completed' && isBookingReviewer)
-    );
 
   const openReviewModal = () => {
     setRating(0);
@@ -878,45 +871,40 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
   };
 
   const closeReviewModal = () => {
-    if (!submittingReview) {
-      setReviewModalVisible(false);
-    }
+    if (!submittingReview) setReviewModalVisible(false);
   };
 
   const handleSubmitReview = async () => {
-    if (!booking?._id) {
-      showToast('Không tìm thấy mã tư vấn để đánh giá.', 'error');
-      return;
-    }
-    if (!currentUser?._id) {
-      showToast('Không tìm thấy thông tin người dùng.', 'error');
-      return;
-    }
-    if (!booking?.doctor?._id && !booking?.doctor?.user?._id) {
-      showToast('Không tìm thấy thông tin bác sĩ để đánh giá.', 'error');
-      return;
-    }
-    if (!rating) {
-      showToast('Vui lòng chọn số sao đánh giá.', 'error');
-      return;
-    }
+    if (!booking?._id)
+      return showToast('Không tìm thấy mã tư vấn để đánh giá.', 'error');
+    if (!currentUser?._id)
+      return showToast('Không tìm thấy thông tin người dùng.', 'error');
+    if (!booking?.doctor?._id && !booking?.doctor?.user?._id)
+      return showToast('Không tìm thấy thông tin bác sĩ để đánh giá.', 'error');
+    if (!rating) return showToast('Vui lòng chọn số sao đánh giá.', 'error');
     if (submittingReview) return;
 
     try {
       setSubmittingReview(true);
 
-      const doctorUserId =
-        booking?.doctor?.user?._id || booking?.doctor?._id;
+      const doctorUserId = booking?.doctor?.user?._id || booking?.doctor?._id;
+      if (!doctorUserId)
+        return showToast('Không tìm thấy bác sĩ để đánh giá.', 'error');
 
-      if (!doctorUserId) {
-        showToast('Không tìm thấy bác sĩ để đánh giá.', 'error');
-        return;
+      let res = null;
+      if (myDoctorReview?.id) {
+        res = await ratingService.updateRatingById(
+          myDoctorReview.id,
+          rating,
+          comment,
+        );
+      } else {
+        res = await doctorService.createDoctorReview(doctorUserId, {
+          rating,
+          comment,
+          serviceConsultationId: booking._id,
+        });
       }
-
-      const res = await doctorService.createDoctorReview(doctorUserId, {
-        rating,
-        comment,
-      });
 
       if (!res?.success) {
         showToast(
@@ -924,8 +912,6 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
             'Đã có lỗi xảy ra khi gửi đánh giá. Vui lòng thử lại sau.',
           'error',
         );
-
-        // Nếu backend báo đã đánh giá rồi, ẩn nút trong phiên hiện tại
         if (
           typeof res?.message === 'string' &&
           res.message.toLowerCase().includes('đánh giá bác sĩ này rồi')
@@ -936,10 +922,15 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       }
 
       setHasRatedDoctor(true);
-      setMyDoctorReview({ rating, comment });
+      const createdId = res?.data?.id || myDoctorReview?.id || null;
+      setMyDoctorReview({
+        id: createdId,
+        rating,
+        comment,
+        reviewerId: currentUser?._id,
+      });
 
       showToast('Bạn đã đánh giá bác sĩ.', 'success');
-
       setReviewModalVisible(false);
     } catch (e) {
       console.log(
@@ -955,10 +946,99 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     }
   };
 
-  console.log(`${TAG}[render] booking data =`, booking);
+  const handleDeleteReview = async () => {
+    if (!myDoctorReview?.id) return;
+    try {
+      setSubmittingReview(true);
+      const res = await ratingService.deleteRatingById(myDoctorReview.id);
+      if (res?.success) {
+        setHasRatedDoctor(false);
+        setMyDoctorReview(null);
+        showToast('Đã xóa đánh giá', 'success');
+      } else {
+        showToast(res?.message || 'Xóa đánh giá thất bại', 'error');
+      }
+    } catch (e) {
+      console.log(`${TAG}[handleDeleteReview][ERROR]`, e?.message || e);
+      showToast('Xóa đánh giá thất bại', 'error');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const primaryActions = useMemo(() => {
+    if (!booking) return [];
+
+    const actions = [];
+
+    // NON-DOCTOR: chat (confirmed/in_progress) + view summary
+    if (!isDoctorRole) {
+      if (
+        (statusKey === 'confirmed' || statusKey === 'in_progress') &&
+        conversation
+      ) {
+        actions.push({
+          key: 'chat',
+          label: 'Nhắn tin với bác sĩ',
+          type: 'primary',
+          onPress: goToChat,
+        });
+      }
+      actions.push({
+        key: 'summary',
+        label: 'Xem phiếu khám',
+        type: 'primary',
+        onPress: goToConsultationSummary,
+      });
+      if (canCancel) {
+        actions.push({
+          key: 'cancel',
+          label: 'Hủy lịch tư vấn',
+          type: 'danger',
+          onPress: () => setConfirmVisible(true),
+          loading: cancelling,
+        });
+      }
+      return actions;
+    }
+
+    // DOCTOR: chat (confirmed/in_progress) + fill/view summary
+    if (
+      (statusKey === 'confirmed' || statusKey === 'in_progress') &&
+      conversation
+    ) {
+      actions.push({
+        key: 'contact',
+        label: 'Liên hệ',
+        type: 'primary',
+        onPress: goToChat,
+        disabled: updatingStatus,
+      });
+    }
+
+    actions.push({
+      key: 'doctor-summary',
+      label: summaryButtonLabel,
+      type: 'primary',
+      onPress: goToConsultationSummary,
+    });
+
+    return actions;
+  }, [
+    booking,
+    isDoctorRole,
+    statusKey,
+    conversation,
+    canCancel,
+    cancelling,
+    updatingStatus,
+    summaryButtonLabel,
+    goToChat,
+    goToConsultationSummary,
+  ]);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
+    <SafeAreaView style={styles.safe}>
       {toastVisible && (
         <Animated.View
           style={[
@@ -973,15 +1053,23 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
 
       <StatusBar barStyle="dark-content" />
 
-      {/* Header */}
+      {/* Header (nicer) */}
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
+          activeOpacity={0.85}
         >
-          <Text style={styles.backText}>‹</Text>
+          <Feather name="chevron-left" size={22} color="#0F172A" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Chi tiết tư vấn</Text>
+
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Chi tiết tư vấn</Text>
+          <Text style={styles.headerSub} numberOfLines={1}>
+            {booking ? timeDisplay : ' '}
+          </Text>
+        </View>
+
         <View style={{ width: 36 }} />
       </View>
 
@@ -993,208 +1081,262 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       ) : !booking ? (
         <ScrollView contentContainerStyle={styles.center}>
           <Text style={styles.errorText}>Không tìm thấy buổi tư vấn.</Text>
+          <TouchableOpacity
+            style={[
+              styles.primaryBtn,
+              { marginTop: 12, paddingHorizontal: 18 },
+            ]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.primaryBtnText}>Quay lại</Text>
+          </TouchableOpacity>
         </ScrollView>
       ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        >
-          <View style={styles.card}>
-            <View style={styles.rowBetween}>
-              <Text style={styles.cardTitle}>
-                Tư vấn 
-              </Text>
-              <Chip scheme={statusScheme} text={statusScheme.label} />
-            </View>
+        <>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Overview card */}
+            <SectionCard
+              title="Tổng quan"
+              right={<Chip scheme={statusScheme} text={statusScheme.label} />}
+            >
+              {statusKey === 'cancelled' && cancelReasonSafe ? (
+                <View style={styles.alertDanger}>
+                  <View style={styles.alertRow}>
+                    <Feather name="alert-triangle" size={16} color="#B91C1C" />
+                    <Text style={styles.alertTitle}>Lý do hủy</Text>
+                  </View>
+                  <Text style={styles.alertText}>{cancelReasonSafe}</Text>
+                </View>
+              ) : null}
 
-				{statusKey === 'cancelled' && cancelReasonSafe && (
-					<View style={styles.cancelReasonBox}>
-						<Text style={styles.cancelReasonLabel}>Lý do hủy</Text>
-						<Text style={styles.cancelReasonText}>{cancelReasonSafe}</Text>
-					</View>
-				)}
+              <RowItem
+                label="Thời gian tư vấn"
+                value={timeDisplay}
+                icon={<Feather name="calendar" size={16} color="#64748B" />}
+              />
+              <Divider />
+              <RowItem
+                label="Giờ"
+                value={timeOnlyDisplay}
+                icon={<Feather name="clock" size={16} color="#64748B" />}
+              />
+              <Divider />
+              <RowItem
+                label="Thanh toán"
+                value={`${paymentMethodLabel}`}
+                icon={<Feather name="credit-card" size={16} color="#64748B" />}
+                right={<Chip scheme={payScheme} text={payScheme.label} />}
+              />
+              {priceText ? (
+                <>
+                  <Divider />
+                  <RowItem
+                    label="Chi phí"
+                    value={priceText}
+                    icon={<Feather name="tag" size={16} color="#64748B" />}
+                  />
+                </>
+              ) : null}
 
-            {/* Bác sĩ */}
-            <AvatarLine
-              title="Bác sĩ"
-              name={booking?.doctor?.fullName || booking?.doctor?.name}
-              role="Bác sĩ"
-              avatar={booking?.doctor?.avatar}
-            />
-
-            {/* Người cao tuổi */}
-            <AvatarLine
-              title="Người cao tuổi"
-              name={
-                booking?.elderly?.fullName ||
-                booking?.beneficiary?.fullName ||
-                booking?.beneficiary?.name
-              }
-              role="Người được tư vấn"
-              avatar={booking?.elderly?.avatar || booking?.beneficiary?.avatar}
-              showHistoryButton
-              onPressHistory={goToHistoryList}
-            />
-
-            {!!(
-              booking?.elderly?.currentAddress ||
-              booking?.beneficiary?.currentAddress
-            ) && (
-              <View style={{ marginTop: 8 }}>
-                <Text style={styles.itemLabel}>Địa chỉ hiện tại</Text>
-                <Text style={styles.itemValue}>
-                  {booking?.elderly?.currentAddress ||
-                    booking?.beneficiary?.currentAddress}
-                </Text>
-              </View>
-            )}
-
-            {/* Người đặt lịch */}
-            <AvatarLine
-              title="Người đặt lịch"
-              name={creatorInfo.name}
-              role={creatorInfo.roleLabel}
-              avatar={creatorInfo.avatar}
-            />
-
-            <View style={{ height: 16 }} />
-
-            <RowItem label="Thời gian tư vấn" value={timeDisplay} />
-            <RowItem label="Giờ" value={timeOnlyDisplay} />
-
-            <RowItem
-              label="Thanh toán"
-              value={`${paymentMethodLabel} • ${payScheme.label}`}
-              right={<Chip scheme={payScheme} text={payScheme.label} />}
-            />
-
-            {priceText ? <RowItem label="Chi phí" value={priceText} /> : null}
-
-            {!!booking?.note && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={styles.sectionLabel}>Ghi chú từ người đặt lịch</Text>
-                <Text style={styles.noteText}>{booking.note}</Text>
-              </View>
-            )}
-
-            {showRefundNotice && (
-              <View style={styles.refundNotice}>
-                <Text style={styles.refundNoticeText}>
-                  Tiền sẽ được hoàn trả lại trong vòng{' '}
-                  <Text style={styles.refundNoticeTextBold}>
-                    12h–24h.
-                  </Text>
-                </Text>
-              </View>
-            )}
-
-            {/* Nút đánh giá bác sĩ (giống flow supporter) */}
-            {canReview && !hasRatedDoctor && (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onPress={openReviewModal}
-                style={[styles.primaryBtn, { marginTop: 20 }]}
-                disabled={submittingReview}
-              >
-                {submittingReview ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.primaryBtnText}>
-                    Đánh giá bác sĩ
-                  </Text>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {/* Hiển thị ngay đánh giá vừa gửi */}
-            {myDoctorReview && (
-              <View style={[styles.ratingBox, { marginTop: 16 }]}
-              >
-                <View style={styles.rowBetween}>
-                  <Text style={styles.sectionLabel}>Đánh giá của bạn</Text>
-                  <Text style={styles.ratingScore}>
-                    {myDoctorReview.rating} ★
+              {showRefundNotice ? (
+                <View style={styles.alertInfo}>
+                  <View style={styles.alertRow}>
+                    <Feather name="info" size={16} color="#1D4ED8" />
+                    <Text style={[styles.alertTitle, { color: '#1D4ED8' }]}>
+                      Hoàn tiền
+                    </Text>
+                  </View>
+                  <Text style={[styles.alertText, { color: '#1D4ED8' }]}>
+                    Tiền sẽ được hoàn trả lại trong vòng{' '}
+                    <Text style={{ fontWeight: '800' }}>12h–24h</Text>.
                   </Text>
                 </View>
-                {myDoctorReview.comment ? (
-                  <Text style={styles.ratingComment}>
-                    {myDoctorReview.comment}
-                  </Text>
-                ) : null}
-              </View>
-            )}
-          </View>
+              ) : null}
+            </SectionCard>
 
-          {/* Buttons cho NON-DOCTOR: chỉ 1 nút chat như cũ */}
-          {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
-            conversation &&
-            !isDoctorRole && (
-              <TouchableOpacity
-                style={[styles.primaryBtn, { marginTop: 20 }]}
-                onPress={goToChat}
-              >
-                <Text style={styles.primaryBtnText}>Nhắn tin với bác sĩ</Text>
-              </TouchableOpacity>
-            )}
+            {/* People card */}
+            <SectionCard title="Thông tin người liên quan">
+              <AvatarLine
+                title="Bác sĩ"
+                name={booking?.doctor?.fullName || booking?.doctor?.name}
+                role="Bác sĩ"
+                avatar={booking?.doctor?.avatar}
+              />
 
-          {/* Nút xem phiếu khám cho phía family/elderly */}
-          {!isDoctorRole && booking && (
-            <TouchableOpacity
-              style={[styles.primaryBtn, { marginTop: 12 }]}
-              onPress={goToConsultationSummary}
-            >
-              <Text style={styles.primaryBtnText}>Xem phiếu khám</Text>
-            </TouchableOpacity>
-          )}
+              <AvatarLine
+                title="Người cao tuổi"
+                name={
+                  booking?.elderly?.fullName ||
+                  booking?.beneficiary?.fullName ||
+                  booking?.beneficiary?.name
+                }
+                role="Người được tư vấn"
+                avatar={
+                  booking?.elderly?.avatar || booking?.beneficiary?.avatar
+                }
+                showHistoryButton
+                onPressHistory={goToHistoryList}
+              />
 
-          {/* Buttons cho DOCTOR: Liên hệ + phiếu khám */}
-          {isDoctorRole && booking && (
-            <View style={{ marginTop: 20 }}>
-              {(statusKey === 'confirmed' || statusKey === 'in_progress') &&
-                conversation && (
-                  <TouchableOpacity
-                    style={styles.primaryBtn}
-                    onPress={goToChat}
-                    disabled={updatingStatus}
+              {!!(
+                booking?.elderly?.currentAddress ||
+                booking?.beneficiary?.currentAddress
+              ) ? (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={styles.itemLabel}>Địa chỉ hiện tại</Text>
+                  <Text
+                    style={[
+                      styles.itemValue,
+                      { fontWeight: '600', lineHeight: 20 },
+                    ]}
                   >
-                    <Text style={styles.primaryBtnText}>Liên hệ</Text>
-                  </TouchableOpacity>
-                )}
+                    {booking?.elderly?.currentAddress ||
+                      booking?.beneficiary?.currentAddress}
+                  </Text>
+                </View>
+              ) : null}
 
-              <TouchableOpacity
-                style={[
-                  styles.primaryBtn,
-                  {
-                    marginTop:
-                      (statusKey === 'confirmed' || statusKey === 'in_progress') &&
-                      conversation
-                        ? 12
-                        : 0,
-                  },
-                ]}
-                onPress={goToConsultationSummary}
-              >
-                <Text style={styles.primaryBtnText}>{summaryButtonLabel}</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+              <AvatarLine
+                title="Người đặt lịch"
+                name={creatorInfo.name}
+                role={creatorInfo.roleLabel}
+                avatar={creatorInfo.avatar}
+              />
+            </SectionCard>
 
-          {canCancel && (
-            <TouchableOpacity
-              style={[styles.cancelBtn, { marginTop: 12 }]}
-              onPress={() => setConfirmVisible(true)}
-              disabled={cancelling}
-            >
-              {cancelling ? (
-                <ActivityIndicator color="#fff" />
+            {/* Note card */}
+            {!!booking?.note ? (
+              <SectionCard title="Ghi chú">
+                <View style={styles.noteBox}>
+                  <Text style={styles.noteText}>{booking.note}</Text>
+                </View>
+              </SectionCard>
+            ) : null}
+
+            {/* Rating card */}
+            <SectionCard title="Đánh giá">
+              {canReview && !hasRatedDoctor ? (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={openReviewModal}
+                  style={[styles.primaryBtn, { marginTop: 6 }]}
+                  disabled={submittingReview}
+                >
+                  {submittingReview ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>Đánh giá bác sĩ</Text>
+                  )}
+                </TouchableOpacity>
+              ) : null}
+
+              {myDoctorReview ? (
+                <View style={styles.ratingBox}>
+                  <View style={styles.rowBetweenNoTop}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <Feather name="star" size={16} color="#F59E0B" />
+                      <Text style={styles.ratingTitle}>Đánh giá của bạn</Text>
+                    </View>
+
+                    <View style={styles.ratingPill}>
+                      <Text style={styles.ratingPillText}>
+                        {myDoctorReview.rating} ★
+                      </Text>
+                    </View>
+                  </View>
+
+                  {myDoctorReview.comment ? (
+                    <Text style={styles.ratingComment}>
+                      {myDoctorReview.comment}
+                    </Text>
+                  ) : null}
+
+                  <View style={styles.ratingActionsRow}>
+                    <TouchableOpacity
+                      style={styles.smallBtn}
+                      onPress={() => {
+                        setRating(myDoctorReview.rating || 0);
+                        setComment(myDoctorReview.comment || '');
+                        setReviewModalVisible(true);
+                      }}
+                    >
+                      <Feather name="edit-2" size={14} color="#334155" />
+                      <Text style={styles.smallBtnText}>Chỉnh sửa</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.smallBtnDanger]}
+                      onPress={handleDeleteReview}
+                      disabled={submittingReview}
+                    >
+                      <Feather name="trash-2" size={14} color="#B91C1C" />
+                      <Text style={[styles.smallBtnText, { color: '#B91C1C' }]}>
+                        Xóa
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               ) : (
-                <Text style={styles.cancelBtnText}>Hủy lịch tư vấn</Text>
+                <Text style={styles.helperText}>
+                  {canReview
+                    ? 'Hãy chia sẻ trải nghiệm của bạn để giúp cải thiện chất lượng dịch vụ.'
+                    : 'Chưa có đánh giá.'}
+                </Text>
               )}
-            </TouchableOpacity>
-          )}
-        </ScrollView>
+            </SectionCard>
+
+         
+            {/* Sticky Action Bar (new, nicer) */}
+            {primaryActions?.length ? (
+              <View style={styles.actionBar}>
+                {primaryActions.map((a, idx) => {
+                  const isDanger = a.type === 'danger';
+                  const isSecondary = a.type === 'secondary';
+                  const btnStyle = [
+                    styles.actionBtn,
+                    isSecondary && styles.actionBtnSecondary,
+                    isDanger && styles.actionBtnDanger,
+                    idx > 0 && { marginTop: 10 },
+                  ];
+                  const textStyle = [
+                    styles.actionBtnText,
+                    isSecondary && { color: '#0F172A' },
+                    isDanger && { color: '#FFFFFF' },
+                  ];
+                  return (
+                    <TouchableOpacity
+                      key={a.key}
+                      style={btnStyle}
+                      onPress={a.onPress}
+                      activeOpacity={0.9}
+                      disabled={a.disabled || a.loading}
+                    >
+                      {a.loading ? (
+                        <ActivityIndicator
+                          color={isSecondary ? '#0F172A' : '#fff'}
+                        />
+                      ) : (
+                        <Text style={textStyle}>{a.label}</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : null}
+          </ScrollView>
+        </>
       )}
 
       {/* Modal hủy */}
@@ -1210,6 +1352,12 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         />
         <View style={styles.modalSheetWrap}>
           <View style={styles.modalSheet}>
+            <View style={{ alignItems: 'center', marginBottom: 8 }}>
+              <View style={styles.modalIconDanger}>
+                <Feather name="x-circle" size={20} color="#FFFFFF" />
+              </View>
+            </View>
+
             <Text style={styles.modalTitle}>Xác nhận hủy</Text>
             <Text style={styles.modalSub}>
               Bạn có chắc chắn muốn hủy buổi tư vấn?
@@ -1250,7 +1398,16 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
         <Pressable style={styles.modalBackdrop} onPress={closeReviewModal} />
         <View style={styles.modalSheetWrap}>
           <View style={styles.reviewSheet}>
+            <View style={styles.reviewHeader}>
               <Text style={styles.reviewTitle}>Đánh giá bác sĩ</Text>
+              <TouchableOpacity
+                onPress={closeReviewModal}
+                disabled={submittingReview}
+                style={styles.closeBtn}
+              >
+                <Feather name="x" size={18} color="#0F172A" />
+              </TouchableOpacity>
+            </View>
 
             <Text style={styles.reviewLabel}>Số sao</Text>
             <View style={styles.reviewStarsRow}>
@@ -1271,7 +1428,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
               ))}
             </View>
 
-            <Text style={[styles.reviewLabel, { marginTop: 16 }]}>
+            <Text style={[styles.reviewLabel, { marginTop: 14 }]}>
               Bình luận
             </Text>
             <TextInput
@@ -1328,14 +1485,27 @@ DoctorConsultationDetailScreen.propTypes = {
 };
 
 const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#F8FAFC' },
+
+  /** Header */
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 10,
     paddingBottom: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#EEF2F6',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 2 },
+    }),
   },
   backBtn: {
     width: 36,
@@ -1343,188 +1513,343 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    backgroundColor: '#F1F5F9',
+    marginRight: 10,
   },
-  backText: { fontSize: 22, lineHeight: 22, color: '#111827' },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
+  headerTitle: { fontSize: 16, fontWeight: '900', color: '#0F172A' },
+  headerSub: { marginTop: 2, fontSize: 12, color: '#64748B' },
 
+  /** Scroll */
+  scrollContent: { padding: 16, paddingBottom: 24 },
+
+  /** Cards */
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
     borderColor: '#EEF2F6',
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    marginBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 2 },
+    }),
   },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  rowBetween: {
+  cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A' },
+  cardTitle: { fontSize: 14, fontWeight: '900', color: '#0F172A' },
+
+  divider: { height: 1, backgroundColor: '#EEF2F6', marginVertical: 10 },
+
+  /** Chips */
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
+    maxWidth: 160,
   },
-  chipText: { fontSize: 12, fontWeight: '600' },
+  chipText: { fontSize: 12, fontWeight: '800' },
 
-  sectionLabel: {
+  /** Rows */
+  rowBetween: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  rowBetweenNoTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  rowIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 2,
+  },
+  itemLabel: {
     fontSize: 12,
     color: '#64748B',
-    marginBottom: 8,
+    marginBottom: 3,
     fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
   },
-  personName: { fontSize: 15, fontWeight: '600', color: '#111827' },
-  personSub: { fontSize: 12, color: '#6B7280', marginTop: 2 },
+  itemValue: { fontSize: 15, color: '#0F172A', fontWeight: '800' },
+
+  /** Person row */
+  sectionLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 8,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  personRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  personLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    paddingRight: 10,
+  },
+  personName: { fontSize: 15, fontWeight: '900', color: '#0F172A' },
+  personSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  avatarWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  avatarImg: { width: 46, height: 46 },
+
   historyBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: '#16A34A',
   },
-  historyBtnText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+  historyBtnText: { fontSize: 11, fontWeight: '900', color: '#FFFFFF' },
 
-  itemLabel: { fontSize: 12, color: '#64748B', marginBottom: 4 },
-  itemValue: { fontSize: 15, color: '#0F172A', fontWeight: '600' },
-  noteText: { fontSize: 14, color: '#334155', marginTop: 4 },
-
-  avatarWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#E5E7EB',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarImg: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-
-  cancelReasonBox: {
-    marginTop: 8,
-    padding: 10,
-    borderRadius: 8,
+  /** Alerts */
+  alertDanger: {
+    marginBottom: 10,
+    padding: 12,
+    borderRadius: 14,
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
   },
-  cancelReasonLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#991B1B',
-    marginBottom: 4,
+  alertInfo: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
   },
-  cancelReasonText: {
+  alertRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  alertTitle: { fontSize: 12, fontWeight: '900', color: '#B91C1C' },
+  alertText: {
     fontSize: 13,
     color: '#7F1D1D',
+    lineHeight: 19,
+    fontWeight: '600',
   },
 
+  /** Note */
+  noteBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  noteText: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+
+  /** Rating */
+  helperText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  ratingBox: {
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  ratingTitle: { fontSize: 13, fontWeight: '900', color: '#0F172A' },
+  ratingPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#FFFBEB',
+  },
+  ratingPillText: { color: '#B45309', fontWeight: '900', fontSize: 13 },
+  ratingComment: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#0F172A',
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  ratingActionsRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+
+  smallBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  smallBtnDanger: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  smallBtnText: { fontSize: 12, fontWeight: '900', color: '#334155' },
+
+  /** Primary buttons (kept for fallback screens) */
   primaryBtn: {
     backgroundColor: '#2563EB',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
   },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '800' },
-  cancelBtn: {
-    backgroundColor: '#991B1B',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  cancelBtnText: { color: '#FFFFFF', fontWeight: '800' },
+  primaryBtnText: { color: '#FFFFFF', fontWeight: '900', fontSize: 14 },
 
+  /** Action bar */
+  actionBar: {
+    // position: 'absolute',
+    // left: 0,
+    // right: 0,
+    // bottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    // paddingBottom: 14,
+    backgroundColor: 'rgba(248,250,252,0.92)',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  actionBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  actionBtnSecondary: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  actionBtnDanger: { backgroundColor: '#991B1B' },
+  actionBtnText: { color: '#FFFFFF', fontWeight: '900', fontSize: 14 },
+
+  /** Loading/Error */
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
-  loadingText: { marginTop: 12, color: '#475569' },
+  loadingText: { marginTop: 12, color: '#475569', fontWeight: '700' },
   errorText: {
     fontSize: 15,
     color: '#B91C1C',
     marginBottom: 12,
     textAlign: 'center',
+    fontWeight: '800',
   },
 
-  // Modal & review
+  /** Modal */
   modalBackdrop: {
     position: 'absolute',
     inset: 0,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
   },
-  modalSheetWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  modalSheetWrap: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   modalSheet: {
-    width: '80%',
+    width: '84%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 18,
+    padding: 18,
     borderWidth: 1,
     borderColor: '#EEF2F6',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.15,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      android: { elevation: 8 },
+    }),
+  },
+  modalIconDanger: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#991B1B',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '900',
     color: '#0F172A',
     textAlign: 'center',
   },
   modalSub: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#475569',
     textAlign: 'center',
     marginTop: 8,
+    fontWeight: '600',
+    lineHeight: 20,
   },
   modalBtnRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: 18,
     gap: 12,
   },
   modalBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
   },
-  modalBtnGhost: { backgroundColor: '#F8FAFC' },
+  modalBtnGhost: { backgroundColor: '#F1F5F9' },
   modalBtnDanger: { backgroundColor: '#991B1B' },
-  modalBtnGhostText: { color: '#0F172A', fontWeight: '700' },
-  modalBtnDangerText: { color: '#FFFFFF', fontWeight: '700' },
+  modalBtnGhostText: { color: '#0F172A', fontWeight: '900' },
+  modalBtnDangerText: { color: '#FFFFFF', fontWeight: '900' },
 
-  // Toast
+  /** Toast */
   toastContainer: {
     position: 'absolute',
     top: 60,
@@ -1539,142 +1864,75 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  toastText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 13,
-  },
+  toastText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
 
-  // Rating UI
-  ratingBox: {
-    marginTop: 10,
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  ratingScore: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: '#FFFBEB',
-    color: '#B45309',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  ratingComment: {
-    marginTop: 10,
-    fontSize: 14,
-    color: '#111827',
-    lineHeight: 20,
-  },
-  ratingActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  editBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    marginRight: 8,
-  },
-  editBtnText: {
-    color: '#334155',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  deleteBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#FEE2E2',
-  },
-  deleteBtnText: {
-    color: '#B91C1C',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
+  /** Review modal */
   reviewSheet: {
-    width: '85%',
+    width: '88%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
     borderColor: '#EEF2F6',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.15,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      android: { elevation: 8 },
+    }),
   },
-  reviewTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    textAlign: 'center',
-    marginBottom: 12,
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
   },
+  closeBtn: {
+    position: 'absolute',
+    right: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewTitle: { fontSize: 16, fontWeight: '900', color: '#0F172A' },
   reviewLabel: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '800',
     color: '#475569',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   reviewStarsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 4,
   },
-  starTouchable: {
-    marginHorizontal: 4,
-  },
+  starTouchable: { marginHorizontal: 4 },
   commentInput: {
-    minHeight: 80,
+    minHeight: 90,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     fontSize: 14,
     textAlignVertical: 'top',
     color: '#0F172A',
+    backgroundColor: '#FFFFFF',
   },
   reviewBtnRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
+    marginTop: 14,
     gap: 12,
   },
-  reviewSubmitBtn: {
-    backgroundColor: '#2563EB',
-  },
-  reviewSubmitText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-
-  refundNotice: {
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#EFF6FF',
-  },
-  refundNoticeText: {
-    fontSize: 13,
-    color: '#1D4ED8',
-  },
-  refundNoticeTextBold: {
-    fontWeight: '700',
-  },
+  reviewSubmitBtn: { backgroundColor: '#2563EB' },
+  reviewSubmitText: { color: '#FFFFFF', fontWeight: '900' },
 });
 
 export default DoctorConsultationDetailScreen;
