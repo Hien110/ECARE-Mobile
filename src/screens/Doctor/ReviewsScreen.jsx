@@ -5,6 +5,7 @@ import {
   Text,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
 } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Star, ChevronLeft } from "lucide-react-native";
@@ -20,9 +21,11 @@ export default function ReviewsScreen({ route, navigation }) {
 
   const [doctorUserId, setDoctorUserId] = useState(passedUserId);
   const [reviews, setReviews] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [ratingSummary, setRatingSummary] = useState(null);
 
   useEffect(() => {
     if (passedUserId) {
@@ -36,22 +39,37 @@ export default function ReviewsScreen({ route, navigation }) {
     })();
   }, [passedUserId]);
 
-  const loadReviews = useCallback(async () => {
+  const loadReviews = useCallback(async (opts = {}) => {
+    // opts: { cursor, append }
     if (!doctorUserId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError("");
+    const { cursor = null, append = false } = opts;
+    if (!append) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const res = await doctorService.getDoctorReviews(doctorUserId, {
-        limit: 100,
+        limit: 20,
+        cursor,
       });
       if (res?.success) {
         const items = res.data?.items || [];
-        setReviews(items);
+        const next = res.data?.nextCursor || null;
+        setNextCursor(next);
+        setReviews((prev) => (append ? [...prev, ...items] : items));
       } else {
         setError(res?.message || "Không thể tải danh sách đánh giá");
+      }
+      // fetch authoritative rating summary (avg, total, breakdown)
+      try {
+        const s = await doctorService.getDoctorRatingSummary(doctorUserId);
+        if (s?.success) setRatingSummary(s.data || null);
+        else setRatingSummary(null);
+      } catch (e) {
+        setRatingSummary(null);
       }
     } catch (e) {
       setError("Không thể tải danh sách đánh giá");
@@ -66,6 +84,11 @@ export default function ReviewsScreen({ route, navigation }) {
     }
   }, [doctorUserId, loadReviews]);
 
+  const loadMore = async () => {
+    if (!nextCursor || loading) return;
+    await loadReviews({ cursor: nextCursor, append: true });
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadReviews();
@@ -76,10 +99,17 @@ export default function ReviewsScreen({ route, navigation }) {
     reviews.length > 0
       ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
       : 0;
+  // Prefer backend summary if available; fall back to passed params or computed values
   const displayAvg =
-    typeof passedAvg === "number" && passedAvg > 0 ? passedAvg : computedAvg;
+    ratingSummary && typeof ratingSummary.avg === 'number'
+      ? Number(ratingSummary.avg)
+      : typeof passedAvg === "number" && passedAvg > 0
+      ? passedAvg
+      : computedAvg;
   const displayTotal =
-    typeof passedTotal === "number" && passedTotal >= 0
+    ratingSummary && typeof ratingSummary.total === 'number'
+      ? Number(ratingSummary.total)
+      : typeof passedTotal === "number" && passedTotal >= 0
       ? passedTotal
       : reviews.length;
 
@@ -188,8 +218,24 @@ export default function ReviewsScreen({ route, navigation }) {
         ) : (
           <View style={{ marginTop: 16 }}>
             {reviews.map((rv) => (
-              <ReviewItem key={rv.id} {...rv} />
+              <ReviewItem
+                key={rv.id || rv._id}
+                author={rv.author || rv.reviewerName || rv.reviewer?.fullName}
+                authorAvatar={rv.authorAvatar || rv.reviewer?.avatar}
+                rating={rv.rating}
+                content={rv.content || rv.comment}
+                date={rv.date || rv.createdAt}
+                tags={rv.tags || []}
+              />
             ))}
+            {nextCursor ? (
+              <TouchableOpacity
+                onPress={loadMore}
+                style={{ padding: 12, alignItems: 'center', marginTop: 8 }}
+              >
+                <Text style={{ color: '#2563EB', fontWeight: '700' }}>Tải thêm</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
       </ScrollView>

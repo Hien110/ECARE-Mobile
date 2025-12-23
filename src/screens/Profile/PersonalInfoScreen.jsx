@@ -180,6 +180,8 @@ const PersonalInfoScreen = ({ navigation }) => {
       ? 'Người thân'
       : role === 'supporter'
       ? 'Người hỗ trợ'
+      : role === 'doctor'
+      ? 'Bác sĩ'
       : role || '—';
 
   /* ===== UI pieces ===== */

@@ -34,7 +34,7 @@ const ListSumaryScreen = () => {
 			let slotLabel = '';
 			if (registration.slot === 'morning') slotLabel = 'Buổi sáng (8h - 11h)';
 			else if (registration.slot === 'afternoon')
-				slotLabel = 'Buổi chiều (14h - 16h)';
+				slotLabel = 'Buổi chiều (14h - 17h)';
 			return slotLabel ? `${dateStr} • ${slotLabel}` : dateStr;
 		} catch (e) {
 			return '—';

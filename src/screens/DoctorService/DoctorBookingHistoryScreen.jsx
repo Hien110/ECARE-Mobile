@@ -234,7 +234,7 @@ const getConsultationDate = item => {
 
 const getSlotLabel = item => {
   const slot = item?.slot;
-  if (slot === 'morning') return 'Buổi sáng (8h-10h)';
+  if (slot === 'morning') return 'Buổi sáng (8h-11h)';
   if (slot === 'afternoon') return 'Buổi chiều (14h-17h)';
   return '—';
 };
