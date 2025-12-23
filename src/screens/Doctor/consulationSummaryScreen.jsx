@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import consultationSummaryService from '../../services/consultationSummaryService';
 import { userService } from '../../services/userService';
+import doctorBookingService from '../../services/doctorBookingService';
 
 const getConsultationWindowStateUtc = (scheduledDate, slot) => {
   // Use local time comparison to avoid timezone/parsing inconsistencies
@@ -94,6 +95,7 @@ const ConsulationSummaryScreen = () => {
 
   const [doctorInfo, setDoctorInfo] = useState(null);
   const [patientInfo, setPatientInfo] = useState(null);
+  const [registration, setRegistration] = useState(null);
 
   const [form, setForm] = useState({
     mainDisease: '',
@@ -173,6 +175,18 @@ const ConsulationSummaryScreen = () => {
         setPatientInfo(null);
       }
 
+      // load registration detail (to read status / cancel reason)
+      try {
+        const regRes = await doctorBookingService.getRegistrationDetail(registrationId);
+        if (regRes?.success && regRes.data) {
+          setRegistration(regRes.data);
+        } else {
+          setRegistration(null);
+        }
+      } catch (e) {
+        setRegistration(null);
+      }
+
       const res = await consultationSummaryService.getSummary(registrationId);
       if (res?.success && res.data) {
         const d = res.data;
@@ -218,7 +232,9 @@ const ConsulationSummaryScreen = () => {
     return () => { mounted = false; };
   }, []);
 
-  const canEdit = isEditable && isDoctorUser;
+  const isCancelled = registration?.status === 'cancelled';
+
+  const canEdit = isEditable && isDoctorUser && !isCancelled;
   
   const readValueStyle = (val) => {
     try {
@@ -260,7 +276,6 @@ const ConsulationSummaryScreen = () => {
   };
 
   const validateForm = () => {
-    const canEdit = isEditable && isDoctorUser;
     if (!canEdit) {
       if (!isDoctorUser) return 'Chỉ tài khoản có role bác sĩ mới được chỉnh sửa phiếu.';
       if (consultationState === 'before') {
@@ -398,7 +413,25 @@ const ConsulationSummaryScreen = () => {
         </View>
       ) : (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-          {consultationState !== 'within' && consultationState !== 'unknown' && (
+          {isCancelled ? (
+            <View style={styles.cancelBox}>
+              <Ionicons
+                name="close-circle-outline"
+                size={18}
+                color="#991b1b"
+                style={{ marginTop: 1 }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cancelText}>Lịch khám này đã bị hủy.</Text>
+                {registration?.cancelReason ? (
+                  <Text style={styles.cancelDetail}>{registration.cancelReason}</Text>
+                ) : null}
+                {registration?.cancelledAt ? (
+                  <Text style={styles.cancelDetail}>{`Thời gian hủy: ${new Date(registration.cancelledAt).toLocaleString('vi-VN')}`}</Text>
+                ) : null}
+              </View>
+            </View>
+          ) : (consultationState !== 'within' && consultationState !== 'unknown' && (
             <View style={styles.infoBox}>
               <Ionicons
                 name="information-circle-outline"
@@ -416,7 +449,7 @@ const ConsulationSummaryScreen = () => {
                 </Text>
               )}
             </View>
-          )}
+          ))}
 
           {!!error && (
             <View style={styles.errorBox}>
@@ -912,6 +945,24 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '900',
     fontSize: 15,
+  },
+  cancelBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#fff1f2',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  cancelText: {
+    color: '#7f1d1d',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  cancelDetail: {
+    color: '#991b1b',
+    fontSize: 12,
+    marginTop: 4,
   },
   readValue: {
     fontWeight: '700',
