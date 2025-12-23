@@ -2,19 +2,36 @@ import { api } from './api';
 
 const supporterSchedulingService = {
   // Tạo lịch hỗ trợ mới
-  createScheduling: async schedulingData => {
-    try {
-      const response = await api.post('/supporter-schedulings', schedulingData);
-      return {
-        success: true,
-        data: response.data.data,
-        message: response.data.message,
-      };
-    } catch (error) {
-      console.error('createScheduling error:', error);
-      throw error;
-    }
-  },
+ createScheduling: async (schedulingData) => {
+  try {
+    const response = await api.post("/supporter-schedulings", schedulingData);
+    return {
+      success: true,
+      data: response.data?.data,
+      message: response.data?.message,
+    };
+  } catch (error) {
+    console.error("createScheduling error:", {
+      message: error?.message,
+      status: error?.response?.status,
+      data: error?.response?.data,
+    });
+
+    // Lấy message/errorCode từ BE
+    const status = error?.response?.status;
+    const data = error?.response?.data;
+
+    // Chuẩn hoá object error để UI dùng luôn
+    const normalizedError = new Error(
+      data?.message || "Đã có lỗi xảy ra, vui lòng thử lại."
+    );
+    normalizedError.status = status;
+    normalizedError.errorCode = data?.errorCode;
+    normalizedError.data = data;
+
+    throw normalizedError;
+  }
+},
 
   // Lấy danh sách đặt lịch theo id
   getSchedulingsByUserId: async (userId) => {
