@@ -1516,7 +1516,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     marginRight: 10,
   },
-  headerTitle: { fontSize: 16, fontWeight: '900', color: '#0F172A' },
+  headerTitle: { fontSize: 16, fontWeight: '900', color: '#0F172A', },
   headerSub: { marginTop: 2, fontSize: 12, color: '#64748B' },
 
   /** Scroll */
