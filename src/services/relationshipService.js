@@ -123,6 +123,26 @@ export const relationshipService = {
     }
   },
 
+  // Lấy tất cả mối quan hệ theo familyId (normalized endpoint)
+  getAllRelationshipsByFamilyId: async (familyId, { status } = {}) => {
+    try {
+      const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+      const response = await api.get(`/relationships/family/${familyId}${qs}`);
+      return {
+        success: true,
+        status: response.status,
+        data: response.data?.data,
+        message: response.data?.message,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        status: error?.response?.status || 0,
+        message: error.response?.data?.message || error.message,
+      };
+    }
+  },
+
   // Hủy mối quan hệ
   cancelRelationship: async (relationshipId) => {
     try {
