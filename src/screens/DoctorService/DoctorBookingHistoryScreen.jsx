@@ -529,9 +529,11 @@ const DoctorBookingHistoryScreen = () => {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>BÁC SĨ PHỤ TRÁCH</Text>
           <View style={styles.row}>
-            <View style={styles.doctorAvatarCircle}>
-              <Icon name="medkit-outline" size={20} color="#F97316" />
-            </View>
+            <Avatar
+              uri={item?.doctor?.avatar || item?.doctor?.user?.avatar || null}
+              fallback={doctorName}
+              size={40}
+            />
             <View style={styles.personInfo}>
               <Text style={styles.personName} numberOfLines={1}>
                 {doctorName}
