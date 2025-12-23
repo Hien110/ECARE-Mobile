@@ -115,7 +115,7 @@ const PaymentBookingScreen = ({ navigation, route }) => {
       }
     } catch (err) {
       console.error('createScheduling error:', err);
-      Alert.alert('Lỗi', 'Không thể tạo lịch hỗ trợ. Vui lòng thử lại.');
+      Alert.alert('Lỗi', err?.message || 'Đã có lỗi xảy ra, vui lòng thử lại.');
     }
   };
 
