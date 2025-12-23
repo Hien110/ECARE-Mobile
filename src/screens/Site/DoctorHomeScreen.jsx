@@ -174,15 +174,36 @@ const DoctorHomeScreen = () => {
         return;
       }
 
-      const [p, r] = await Promise.all([
-        doctorService.getProfileByUserId(userId),
-        doctorService.getMyRatingStats(),
-      ]);
+      const p = await doctorService.getProfileByUserId(userId);
+      if (p?.success) {
+        const data = p.data;
+        // backend may return { profile, ratingSummary, reviews }
+        if (data?.profile) setProfile(data.profile);
+        else setProfile(data || null);
 
-      if (p?.success) setProfile(p.data);
-      else setErrorMsg(p?.message || "Không thể tải hồ sơ bác sĩ.");
-
-      if (r?.success) setRating(r.data || { averageRating: 0, totalRatings: 0 });
+        // prefer ratingSummary included in profile response
+        if (data?.ratingSummary) {
+          const avg = Number(data.ratingSummary.avg ?? 0);
+          const total = Number(data.ratingSummary.total ?? 0);
+          setRating({ averageRating: avg, totalRatings: total });
+        } else {
+          // fetch authoritative rating summary (computed from Rating collection)
+          try {
+            const rs = await doctorService.getDoctorRatingSummary(userId);
+            if (rs?.success) {
+              const avg = Number(rs.data?.avg ?? 0);
+              const total = Number(rs.data?.total ?? 0);
+              setRating({ averageRating: avg, totalRatings: total });
+            }
+          } catch (e) {
+            // fallback to previous endpoint if available
+            try {
+              const r = await doctorService.getMyRatingStats();
+              if (r?.success) setRating(r.data || { averageRating: 0, totalRatings: 0 });
+            } catch (err) {}
+          }
+        }
+      } else setErrorMsg(p?.message || "Không thể tải hồ sơ bác sĩ.");
 
       const bookingsRes = await doctorBookingService.getMyBookings();
       if (bookingsRes?.success && Array.isArray(bookingsRes.data)) {
@@ -201,7 +222,7 @@ const DoctorHomeScreen = () => {
 
           let timeLabel = "--:--";
           if (b.slot === "morning") timeLabel = "8h - 11h";
-          else if (b.slot === "afternoon") timeLabel = "14h - 16h";
+          else if (b.slot === "afternoon") timeLabel = "14h - 17h";
 
           const { key: statusKey, label: statusLabel, tagType: statusTagType } = getStatusInfo(b.status);
           const { label: paymentLabel, tagType: paymentTagType } = getPaymentInfoFromBooking(b);

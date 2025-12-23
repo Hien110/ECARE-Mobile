@@ -75,32 +75,48 @@ const ViewDoctorProfileFromCustomerScreen = ({ navigation, route }) => {
     try {
       const res = await doctorService.getProfileById(profileId);
 
-      if (res?.success) setProfile(res?.data || null);
-      else setProfile(null);
+      if (res?.success) {
+        const data = res?.data || null;
+        // New backend: data may be { profile, ratingSummary, reviews }
+        if (data && data.profile) {
+          setProfile(data.profile);
+          if (data.ratingSummary) setRatingSummary(data.ratingSummary);
+          if (Array.isArray(data.reviews)) setReviews(data.reviews);
+          // userId for any fallback calls
+          const userNode = data.user || data.profile?.user || data.profile;
+          var userId = userNode ? String(userNode?._id || userNode) : null;
+        } else {
+          // legacy: data is the profile object itself
+          setProfile(data || null);
+          const userNode = data?.user || data?.profile?.user || null;
+          var userId = userNode ? String(userNode?._id || userNode) : null;
+        }
 
-      const data = res?.data || null;
-      const userNode = data?.user || data?.profile?.user || null;
-      const userId = userNode ? String(userNode?._id || userNode) : null;
+        if (userId) {
+          // if backend didn't include ratingSummary, fetch it
+          if (!data?.ratingSummary) {
+            try {
+              const rsum = await doctorService.getDoctorRatingSummary(userId);
+              if (rsum?.success) setRatingSummary(rsum.data);
+            } catch (e) {}
+          }
 
-      if (userId) {
-        // rating summary
-        try {
-          const rsum = await doctorService.getDoctorRatingSummary(userId);
-          if (rsum?.success) setRatingSummary(rsum.data);
-        } catch (e) {}
+          // activity summary (nếu backend chưa có endpoint thì bỏ qua)
+          try {
+            setActivitySummary(null);
+          } catch (e) {}
 
-        // activity summary (nếu backend chưa có endpoint thì bỏ qua)
-        try {
-          // bạn có thể thay endpoint thật nếu có: doctorService.getDoctorActivitySummary(userId)
-          setActivitySummary(null);
-        } catch (e) {}
-
-        // reviews
-        try {
-          const rv = await doctorService.getDoctorReviews(userId, { limit: 20 });
-          if (rv?.success && rv?.data?.items) setReviews(rv.data.items);
-          else if (rv?.success && Array.isArray(rv?.data)) setReviews(rv.data);
-        } catch (e) {}
+          // if backend didn't include reviews, fetch them
+          if (!Array.isArray(data?.reviews)) {
+            try {
+              const rv = await doctorService.getDoctorReviews(userId, { limit: 20 });
+              if (rv?.success && rv?.data?.items) setReviews(rv.data.items);
+              else if (rv?.success && Array.isArray(rv?.data)) setReviews(rv.data);
+            } catch (e) {}
+          }
+        }
+      } else {
+        setProfile(null);
       }
     } catch (err) {
       setError("Lỗi khi tải hồ sơ");
@@ -181,9 +197,9 @@ const ViewDoctorProfileFromCustomerScreen = ({ navigation, route }) => {
   const intro = profile?.introduction || profile?.about || profile?.description || "";
 
   const avg =
-    Number(profile?.ratingStats?.averageRating ?? ratingSummary?.avg ?? 0) || 0;
+    Number(profile?.ratingSummary?.avg ?? ratingSummary?.avg ?? profile?.ratingStats?.averageRating ?? 0) || 0;
   const total =
-    Number(profile?.ratingStats?.totalRatings ?? ratingSummary?.total ?? 0) || 0;
+    Number(profile?.ratingSummary?.total ?? ratingSummary?.total ?? profile?.ratingStats?.totalRatings ?? 0) || 0;
 
   const consults =
     activitySummary?.consults ?? profile?.stats?.totalConsultations ?? 0;

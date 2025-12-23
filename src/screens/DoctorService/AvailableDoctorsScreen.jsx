@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import Icon from "react-native-vector-icons/Ionicons";
 import { doctorBookingService } from "../../services/doctorBookingService";
+import doctorService from "../../services/doctorService";
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
@@ -53,6 +54,7 @@ const RatingRow = ({ rating, count }) => {
 
 const DoctorCard = ({ item, onPick, onDetail }) => {
   const rating =
+    item?.ratingSummary?.avg ??
     item?.ratingStats?.averageRating ??
     item?.rating ??
     item?.avgRating ??
@@ -60,6 +62,7 @@ const DoctorCard = ({ item, onPick, onDetail }) => {
     null;
 
   const ratingCount =
+    item?.ratingSummary?.total ??
     item?.ratingStats?.totalRatings ??
     item?.ratingCount ??
     item?.reviewCount ??
@@ -136,7 +139,31 @@ const AvailableDoctorsScreen = ({ navigation, route }) => {
         if (!mounted) return;
 
         if (res?.success) {
-          setList(Array.isArray(res?.data) ? res.data : []);
+            const items = Array.isArray(res?.data) ? res.data : [];
+            setList(items);
+
+            // enrich items missing ratingSummary by fetching authoritative summary
+            (async () => {
+              try {
+                const toFetch = items.filter((it) => !it?.ratingSummary);
+                if (!toFetch.length) return;
+                const updated = await Promise.all(
+                  items.map(async (it) => {
+                    if (it?.ratingSummary) return it;
+                    const userId = it?.user?._id || it?.userId || it?._id || it?.doctorId || it?.profile?._id || null;
+                    if (!userId) return it;
+                    try {
+                      const rs = await doctorService.getDoctorRatingSummary(String(userId));
+                      if (rs?.success && rs.data) {
+                        return { ...it, ratingSummary: rs.data };
+                      }
+                    } catch (e) {}
+                    return it;
+                  })
+                );
+                setList(updated);
+              } catch (e) {}
+            })();
         } else {
           setList([]);
           setError(res?.message || "Không có bác sĩ khả dụng");

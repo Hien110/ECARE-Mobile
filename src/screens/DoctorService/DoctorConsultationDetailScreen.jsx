@@ -733,7 +733,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     (slotRaw === 'morning'
       ? '8h - 11h'
       : slotRaw === 'afternoon'
-      ? '14h - 16h'
+      ? '14h - 17h'
       : '—');
   const timeDisplay = dateDisplay;
 

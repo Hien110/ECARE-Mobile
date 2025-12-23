@@ -1,21 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Dimensions,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Dimensions, ScrollView, StatusBar, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import DoctorNavTabs from '../../components/DoctorNavTabs';
 import { doctorService } from '../../services/doctorService';
 import { userService } from '../../services/userService';
-
+import { SafeAreaView } from 'react-native-safe-area-context';
 const { width } = Dimensions.get('window');
 
 const EvaluationStatisticsScreen = ({ navigation }) => {
@@ -32,13 +22,31 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
       setLoading(true);
       setErrorMsg('');
       try {
-        // Kỳ vọng doctorService.getMyRatingStats() gọi: GET /doctors/ratings/stats
+        // Try authoritative summary for current doctor
         const res = await doctorService.getMyRatingStats();
         if (!mounted) return;
         if (res?.success) {
-          setStats(res.data || null);
+          const payload = res.data || {};
+          const avg = Number(payload.avg ?? payload.averageRating ?? payload.avgRating ?? payload.ratingAvg ?? 0) || 0;
+          const total = Number(payload.total ?? payload.totalRatings ?? payload.count ?? 0) || 0;
+          const breakdown = payload.breakdown ?? payload.starCounts ?? payload.stars ?? {};
+          const weekly = payload.weeklyRatings ?? payload.weeklyReviewCounts ?? null;
+          const recent = payload.reviews ?? payload.recentReviews ?? null;
+          setStats({ averageRating: avg, totalReviews: total, starCounts: breakdown, weeklyRatings: weekly, recentReviews: recent });
         } else {
-          setErrorMsg(res?.message || 'Không thể tải thống kê.');
+          // Fallback: try to resolve doctor userId and fetch summary + count
+          const me = await userService.getUser();
+          const id = me?.data?._id || null;
+          if (!id) {
+            setErrorMsg(res?.message || 'Không thể tải thống kê.');
+          } else {
+            const sum = await doctorService.getDoctorRatingSummary(String(id));
+            const cnt = await doctorService.getDoctorRatingCount(String(id));
+            const avg = Number(sum?.success ? (sum.data?.avg ?? 0) : 0) || 0;
+            const breakdown = sum?.success ? (sum.data?.breakdown ?? {}) : {};
+            const total = Number(cnt?.success ? (cnt.data?.total ?? (sum?.success ? sum.data?.total ?? 0 : 0)) : (sum?.success ? sum.data?.total ?? 0 : 0)) || 0;
+            setStats({ averageRating: avg, totalReviews: total, starCounts: breakdown, weeklyRatings: null, recentReviews: null });
+          }
         }
       } catch (e) {
         if (!mounted) return;
@@ -218,24 +226,11 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
       </View>
 
       {/* Tabs */}
-      <DoctorNavTabs
-  navigation={navigation}
-  active={selectedTab}   
-  routes={{
-    profile: [
-      'ProfileGate',                 
-      'ViewDoctorProfile',           
-      'IntroductionCreateDoctorProfile', 
-      'EditDoctorProfile',           
-    ],
-    schedule: [
-      'CreateWorkSchedule' 
-    ],
-    statistics: [
-      'EvaluationStatistics',
-    ],
-  }}
-/>
+      <DoctorNavTabs navigation={navigation} active={selectedTab} routes={{
+        profile: ['ProfileGate','ViewDoctorProfile','IntroductionCreateDoctorProfile','EditDoctorProfile'],
+        schedule: ['CreateWorkSchedule'],
+        statistics: ['EvaluationStatistics']
+      }} />
 
       {/* Loading / Error */}
       {loading ? (
@@ -325,30 +320,7 @@ const EvaluationStatisticsScreen = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Charts */}
-          <View style={styles.section}>
-            <View style={styles.chartHeader}>
-              <View style={styles.chartIcon}>
-                <MaterialIcons name="bar-chart" size={20} color="#4A90E2" />
-              </View>
-              <View style={styles.chartTitleContainer}>
-                <Text style={styles.sectionTitle}>Biểu đồ thống kê</Text>
-                <Text style={styles.chartSubtitle}>7 ngày gần nhất (lượt đánh giá)</Text>
-              </View>
-            </View>
-
-            <View style={styles.chartSection}>
-              <Text style={styles.chartLabel}>Biểu đồ tổng hợp</Text>
-              <View style={styles.chartLegend}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#4A90E2' }]} />
-                  <Text style={styles.legendText}>Đánh giá/ngày</Text>
-                </View>
-              </View>
-
-              {renderBarChart()}
-            </View>
-          </View>
+     
 
           {/* Recent Reviews (nếu backend có) */}
           {Array.isArray(stats?.recentReviews) && stats.recentReviews.length > 0 && (
