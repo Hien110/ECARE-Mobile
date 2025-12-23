@@ -121,14 +121,39 @@ export const doctorService = {
     }
   },
 
-  // Thống kê đánh giá 
+  // Thống kê đánh giá cho bác sĩ hiện tại (authenticated)
   getMyRatingStats: async () => {
     try {
-      const response = await api.get('/doctors/ratings/stats');
+      // get own profile to obtain userId
+      const meRes = await api.get('/doctors/me');
+      const profile = meRes?.data?.data;
+      const userId = profile?.user?._id || profile?.userId || null;
+      if (!userId) {
+        return { success: false, message: 'Không lấy được userId từ hồ sơ' };
+      }
+      const response = await api.get(`/doctors/${userId}/ratings/summary`);
       return {
         success: true,
         data: response.data?.data,
         message: response.data?.message || 'Lấy thống kê thành công',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || error.message,
+      };
+    }
+  },
+
+  // Lấy số lượng đánh giá public cho doctor (by reviewee)
+  getDoctorRatingCount: async (userId) => {
+    try {
+      if (!userId) return { success: false, message: 'Thiếu userId' };
+      const response = await api.get(`/doctors/${userId}/ratings/count`);
+      return {
+        success: true,
+        data: response.data?.data,
+        message: response.data?.message || 'Lấy số lượng đánh giá thành công',
       };
     } catch (error) {
       return {
@@ -191,9 +216,22 @@ deleteSchedule: async (payload) => {
         return { success: false, message: 'Thiếu userId' };
       }
       const response = await api.get(`/doctors/${userId}/reviews`, { params });
+      const payload = response.data?.data;
+
+      // Normalize response to { items: [], nextCursor: null }
+      let items = [];
+      let nextCursor = null;
+
+      if (Array.isArray(payload)) {
+        items = payload;
+      } else if (payload && typeof payload === 'object') {
+        items = payload.items || payload.data || [];
+        nextCursor = payload.nextCursor || payload.next_cursor || null;
+      }
+
       return {
         success: true,
-        data: response.data?.data,
+        data: { items, nextCursor },
         message: response.data?.message || 'Lấy đánh giá bác sĩ thành công',
       };
     } catch (error) {
@@ -230,6 +268,16 @@ deleteSchedule: async (payload) => {
       if (!userId) {
         return { success: false, message: 'Thiếu userId' };
       }
+      // Prefer public profile endpoint (includes ratingSummary) to avoid 401 when unauthenticated
+      try {
+        const profileRes = await api.get(`/doctors/by-user/${userId}`);
+        if (profileRes?.data?.data?.ratingSummary) {
+          return { success: true, data: profileRes.data.data.ratingSummary, message: profileRes.data?.message || 'Lấy thống kê đánh giá bác sĩ thành công' };
+        }
+      } catch (err) {
+        // ignore and fall back to direct summary endpoint
+      }
+
       const response = await api.get(`/doctors/${userId}/ratings/summary`);
       return {
         success: true,

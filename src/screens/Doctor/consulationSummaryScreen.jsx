@@ -1,4 +1,3 @@
-// screens/ConsulationSummaryScreen.jsx
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,6 +14,8 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import consultationSummaryService from '../../services/consultationSummaryService';
+import { userService } from '../../services/userService';
+import doctorBookingService from '../../services/doctorBookingService';
 
 const getConsultationWindowStateUtc = (scheduledDate, slot) => {
   // Use local time comparison to avoid timezone/parsing inconsistencies
@@ -90,8 +91,11 @@ const ConsulationSummaryScreen = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  const [isDoctorUser, setIsDoctorUser] = useState(false);
+
   const [doctorInfo, setDoctorInfo] = useState(null);
   const [patientInfo, setPatientInfo] = useState(null);
+  const [registration, setRegistration] = useState(null);
 
   const [form, setForm] = useState({
     mainDisease: '',
@@ -171,6 +175,18 @@ const ConsulationSummaryScreen = () => {
         setPatientInfo(null);
       }
 
+      // load registration detail (to read status / cancel reason)
+      try {
+        const regRes = await doctorBookingService.getRegistrationDetail(registrationId);
+        if (regRes?.success && regRes.data) {
+          setRegistration(regRes.data);
+        } else {
+          setRegistration(null);
+        }
+      } catch (e) {
+        setRegistration(null);
+      }
+
       const res = await consultationSummaryService.getSummary(registrationId);
       if (res?.success && res.data) {
         const d = res.data;
@@ -199,6 +215,56 @@ const ConsulationSummaryScreen = () => {
     loadSummary();
   }, [loadSummary]);
 
+  // Fetch current user to check role (only doctors can edit/save)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const me = await userService.getUser();
+        if (!mounted) return;
+        const role = me?.data?.role || me?.data?.userRole || null;
+        setIsDoctorUser(role === 'doctor');
+      } catch (e) {
+        if (!mounted) return;
+        setIsDoctorUser(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const isCancelled = registration?.status === 'cancelled';
+
+  const canEdit = isEditable && isDoctorUser && !isCancelled;
+  
+  const readValueStyle = (val) => {
+    try {
+      return !canEdit && String(val || '').trim() ? styles.readValue : null;
+    } catch (e) {
+      return null;
+    }
+  };
+  
+  const Field = ({ value, placeholder, onChangeText, editable, keyboardType, multiline, autoCapitalize, returnKeyType }) => {
+    if (editable) {
+      return (
+        <TextInput
+          style={[styles.input, multiline && styles.multiline]}
+          placeholder={placeholder}
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType={keyboardType}
+          multiline={multiline}
+          autoCapitalize={autoCapitalize}
+          returnKeyType={returnKeyType}
+        />
+      );
+    }
+    return (
+      <View style={[styles.input, multiline && styles.multiline, { justifyContent: 'center' }]}>
+        <Text style={String(value || '').trim() ? styles.readValue : { color: '#9CA3AF' }}>{String(value || '')}</Text>
+      </View>
+    );
+  };
   const normalizeNumber = (value) => {
     if (value == null) return null;
     const trimmed = String(value).trim();
@@ -210,7 +276,8 @@ const ConsulationSummaryScreen = () => {
   };
 
   const validateForm = () => {
-    if (!isEditable) {
+    if (!canEdit) {
+      if (!isDoctorUser) return 'Chỉ tài khoản có role bác sĩ mới được chỉnh sửa phiếu.';
       if (consultationState === 'before') {
         return 'Chưa đến thời gian khám, chỉ có thể chỉnh phiếu trong khung giờ khám.';
       }
@@ -346,7 +413,25 @@ const ConsulationSummaryScreen = () => {
         </View>
       ) : (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-          {consultationState !== 'within' && consultationState !== 'unknown' && (
+          {isCancelled ? (
+            <View style={styles.cancelBox}>
+              <Ionicons
+                name="close-circle-outline"
+                size={18}
+                color="#991b1b"
+                style={{ marginTop: 1 }}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cancelText}>Lịch khám này đã bị hủy.</Text>
+                {registration?.cancelReason ? (
+                  <Text style={styles.cancelDetail}>{registration.cancelReason}</Text>
+                ) : null}
+                {registration?.cancelledAt ? (
+                  <Text style={styles.cancelDetail}>{`Thời gian hủy: ${new Date(registration.cancelledAt).toLocaleString('vi-VN')}`}</Text>
+                ) : null}
+              </View>
+            </View>
+          ) : (consultationState !== 'within' && consultationState !== 'unknown' && (
             <View style={styles.infoBox}>
               <Ionicons
                 name="information-circle-outline"
@@ -364,7 +449,7 @@ const ConsulationSummaryScreen = () => {
                 </Text>
               )}
             </View>
-          )}
+          ))}
 
           {!!error && (
             <View style={styles.errorBox}>
@@ -418,26 +503,23 @@ const ConsulationSummaryScreen = () => {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Đánh giá sức khỏe</Text>
             <Text style={styles.label}>Đánh giá tổng quát</Text>
-            <TextInput
-              style={styles.input}
+            <Field
+              value={form.mainDisease}
               placeholder="Nhập ngắn gọn tình trạng chung hiện tại"
+              onChangeText={(t) => updateField('mainDisease', t)}
+              editable={canEdit}
               autoCapitalize="sentences"
               returnKeyType="next"
-              value={form.mainDisease}
-              onChangeText={(t) => updateField('mainDisease', t)}
-              editable={isEditable}
             />
 
             <Text style={styles.label}>Lời khuyên</Text>
-            <TextInput
-              style={[styles.input, styles.multiline]}
-              placeholder="Nhập lời khuyên"
-              autoCapitalize="sentences"
+            <Field
               value={form.medications}
+              placeholder="Nhập lời khuyên"
               onChangeText={(t) => updateField('medications', t)}
+              editable={canEdit}
+              autoCapitalize="sentences"
               multiline
-              textAlignVertical="top"
-              editable={isEditable}
             />
           </View>
 
@@ -447,35 +529,32 @@ const ConsulationSummaryScreen = () => {
             <View style={styles.row}>
               <View style={styles.colThird}>
                 <Text style={styles.label}>{'SYS\n(tâm thu)'}</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="vd: 115"
+                <Field
                   value={form.systolic}
+                  placeholder="vd: 115"
                   onChangeText={(t) => updateField('systolic', t)}
-                  editable={isEditable}
+                  editable={canEdit}
+                  keyboardType="numeric"
                 />
               </View>
               <View style={styles.colThird}>
                 <Text style={styles.label}>{'DIA\n(tâm trương)'}</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="vd: 75"
+                <Field
                   value={form.diastolic}
+                  placeholder="vd: 75"
                   onChangeText={(t) => updateField('diastolic', t)}
-                  editable={isEditable}
+                  editable={canEdit}
+                  keyboardType="numeric"
                 />
               </View>
               <View style={styles.colThird}>
                 <Text style={styles.label}>{'Pulse\n(bpm)'}</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="vd: 80"
+                <Field
                   value={form.pulse}
+                  placeholder="vd: 80"
                   onChangeText={(t) => updateField('pulse', t)}
-                  editable={isEditable}
+                  editable={canEdit}
+                  keyboardType="numeric"
                 />
               </View>
             </View>
@@ -483,24 +562,22 @@ const ConsulationSummaryScreen = () => {
             <View style={[styles.row, { marginTop: 8 }]}>
               <View style={styles.colHalf}>
                 <Text style={styles.label}>Cân nặng (kg)</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="vd: 60"
+                <Field
                   value={form.weight}
+                  placeholder="vd: 60"
                   onChangeText={(t) => updateField('weight', t)}
-                  editable={isEditable}
+                  editable={canEdit}
+                  keyboardType="numeric"
                 />
               </View>
               <View style={styles.colHalf}>
                 <Text style={styles.label}>Đường huyết (mmol/L)</Text>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="vd: 5.5"
+                <Field
                   value={form.bloodSugar}
+                  placeholder="vd: 5.5"
                   onChangeText={(t) => updateField('bloodSugar', t)}
-                  editable={isEditable}
+                  editable={canEdit}
+                  keyboardType="numeric"
                 />
               </View>
             </View>
@@ -516,7 +593,7 @@ const ConsulationSummaryScreen = () => {
                   key={opt}
                   style={[styles.chip, form.mobility === opt && styles.chipActive]}
                   onPress={() => updateField('mobility', opt)}
-                  disabled={!isEditable}
+                  disabled={!canEdit}
                   activeOpacity={0.85}
                 >
                   <Text
@@ -530,12 +607,11 @@ const ConsulationSummaryScreen = () => {
                 </TouchableOpacity>
               ))}
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="vd: Tự đi lại, cần hỗ trợ, nằm tại giường…"
+            <Field
               value={form.mobility}
+              placeholder="vd: Tự đi lại, cần hỗ trợ, nằm tại giường…"
               onChangeText={(t) => updateField('mobility', t)}
-              editable={isEditable}
+              editable={canEdit}
             />
 
             <Text style={styles.subSectionHeading}>Tắm rửa</Text>
@@ -545,7 +621,7 @@ const ConsulationSummaryScreen = () => {
                   key={opt}
                   style={[styles.chip, form.bathing === opt && styles.chipActive]}
                   onPress={() => updateField('bathing', opt)}
-                  disabled={!isEditable}
+                  disabled={!canEdit}
                   activeOpacity={0.85}
                 >
                   <Text
@@ -559,12 +635,11 @@ const ConsulationSummaryScreen = () => {
                 </TouchableOpacity>
               ))}
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="vd: Tự tắm, cần hỗ trợ…"
+            <Field
               value={form.bathing}
+              placeholder="vd: Tự tắm, cần hỗ trợ…"
               onChangeText={(t) => updateField('bathing', t)}
-              editable={isEditable}
+              editable={canEdit}
             />
 
             <Text style={styles.subSectionHeading}>Ăn uống</Text>
@@ -574,7 +649,7 @@ const ConsulationSummaryScreen = () => {
                   key={opt}
                   style={[styles.chip, form.feeding === opt && styles.chipActive]}
                   onPress={() => updateField('feeding', opt)}
-                  disabled={!isEditable}
+                  disabled={!canEdit}
                   activeOpacity={0.85}
                 >
                   <Text
@@ -588,41 +663,40 @@ const ConsulationSummaryScreen = () => {
                 </TouchableOpacity>
               ))}
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="vd: Ăn uống độc lập, cần hỗ trợ…"
+            <Field
               value={form.feeding}
+              placeholder="vd: Ăn uống độc lập, cần hỗ trợ…"
               onChangeText={(t) => updateField('feeding', t)}
-              editable={isEditable}
+              editable={canEdit}
             />
           </View>
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Ghi chú thêm</Text>
-            <TextInput
-              style={[styles.input, styles.multiline]}
-              placeholder="Ghi chú khác (dặn dò, tái khám, chỉ định xét nghiệm…)"
-              autoCapitalize="sentences"
+            <Field
               value={form.note}
+              placeholder="Ghi chú khác (dặn dò, tái khám, chỉ định xét nghiệm…)"
               onChangeText={(t) => updateField('note', t)}
+              editable={canEdit}
+              autoCapitalize="sentences"
               multiline
-              textAlignVertical="top"
-              editable={isEditable}
             />
           </View>
 
-          <TouchableOpacity
-            style={[styles.saveBtn, (saving || !isEditable) && { opacity: 0.7 }]}
-            activeOpacity={0.85}
-            disabled={saving || !isEditable}
-            onPress={onSave}
-          >
-            {saving ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.saveBtnText}>Lưu phiếu khám</Text>
-            )}
-          </TouchableOpacity>
+          {canEdit ? (
+            <TouchableOpacity
+              style={[styles.saveBtn, (saving) && { opacity: 0.7 }]}
+              activeOpacity={0.85}
+              disabled={saving}
+              onPress={onSave}
+            >
+              {saving ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.saveBtnText}>Lưu phiếu khám</Text>
+              )}
+            </TouchableOpacity>
+          ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -871,5 +945,27 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '900',
     fontSize: 15,
+  },
+  cancelBox: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: '#fff1f2',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 12,
+  },
+  cancelText: {
+    color: '#7f1d1d',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  cancelDetail: {
+    color: '#991b1b',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  readValue: {
+    fontWeight: '700',
+    color: '#111827',
   },
 });

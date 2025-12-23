@@ -86,6 +86,7 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [profile, setProfile] = useState(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [ratingSummary, setRatingSummary] = useState(null);
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
@@ -101,6 +102,30 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
       else {
         setProfile(null);
         setErrorMsg('Không thể tải hồ sơ.');
+      }
+
+      // extract server-provided ratingSummary when available
+      const returnedSummary = res?.data?.ratingSummary || res?.ratingSummary || null;
+      if (returnedSummary) {
+        setRatingSummary({ avg: Number(returnedSummary.avg ?? 0), total: Number(returnedSummary.total ?? 0) });
+      } else if (picked) {
+        // fallback: try to fetch summary by reviewee (user) id
+        try {
+          const userNode = pickUserNode(picked);
+          const userId = userNode?._id || userNode?.id || null;
+          if (userId) {
+            const rs = await doctorService.getDoctorRatingSummary(String(userId));
+            if (rs?.success) {
+              setRatingSummary({ avg: Number(rs.data?.avg ?? 0), total: Number(rs.data?.total ?? 0) });
+            } else {
+              // if summary endpoint doesn't return total, try count endpoint
+              const cnt = await doctorService.getDoctorRatingCount(String(userId));
+              if (cnt?.success) setRatingSummary((prev) => ({ ...(prev || {}), total: Number(cnt.data?.total ?? 0) }));
+            }
+          }
+        } catch (e) {
+          // ignore failures and fall back to profile.ratingStats
+        }
       }
     } catch {
       setProfile(null);
@@ -120,9 +145,9 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
     setRefreshing(false);
   };
 
-  // ----- derive fields -----
-  const rating = Number(profile?.ratingStats?.averageRating) || 0;
-  const totalRatings = Number(profile?.ratingStats?.totalRatings) || 0;
+  // ----- derive fields (prefer authoritative ratingSummary) -----
+  const rating = Number(ratingSummary?.avg ?? profile?.ratingStats?.averageRating ?? 0) || 0;
+  const totalRatings = Number(ratingSummary?.total ?? profile?.ratingStats?.totalRatings ?? profile?.ratingStats?.total ?? 0) || 0;
 
   const userNode = pickUserNode(profile);
   const doctorName = pickDisplayName(profile, userNode) || 'Bác sĩ';

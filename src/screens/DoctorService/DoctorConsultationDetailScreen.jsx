@@ -733,7 +733,7 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
     (slotRaw === 'morning'
       ? '8h - 11h'
       : slotRaw === 'afternoon'
-      ? '14h - 16h'
+      ? '14h - 17h'
       : '—');
   const timeDisplay = dateDisplay;
 
@@ -821,6 +821,12 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
 
   const goToConsultationSummary = () => {
     if (!booking?._id) return;
+
+    // Prevent viewing the consultation summary if the booking was cancelled
+    if (String(booking.status || '').toLowerCase() === 'cancelled') {
+      showToast('Buổi tư vấn đã bị hủy, không thể xem phiếu.', 'error');
+      return;
+    }
 
     const elderly = booking?.elderly || booking?.beneficiary || null;
 
@@ -984,12 +990,15 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
           onPress: goToChat,
         });
       }
-      actions.push({
-        key: 'summary',
-        label: 'Xem phiếu khám',
-        type: 'primary',
-        onPress: goToConsultationSummary,
-      });
+      // Hide summary button when booking is cancelled
+      if (statusKey !== 'cancelled') {
+        actions.push({
+          key: 'summary',
+          label: 'Xem phiếu khám',
+          type: 'primary',
+          onPress: goToConsultationSummary,
+        });
+      }
       if (canCancel) {
         actions.push({
           key: 'cancel',
@@ -1016,12 +1025,15 @@ const DoctorConsultationDetailScreen = ({ route, navigation }) => {
       });
     }
 
-    actions.push({
-      key: 'doctor-summary',
-      label: summaryButtonLabel,
-      type: 'primary',
-      onPress: goToConsultationSummary,
-    });
+    // For doctors: only show the summary/fill button when not cancelled
+    if (statusKey !== 'cancelled') {
+      actions.push({
+        key: 'doctor-summary',
+        label: summaryButtonLabel,
+        type: 'primary',
+        onPress: goToConsultationSummary,
+      });
+    }
 
     return actions;
   }, [
