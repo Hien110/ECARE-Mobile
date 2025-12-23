@@ -286,13 +286,13 @@ const ViewDoctorProfileScreen = ({ navigation, route }) => {
                   </View>
                 </View>
 
-                {/* Nút nhỏ chỉnh sửa (trong thẻ) */}
+                {/* Nút nhỏ chỉnh sửa (trong thẻ)
                 <TouchableOpacity
                   style={styles.editButton}
                   onPress={() => navigation?.navigate?.('EditDoctorProfile')}
                 >
                   <Icon name="pencil" size={20} color="#ffffff" />
-                </TouchableOpacity>
+                </TouchableOpacity> */}
               </View>
 
             </View>

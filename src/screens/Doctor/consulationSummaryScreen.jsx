@@ -510,6 +510,7 @@ const ConsulationSummaryScreen = () => {
               editable={canEdit}
               autoCapitalize="sentences"
               returnKeyType="next"
+			  
             />
 
             <Text style={styles.label}>Lời khuyên</Text>
