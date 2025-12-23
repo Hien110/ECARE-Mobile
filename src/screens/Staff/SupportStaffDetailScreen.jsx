@@ -144,7 +144,7 @@ export default function SupportStaffDetailScreen() {
             {name || 'Ẩn danh'}
           </Text>
           <Text style={styles.rel} numberOfLines={1}>
-            {type === 'doctor' ? 'Bác sĩ' : 'Supporter'}
+            {type === 'doctor' ? 'Bác sĩ' : 'Người hỗ trợ'}
           </Text>
         </View>
 

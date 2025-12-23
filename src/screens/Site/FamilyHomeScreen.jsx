@@ -14,6 +14,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { userService } from '../../services/userService';
+import relationshipService from '../../services/relationshipService';
 import { doctorBookingService } from '../../services/doctorBookingService';
 import supporterSchedulingService from '../../services/supporterSchedulingService';
 
@@ -114,7 +115,7 @@ export default function EnhancedHealthAppRN() {
       const fullName =
         entity?.fullName || entity?.name || entity?.user?.fullName || entity?.user?.name || 'Ẩn danh';
       const avatar = entity?.avatar || entity?.avatarUrl || null;
-      const rawSubtitle = type === 'doctor' ? 'Bác sĩ' : type === 'supporter' ? 'Supporter' : (entity?.relationship || '');
+      const rawSubtitle = type === 'doctor' ? 'Bác sĩ' : type === 'supporter' ? 'Người hỗ trợ' : (entity?.relationship || '');
       const color = type === 'doctor' ? C.blue : type === 'supporter' ? C.orange : C.purple;
       const icon = type === 'doctor' ? '🩺' : type === 'supporter' ? '💁‍♀️' : '📞';
 
@@ -157,7 +158,7 @@ export default function EnhancedHealthAppRN() {
           try {
             const myId = user?._id || user?.id;
             const relRes = myId
-              ? await userService.getRelationshipsByFamilyId(myId, { status: 'accepted' })
+              ? await relationshipService.getAllRelationshipsByFamilyId(myId, { status: 'accepted' })
               : null;
             const relRaw = Array.isArray(relRes?.data) ? relRes.data : [];
             const famContacts = relRaw
@@ -177,56 +178,10 @@ export default function EnhancedHealthAppRN() {
             if (mounted) setFamilyContacts([]);
           }
 
-          // Doctors via bookings
+          // Doctors: prefer relationships/members (by userId), fallback to bookings
           let doctorContacts = [];
           try {
-            const bRes = await doctorBookingService.getBookingsByElderlyId(eId);
-            const bookings = Array.isArray(bRes?.data) ? bRes.data : [];
-
-            // Collect unique doctor ids
-            const candidateDoctorIds = [];
-            bookings.forEach(bk => {
-              const d = bk?.doctor || bk?.doctorProfile || {};
-              const dUser = d?.user || d?.userInfo || {};
-              const id = dUser?._id || d?.userId || d?._id;
-              if (id && !candidateDoctorIds.includes(String(id))) candidateDoctorIds.push(String(id));
-            });
-
-            // Bulk-check relationship statuses between elderly and these doctor ids
-            const docRelMap = {};
-            if (candidateDoctorIds.length > 0) {
-              try {
-                const bulkRes = await userService.checkRelationshipsBulk({ elderlyId: eId, familyIds: candidateDoctorIds });
-                const list = Array.isArray(bulkRes?.data) ? bulkRes.data : [];
-                list.forEach(item => {
-                  if (item && item.familyId) docRelMap[String(item.familyId)] = item;
-                });
-              } catch (err) {
-                // ignore errors and treat as no cancelled relationships
-              }
-            }
-
-            const map = new Map();
-            bookings.forEach(bk => {
-              const d = bk?.doctor || bk?.doctorProfile || {};
-              const dUser = d?.user || d?.userInfo || {};
-              const id = dUser?._id || d?.userId || d?._id;
-              if (!id) return;
-              if (map.has(id)) return;
-
-              const rel = docRelMap[String(id)];
-              if (rel && String(rel.status) === 'cancelled') return;
-
-              map.set(id, toContact({ _id: id, fullName: dUser?.fullName || d?.fullName }, { type: 'doctor' }));
-            });
-
-            doctorContacts = Array.from(map.values());
-          } catch (_) {
-            doctorContacts = [];
-          }
-
-          let supporterContacts = [];
-          try {
+            // Try to get family members (some setups store linked users including doctors)
             let membersRes = null;
             try {
               if (userService.getFamilyMembersByElderlyId) {
@@ -249,63 +204,225 @@ export default function EnhancedHealthAppRN() {
             if (members.length > 0) {
               const map = new Map();
               members
-                .filter(m => (m?.role || '').toLowerCase() === 'supporter')
-                .forEach(s => {
-                  const id = s?._id || s?.userId;
+                .filter(m => (m?.role || '').toLowerCase() === 'doctor')
+                .forEach(d => {
+                  const id = d?._id || d?.userId;
                   if (!id) return;
-                  if (!map.has(id)) {
-                    map.set(
-                      id,
-                      toContact({ _id: id, fullName: s?.fullName || s?.name }, { type: 'supporter' }),
-                    );
-                  }
+                  const key = String(id);
+                  if (map.has(key)) return;
+                  map.set(key, toContact({ _id: id, fullName: d?.fullName || d?.name }, { type: 'doctor' }));
                 });
-              supporterContacts = Array.from(map.values());
+              doctorContacts = Array.from(map.values());
             } else {
-              const sRes = await supporterSchedulingService.getSchedulingsByUserId(eId);
-              const scheds = Array.isArray(sRes?.data) ? sRes.data : [];
-              const map = new Map();
+              // Fallback: derive from bookings (legacy behavior)
+              const bRes = await doctorBookingService.getBookingsByElderlyId(eId);
+              const bookings = Array.isArray(bRes?.data) ? bRes.data : [];
 
-              const candidateIds = [];
-              scheds.forEach(s => {
-                const sup = s?.supporter || s?.supporterProfile || {};
-                const sUser = sup?.user || sup?.userInfo || {};
-                const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
-                if (id && !candidateIds.includes(String(id))) candidateIds.push(String(id));
+              // Collect unique doctor ids using a Set and normalize to string
+              const candidateDoctorIds = new Set();
+              bookings.forEach(bk => {
+                const d = bk?.doctor || bk?.doctorProfile || {};
+                const dUser = d?.user || d?.userInfo || {};
+                const id = dUser?._id || d?.userId || d?._id;
+                if (id) candidateDoctorIds.add(String(id));
               });
 
-              let relMap = {};
-              if (candidateIds.length > 0) {
+              // Bulk-check relationship statuses between elderly and these doctor ids
+              const docRelMap = {};
+              const candidateArr = Array.from(candidateDoctorIds);
+              if (candidateArr.length > 0) {
                 try {
-                  const bulkRes = await userService.checkRelationshipsBulk({ elderlyId: eId, familyIds: candidateIds });
+                  const bulkRes = await userService.checkRelationshipsBulk({ elderlyId: eId, familyIds: candidateArr });
                   const list = Array.isArray(bulkRes?.data) ? bulkRes.data : [];
                   list.forEach(item => {
-                    if (item && item.familyId) relMap[String(item.familyId)] = item;
+                    if (item && item.familyId) docRelMap[String(item.familyId)] = item;
                   });
                 } catch (err) {
+                  // ignore errors and treat as no cancelled relationships
                 }
               }
 
-              for (const s of scheds) {
-                const sup = s?.supporter || s?.supporterProfile || {};
-                const sUser = sup?.user || sup?.userInfo || {};
-                const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
-                if (!id) continue;
-                if (map.has(id)) continue;
+              const map = new Map();
+              bookings.forEach(bk => {
+                const d = bk?.doctor || bk?.doctorProfile || {};
+                const dUser = d?.user || d?.userInfo || {};
+                const id = dUser?._id || d?.userId || d?._id;
+                if (!id) return;
+                const key = String(id);
+                if (map.has(key)) return;
 
-                const rel = relMap[String(id)];
-                if (rel && String(rel.status) === 'cancelled') continue;
+                const rel = docRelMap[String(id)];
+                if (rel && String(rel.status) === 'cancelled') return;
 
-                map.set(id, toContact({ _id: id, fullName: sUser?.fullName || sup?.fullName }, { type: 'supporter' }));
+                map.set(key, toContact({ _id: id, fullName: dUser?.fullName || d?.fullName }, { type: 'doctor' }));
+              });
+
+              doctorContacts = Array.from(map.values());
+            }
+          } catch (_) {
+            doctorContacts = [];
+          }
+
+          let supporterContacts = [];
+          try {
+            const myId = user?._id || user?.id;
+
+            // Prefer backend relationships endpoint to retrieve staff (if backend returns staff lists)
+            let relList = [];
+            try {
+              const relResp = myId
+                ? await relationshipService.getAllRelationshipsByFamilyId(myId, { status: 'accepted' })
+                : null;
+              relList = Array.isArray(relResp?.data) ? relResp.data : [];
+            } catch (err) {
+              relList = [];
+            }
+
+            // If backend provided staff info inside relationship items, extract them
+            const staffCandidates = [];
+            relList.forEach(item => {
+              if (Array.isArray(item.supporters)) staffCandidates.push(...item.supporters);
+              if (Array.isArray(item.doctors)) staffCandidates.push(...item.doctors);
+              if (Array.isArray(item.staff)) staffCandidates.push(...item.staff);
+              if (item.supporter) staffCandidates.push(item.supporter);
+              if (item.doctor) staffCandidates.push(item.doctor);
+            });
+
+            if (staffCandidates.length > 0) {
+              const map = new Map();
+              staffCandidates.forEach(s => {
+                const id = s?._id || s?.userId || s?.id;
+                if (!id) return;
+                const key = String(id);
+                if (map.has(key)) return;
+                const role = (s?.role || s?.type || '').toString().toLowerCase();
+                const type = role.includes('doctor') ? 'doctor' : role.includes('supporter') ? 'supporter' : 'supporter';
+                map.set(key, toContact({ _id: id, fullName: s?.fullName || s?.name, avatar: s?.avatar }, { type }));
+              });
+              supporterContacts = Array.from(map.values());
+            }
+
+            // Fallback to previous logic if backend didn't return staff lists
+            if (supporterContacts.length === 0) {
+              let membersRes = null;
+              try {
+                if (userService.getFamilyMembersByElderlyId) {
+                  try {
+                    membersRes = await userService.getFamilyMembersByElderlyId(eId);
+                  } catch (err) {
+                    membersRes = await userService.getFamilyMembersByElderlyId({ elderlyId: eId });
+                  }
+                }
+              } catch (err) {
+                membersRes = null;
               }
 
-              supporterContacts = Array.from(map.values());
+              const members = Array.isArray(membersRes?.data)
+                ? membersRes.data
+                : Array.isArray(membersRes)
+                ? membersRes
+                : [];
+
+              if (members.length > 0) {
+                const map = new Map();
+                members
+                  .filter(m => (m?.role || '').toLowerCase() === 'supporter')
+                  .forEach(s => {
+                    const id = s?._id || s?.userId;
+                    if (!id) return;
+                    const key = String(id);
+                    if (!map.has(key)) {
+                      map.set(key, toContact({ _id: id, fullName: s?.fullName || s?.name }, { type: 'supporter' }));
+                    }
+                  });
+                supporterContacts = Array.from(map.values());
+              } else {
+                const sRes = await supporterSchedulingService.getSchedulingsByUserId(eId);
+                const scheds = Array.isArray(sRes?.data) ? sRes.data : [];
+                const map = new Map();
+
+                const candidateIds = [];
+                scheds.forEach(s => {
+                  const sup = s?.supporter || s?.supporterProfile || {};
+                  const sUser = sup?.user || sup?.userInfo || {};
+                  const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
+                  if (id && !candidateIds.includes(String(id))) candidateIds.push(String(id));
+                });
+
+                let relMap = {};
+                if (candidateIds.length > 0) {
+                  try {
+                    const bulkRes = await userService.checkRelationshipsBulk({ elderlyId: eId, familyIds: candidateIds });
+                    const list = Array.isArray(bulkRes?.data) ? bulkRes.data : [];
+                    list.forEach(item => {
+                      if (item && item.familyId) relMap[String(item.familyId)] = item;
+                    });
+                  } catch (err) {
+                  }
+                }
+
+                for (const s of scheds) {
+                  const sup = s?.supporter || s?.supporterProfile || {};
+                  const sUser = sup?.user || sup?.userInfo || {};
+                  const id = sUser?._id || sup?.userId || sup?._id || s?.supporterId;
+                  if (!id) continue;
+                  if (map.has(id)) continue;
+
+                  const rel = relMap[String(id)];
+                  if (rel && String(rel.status) === 'cancelled') continue;
+
+                  map.set(id, toContact({ _id: id, fullName: sUser?.fullName || sup?.fullName }, { type: 'supporter' }));
+                }
+
+                supporterContacts = Array.from(map.values());
+              }
             }
           } catch (_) {
             supporterContacts = [];
           }
 
-          if (mounted) setSupportStaffContacts([...doctorContacts, ...supporterContacts]);
+          if (mounted) {
+            // Filter combined staff by accepted relationships with the elderly (so UI shows only active staff)
+            try {
+              // Deduplicate across groups (prefer first occurrence - doctors first)
+              const mapByRaw = new Map();
+              const source = [...doctorContacts, ...supporterContacts];
+              for (const c of source) {
+                const rawId = (c?.id || '').replace(/^(doctor|supporter|family)-/, '');
+                if (!rawId) continue;
+                if (!mapByRaw.has(rawId)) mapByRaw.set(rawId, c);
+              }
+              const uniqueCombined = Array.from(mapByRaw.values());
+
+              const candidateIds = uniqueCombined.map(c => (c?.id || '').replace(/^(doctor|supporter|family)-/, '')).filter(Boolean);
+
+              if (candidateIds.length > 0) {
+                try {
+                  const bulk = await userService.checkRelationshipsBulk({ elderlyId: eId, familyIds: candidateIds });
+                  const list = Array.isArray(bulk?.data) ? bulk.data : [];
+                  const relMap = {};
+                  list.forEach(it => {
+                    if (it && it.familyId) relMap[String(it.familyId)] = it;
+                  });
+
+                  const filtered = uniqueCombined.filter(c => {
+                    const rawId = (c?.id || '').replace(/^(doctor|supporter|family)-/, '');
+                    const rel = relMap[String(rawId)];
+                    return rel && String(rel.status) === 'accepted';
+                  });
+
+                  setSupportStaffContacts(filtered);
+                } catch (err) {
+                  // If bulk check fails, fallback to showing deduped list
+                  setSupportStaffContacts(uniqueCombined);
+                }
+              } else {
+                setSupportStaffContacts(uniqueCombined);
+              }
+            } catch (_) {
+              setSupportStaffContacts([...doctorContacts, ...supporterContacts]);
+            }
+          }
         } else {
           if (mounted) {
             setFamilyContacts([]);
@@ -537,14 +654,14 @@ export default function EnhancedHealthAppRN() {
                 <ContactTile
                   key={c.id}
                   contact={c}
-                  onPress={() => {
-                    const rawId = (c.id || '').replace(/^doctor-|^supporter-/, '');
+                  onPress={() =>
                     nav.navigate('SupportStaffDetail', {
-                      staffId: rawId,
+                      staffId: c.id?.replace(/^(supporter|doctor)-/, ''),
                       name: c.name,
-                      type: c.type, // 'doctor' | 'supporter'
-                    });
-                  }}
+                      avatar: c.avatar || null,
+                      type: c.type || (c.id || '').includes('doctor') ? 'doctor' : 'supporter',
+                    })
+                  }
                 />
               ))}
             </View>
@@ -553,6 +670,7 @@ export default function EnhancedHealthAppRN() {
               Chưa có nhân viên hỗ trợ nào được liên kết
             </Text>
           )}
+          
 
           {/* Action buttons */}
           {/* <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
